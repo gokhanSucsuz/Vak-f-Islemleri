@@ -83,8 +83,8 @@ export const authOptions: NextAuthOptions = {
       if (account?.provider === "google") {
         token.googleVerified = true;
         // Eski rolleri sıfırlayalım ki tam yetkili gibi girmesin
-        delete token.role;
-        delete token.id;
+        delete (token as any).role;
+        delete (token as any).id;
       } else if (user) {
         token.role = user.role;
         token.id = user.id;
