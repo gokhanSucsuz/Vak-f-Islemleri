@@ -8,7 +8,10 @@ import bcrypt from "bcryptjs";
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || (session.user.role !== "superadmin" && session.user.role !== "manager")) {
+    const hasRole = session?.user?.role === "superadmin" || session?.user?.role === "manager";
+    const isGoogleVerified = (session as any)?.googleVerified === true;
+    
+    if (!session || (!hasRole && !isGoogleVerified)) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 

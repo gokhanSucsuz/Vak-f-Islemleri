@@ -1,25 +1,56 @@
 "use client";
 
-import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { useState, useEffect } from "react";
+import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { Lock, Mail, ShieldAlert } from "lucide-react";
+import { Lock, User as UserIcon, ShieldAlert, KeyRound } from "lucide-react";
 
 export default function LoginPage() {
-  const [email, setEmail] = useState("");
+  const { data: session, status } = useSession();
+  const [users, setUsers] = useState([]);
+  const [selectedEmail, setSelectedEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const router = useRouter();
 
+  useEffect(() => {
+    // Sadece Google'dan geçmiş ama tam rol almamış kişi personelleri görebilir
+    if (session && (session as any).googleVerified && !session.user?.role) {
+      fetchUsers();
+    }
+    
+    // Zaten tam yetkili (personel/müdür/superadmin) ise dashboard'a at
+    if (session?.user?.role) {
+      router.push("/dashboard");
+    }
+  }, [session, router]);
+
+  const fetchUsers = async () => {
+    try {
+      const res = await fetch("/api/users");
+      if (res.ok) {
+        const data = await res.json();
+        setUsers(data.users);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (!selectedEmail) {
+      toast.error("Lütfen bir personel seçin");
+      return;
+    }
+    
     setLoading(true);
 
     try {
       const res = await signIn("credentials", {
         redirect: false,
-        email,
+        email: selectedEmail,
         password,
         loginType: "personnel",
       });
@@ -38,6 +69,12 @@ export default function LoginPage() {
     }
   };
 
+  if (status === "loading") {
+    return <div className="min-h-screen flex items-center justify-center bg-slate-100">Yükleniyor...</div>;
+  }
+
+  const isGoogleVerified = session && (session as any).googleVerified && !session.user?.role;
+
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 relative overflow-hidden p-4">
       <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
@@ -47,78 +84,29 @@ export default function LoginPage() {
       <div className="glass-panel w-full max-w-md p-8 rounded-3xl z-10 relative">
         <div className="flex justify-center mb-6">
           <div className="bg-blue-600 p-4 rounded-2xl shadow-lg shadow-blue-500/30">
-            <ShieldAlert className="text-white w-10 h-10" />
+            {isGoogleVerified ? (
+              <KeyRound className="text-white w-10 h-10" />
+            ) : (
+              <ShieldAlert className="text-white w-10 h-10" />
+            )}
           </div>
         </div>
         <h2 className="text-3xl font-bold text-center text-slate-800 mb-2 tracking-tight">Sisteme Giriş</h2>
-        <p className="text-center text-slate-500 mb-8 text-sm font-medium">Vakıf İşlemleri Yönetim Paneli</p>
+        <p className="text-center text-slate-500 mb-8 text-sm font-medium">
+          {isGoogleVerified ? "Lütfen adınızı seçip şifrenizi girin." : "Vakıf İşlemleri Yönetim Paneli - Yetki Doğrulaması"}
+        </p>
 
-        <form onSubmit={handleSubmit} className="space-y-5">
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="email">
-              E-posta Adresi
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Mail className="h-5 w-5 text-slate-400" />
-              </div>
-              <input
-                id="email"
-                type="email"
-                required
-                className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white/80 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-all duration-200"
-                placeholder="ornek@sydv.gov.tr"
-                value={email}
-                onChange={(e) => setEmail(e.target.value)}
-              />
+        {!isGoogleVerified ? (
+          // SADECE GOOGLE GİRİŞİ (1. AŞAMA)
+          <div className="space-y-4">
+            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mb-6 text-amber-800 text-sm font-medium text-center">
+              Sisteme giriş yapabilmek için öncelikle yetkili Google hesabınızla doğrulanmanız gerekmektedir.
             </div>
-          </div>
-
-          <div>
-            <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="password">
-              Şifre
-            </label>
-            <div className="relative">
-              <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                <Lock className="h-5 w-5 text-slate-400" />
-              </div>
-              <input
-                id="password"
-                type="password"
-                required
-                className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white/80 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-all duration-200"
-                placeholder="••••••••"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-              />
-            </div>
-          </div>
-
-          <button
-            type="submit"
-            disabled={loading}
-            className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed mt-4 transform hover:-translate-y-0.5"
-          >
-            {loading ? "Giriş yapılıyor..." : "Giriş Yap (Personel)"}
-          </button>
-        </form>
-
-        <div className="mt-6">
-          <div className="relative">
-            <div className="absolute inset-0 flex items-center">
-              <div className="w-full border-t border-slate-300"></div>
-            </div>
-            <div className="relative flex justify-center text-sm">
-              <span className="px-2 bg-white/50 text-slate-500 backdrop-blur-md rounded-full">veya</span>
-            </div>
-          </div>
-
-          <div className="mt-6">
             <button
-              onClick={() => signIn("google", { callbackUrl: "/dashboard" })}
-              className="w-full flex items-center justify-center py-3.5 px-4 border border-slate-300 rounded-xl shadow-sm text-sm font-bold text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 transform hover:-translate-y-0.5"
+              onClick={() => signIn("google", { callbackUrl: "/login" })}
+              className="w-full flex items-center justify-center py-4 px-4 border border-slate-300 rounded-xl shadow-sm text-sm font-bold text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 transform hover:-translate-y-0.5"
             >
-              <svg className="w-5 h-5 mr-2" viewBox="0 0 24 24">
+              <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
                 <path
                   d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
                   fill="#4285F4"
@@ -137,10 +125,64 @@ export default function LoginPage() {
                 />
                 <path d="M1 1h22v22H1z" fill="none" />
               </svg>
-              Google ile Giriş Yap (Yetkili)
+              Yetkili Hesabı İle Doğrula
             </button>
           </div>
-        </div>
+        ) : (
+          // PERSONEL ŞİFRE GİRİŞİ (2. AŞAMA)
+          <form onSubmit={handleSubmit} className="space-y-5">
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="personnel">
+                Personel Seçimi
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <UserIcon className="h-5 w-5 text-slate-400" />
+                </div>
+                <select
+                  id="personnel"
+                  required
+                  className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-all duration-200 appearance-none"
+                  value={selectedEmail}
+                  onChange={(e) => setSelectedEmail(e.target.value)}
+                >
+                  <option value="" disabled>Lütfen seçiniz...</option>
+                  {users.map((u: any) => (
+                    <option key={u._id} value={u.email}>{u.name} ({u.role === 'manager' ? 'Müdür' : 'Personel'})</option>
+                  ))}
+                </select>
+              </div>
+            </div>
+
+            <div>
+              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="password">
+                Şifre
+              </label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Lock className="h-5 w-5 text-slate-400" />
+                </div>
+                <input
+                  id="password"
+                  type="password"
+                  required
+                  className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white/80 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-all duration-200"
+                  placeholder="••••••••"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                />
+              </div>
+            </div>
+
+            <button
+              type="submit"
+              disabled={loading}
+              className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed mt-4 transform hover:-translate-y-0.5"
+            >
+              {loading ? "Giriş yapılıyor..." : "Sisteme Giriş Yap"}
+            </button>
+          </form>
+        )}
       </div>
     </div>
   );

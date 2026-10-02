@@ -74,45 +74,17 @@ export const authOptions: NextAuthOptions = {
         if (user.email !== "edirnesydv@gmail.com") {
           throw new Error("Sisteme sadece yetkili Google hesabı (edirnesydv@gmail.com) ile erişim sağlanabilir.");
         }
-        
-        await dbConnect();
-        let dbUser = await User.findOne({ email: user.email });
-        
-        if (!dbUser) {
-          // Eğer edirnesydv@gmail.com veritabanında yoksa, otomatik olarak müdür rolüyle oluştur.
-          // (Kullanıcı veritabanından silinmiş olsa bile Google ile girince otomatik müdür olur)
-          const randomPassword = await bcrypt.hash(Math.random().toString(36).slice(-10), 10);
-          dbUser = await User.create({
-            name: user.name || "Edirne SYDV Müdür",
-            email: user.email,
-            password: randomPassword,
-            role: "manager"
-          });
-        }
-        
-        try {
-          const Log = (await import("@/models/Log")).default;
-          await Log.create({
-            userId: dbUser._id,
-            action: "Sisteme Giriş Yaptı",
-            details: `Müdür (Google Hesabı ile) olarak giriş yapıldı.`
-          });
-        } catch (err) {
-          console.error("Log error:", err);
-        }
-
+        // Google girişi başarılı, sadece kapıyı açıyoruz.
         return true;
       }
       return true;
     },
     async jwt({ token, user, account }) {
       if (account?.provider === "google") {
-        await dbConnect();
-        const dbUser = await User.findOne({ email: token.email });
-        if (dbUser) {
-          token.role = dbUser.role;
-          token.id = dbUser._id.toString();
-        }
+        token.googleVerified = true;
+        // Eski rolleri sıfırlayalım ki tam yetkili gibi girmesin
+        delete token.role;
+        delete token.id;
       } else if (user) {
         token.role = user.role;
         token.id = user.id;
@@ -120,9 +92,12 @@ export const authOptions: NextAuthOptions = {
       return token;
     },
     async session({ session, token }) {
-      if (session.user) {
-        session.user.role = token.role as string;
-        session.user.id = token.id as string;
+      if (token.googleVerified) {
+        (session as any).googleVerified = true;
+      }
+      if (token.role && session.user) {
+        (session.user as any).role = token.role as string;
+        (session.user as any).id = token.id as string;
       }
       return session;
     },
