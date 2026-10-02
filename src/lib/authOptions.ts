@@ -1,11 +1,16 @@
 import { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import GoogleProvider from "next-auth/providers/google";
 import dbConnect from "@/lib/db";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
 
 export const authOptions: NextAuthOptions = {
   providers: [
+    GoogleProvider({
+      clientId: process.env.GOOGLE_CLIENT_ID as string,
+      clientSecret: process.env.GOOGLE_CLIENT_SECRET as string,
+    }),
     CredentialsProvider({
       name: "Credentials",
       credentials: {
@@ -48,7 +53,7 @@ export const authOptions: NextAuthOptions = {
           await Log.create({
             userId: user._id,
             action: "Sisteme Giriş Yaptı",
-            details: `${user.role === 'superadmin' ? 'Süper Admin' : user.role === 'manager' ? 'Müdür' : 'Personel'} olarak giriş yapıldı.`
+            details: `${user.role === 'superadmin' ? 'Süper Admin' : user.role === 'manager' ? 'Müdür' : 'Personel'} (Şifre ile) olarak giriş yapıldı.`
           });
         } catch (err) {
           console.error("Log error:", err);
@@ -64,8 +69,51 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
-      if (user) {
+    async signIn({ user, account }) {
+      if (account?.provider === "google") {
+        if (user.email !== "edirnesydv@gmail.com") {
+          throw new Error("Sisteme sadece yetkili Google hesabı (edirnesydv@gmail.com) ile erişim sağlanabilir.");
+        }
+        
+        await dbConnect();
+        let dbUser = await User.findOne({ email: user.email });
+        
+        if (!dbUser) {
+          // Eğer edirnesydv@gmail.com veritabanında yoksa, otomatik olarak müdür rolüyle oluştur.
+          // (Kullanıcı veritabanından silinmiş olsa bile Google ile girince otomatik müdür olur)
+          const randomPassword = await bcrypt.hash(Math.random().toString(36).slice(-10), 10);
+          dbUser = await User.create({
+            name: user.name || "Edirne SYDV Müdür",
+            email: user.email,
+            password: randomPassword,
+            role: "manager"
+          });
+        }
+        
+        try {
+          const Log = (await import("@/models/Log")).default;
+          await Log.create({
+            userId: dbUser._id,
+            action: "Sisteme Giriş Yaptı",
+            details: `Müdür (Google Hesabı ile) olarak giriş yapıldı.`
+          });
+        } catch (err) {
+          console.error("Log error:", err);
+        }
+
+        return true;
+      }
+      return true;
+    },
+    async jwt({ token, user, account }) {
+      if (account?.provider === "google") {
+        await dbConnect();
+        const dbUser = await User.findOne({ email: token.email });
+        if (dbUser) {
+          token.role = dbUser.role;
+          token.id = dbUser._id.toString();
+        }
+      } else if (user) {
         token.role = user.role;
         token.id = user.id;
       }
