@@ -12,7 +12,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 
-    const { citizenInfo, actionTaken } = await req.json();
+    const { citizenInfo, actionTaken, helpType } = await req.json();
 
     if (!citizenInfo || !actionTaken) {
       return NextResponse.json({ error: "Eksik bilgi" }, { status: 400 });
@@ -24,6 +24,7 @@ export async function POST(req: Request) {
       userId: session.user.id,
       citizenInfo,
       actionTaken,
+      helpType: helpType || undefined,
     });
 
     await transaction.save();
@@ -54,8 +55,10 @@ export async function GET(req: Request) {
     const dateStart = searchParams.get("dateStart");
     const dateEnd = searchParams.get("dateEnd");
     const searchText = searchParams.get("search");
+    const filterHelpType = searchParams.get("helpType");
 
     await dbConnect();
+    const HelpType = (await import("@/models/HelpType")).default; // ensure model is registered
 
     let query: any = {};
 
@@ -73,9 +76,14 @@ export async function GET(req: Request) {
         $lte: new Date(dateEnd)
       };
     }
+    
+    if (filterHelpType) {
+      query.helpType = filterHelpType;
+    }
 
     const transactions = await Transaction.find(query)
       .populate("userId", "name email")
+      .populate("helpType", "name")
       .sort({ createdAt: -1 });
       
     // Apply in-memory text search because fields are encrypted in DB
@@ -91,6 +99,32 @@ export async function GET(req: Request) {
     }
 
     return NextResponse.json({ transactions: filteredTransactions }, { status: 200 });
+  } catch (error) {
+    return NextResponse.json({ error: "Sunucu hatası" }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || session.user.role !== "superadmin") {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
+    }
+
+    await dbConnect();
+
+    // Delete all transactions
+    await Transaction.deleteMany({});
+    
+    // Log işlemi
+    const Log = (await import("@/models/Log")).default;
+    await Log.create({
+      userId: session.user.id,
+      action: "Tüm Geçmiş Silindi",
+      details: `Süper admin tüm işlem geçmişini sildi.`
+    });
+
+    return NextResponse.json({ message: "Tüm geçmiş başarıyla silindi" }, { status: 200 });
   } catch (error) {
     return NextResponse.json({ error: "Sunucu hatası" }, { status: 500 });
   }

@@ -17,6 +17,7 @@ export default function Sidebar() {
     { name: "Personel Yönetimi", href: "/dashboard/users", icon: Users, roles: ["superadmin"] },
     { name: "Sistem Logları", href: "/dashboard/logs", icon: Activity, roles: ["superadmin"] },
     { name: "Raporlar", href: "/dashboard/reports", icon: FileText, roles: ["superadmin", "manager"] },
+    { name: "Yardım Türleri", href: "/dashboard/help-types", icon: FileText, roles: ["superadmin", "manager"] },
     { name: "Şifre Değiştir", href: "/dashboard/settings", icon: Settings, roles: ["superadmin", "manager", "personnel"] },
   ];
 

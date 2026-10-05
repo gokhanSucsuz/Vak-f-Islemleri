@@ -14,9 +14,11 @@ export default function DashboardPage() {
   const [formData, setFormData] = useState({
     citizenInfo: "",
     actionTaken: "",
+    helpType: "",
   });
   
   const [transactions, setTransactions] = useState([]);
+  const [helpTypes, setHelpTypes] = useState([]);
   const [todayStats, setTodayStats] = useState(0);
   
   // Inline edit state
@@ -55,10 +57,23 @@ export default function DashboardPage() {
   useEffect(() => {
     if (session?.user?.id) {
       fetchData();
+      fetchHelpTypes();
     }
   }, [session]);
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const fetchHelpTypes = async () => {
+    try {
+      const res = await fetch("/api/help-types");
+      if (res.ok) {
+        const data = await res.json();
+        setHelpTypes(data.helpTypes);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setFormData(prev => ({ ...prev, [name]: value }));
   };
@@ -81,7 +96,7 @@ export default function DashboardPage() {
 
       if (res.ok) {
         toast.success("İşlem başarıyla kaydedildi!");
-        setFormData({ citizenInfo: "", actionTaken: "" });
+        setFormData({ citizenInfo: "", actionTaken: "", helpType: "" });
         fetchData();
       } else {
         const data = await res.json();
@@ -191,6 +206,22 @@ export default function DashboardPage() {
               </div>
 
               <div>
+                <label className="block text-sm font-semibold text-slate-700 mb-2">Yardım / Başvuru Türü</label>
+                <select
+                  name="helpType"
+                  required
+                  value={formData.helpType}
+                  onChange={handleChange}
+                  className="block w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                >
+                  <option value="">Seçiniz...</option>
+                  {helpTypes.map((ht: any) => (
+                    <option key={ht._id} value={ht._id}>{ht.name}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
                 <label className="block text-sm font-semibold text-slate-700 mb-2">Yapılan İşlem Detayı</label>
                 <textarea
                   name="actionTaken"
@@ -238,6 +269,7 @@ export default function DashboardPage() {
                   <th className="py-3 px-6 font-semibold text-slate-600 text-sm">Personel</th>
                 )}
                 <th className="py-3 px-6 font-semibold text-slate-600 text-sm">Vatandaş Bilgisi</th>
+                <th className="py-3 px-6 font-semibold text-slate-600 text-sm">Tür</th>
                 <th className="py-3 px-6 font-semibold text-slate-600 text-sm w-1/2">Yapılan İşlem</th>
                 {session?.user?.role !== "manager" && (
                   <th className="py-3 px-6 font-semibold text-slate-600 text-sm text-right">İşlemler</th>
@@ -277,6 +309,12 @@ export default function DashboardPage() {
                         ) : (
                           <span className="text-sm font-medium text-slate-800">{t.citizenInfo}</span>
                         )}
+                      </td>
+
+                      <td className="py-4 px-6 align-top border-t border-slate-100">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {t.helpType?.name || "-"}
+                        </span>
                       </td>
                       
                       <td className="py-4 px-6 align-top border-t border-slate-100">

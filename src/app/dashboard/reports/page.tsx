@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
-import { Download, Filter, Search, Calendar, User as UserIcon, BarChart3 } from "lucide-react";
+import { Download, Filter, Search, Calendar, User as UserIcon, BarChart3, Trash2 } from "lucide-react";
 import { format, subDays, startOfDay, endOfDay } from "date-fns";
 import { tr } from "date-fns/locale";
 import {
@@ -29,7 +29,10 @@ export default function ReportsPage() {
     dateStart: "",
     dateEnd: "",
     search: "",
+    helpType: "",
   });
+
+  const [helpTypes, setHelpTypes] = useState([]);
 
   // İstatistik datası (Son 7 Gün için)
   const [chartData, setChartData] = useState<any[]>([]);
@@ -37,7 +40,20 @@ export default function ReportsPage() {
   useEffect(() => {
     fetchUsers();
     fetchTransactions();
+    fetchHelpTypes();
   }, []);
+
+  const fetchHelpTypes = async () => {
+    try {
+      const res = await fetch("/api/help-types");
+      if (res.ok) {
+        const data = await res.json();
+        setHelpTypes(data.helpTypes);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -81,6 +97,7 @@ export default function ReportsPage() {
       const params = new URLSearchParams();
       if (filters.userId) params.append("userId", filters.userId);
       if (filters.search) params.append("search", filters.search);
+      if (filters.helpType) params.append("helpType", filters.helpType);
       if (filters.dateStart) params.append("dateStart", new Date(filters.dateStart).toISOString());
       
       if (filters.dateEnd) {
@@ -116,6 +133,38 @@ export default function ReportsPage() {
     window.print();
   };
 
+  const handleDeleteAll = async () => {
+    if (!confirm("Tüm geçmiş kayıtları silmek istediğinize emin misiniz? Bu işlem geri alınamaz!")) return;
+    
+    try {
+      const res = await fetch("/api/transactions", { method: "DELETE" });
+      if (res.ok) {
+        toast.success("Tüm geçmiş silindi");
+        fetchTransactions();
+      } else {
+        toast.error("Silinemedi");
+      }
+    } catch (e) {
+      toast.error("Bir hata oluştu");
+    }
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm("Bu kaydı silmek istediğinize emin misiniz?")) return;
+    
+    try {
+      const res = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        toast.success("Kayıt silindi");
+        fetchTransactions();
+      } else {
+        toast.error("Silinemedi");
+      }
+    } catch (e) {
+      toast.error("Bir hata oluştu");
+    }
+  };
+
   return (
     <div className="space-y-6 print:space-y-0">
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 print:hidden">
@@ -124,13 +173,24 @@ export default function ReportsPage() {
           <p className="text-slate-500 text-sm mt-1">Geçmiş günlerin dosyalarına ulaşın, personele göre filtreleyin ve arşiv yönetimi yapın.</p>
         </div>
         
-        <button
-          onClick={exportPDF}
-          className="inline-flex items-center justify-center px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors shadow-sm font-medium text-sm"
-        >
-          <Download className="w-4 h-4 mr-2" />
-          PDF Çıktısı Al
-        </button>
+        <div className="flex gap-2">
+          {session?.user?.role === "superadmin" && (
+            <button
+              onClick={handleDeleteAll}
+              className="inline-flex items-center justify-center px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 transition-colors shadow-sm font-medium text-sm"
+            >
+              <Trash2 className="w-4 h-4 mr-2" />
+              Tüm Geçmişi Sil
+            </button>
+          )}
+          <button
+            onClick={exportPDF}
+            className="inline-flex items-center justify-center px-4 py-2 bg-slate-800 text-white rounded-lg hover:bg-slate-700 transition-colors shadow-sm font-medium text-sm"
+          >
+            <Download className="w-4 h-4 mr-2" />
+            PDF Çıktısı Al
+          </button>
+        </div>
       </div>
 
       <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 print:hidden">
@@ -150,6 +210,23 @@ export default function ReportsPage() {
                 onChange={handleFilterChange}
                 className="block w-full pl-9 pr-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
               />
+            </div>
+          </div>
+
+          <div className="md:col-span-1">
+            <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Tür</label>
+            <div className="relative">
+              <select
+                name="helpType"
+                value={filters.helpType}
+                onChange={handleFilterChange}
+                className="block w-full px-3 py-2.5 border border-slate-200 rounded-lg text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 appearance-none"
+              >
+                <option value="">Tümü</option>
+                {helpTypes.map((ht: any) => (
+                  <option key={ht._id} value={ht._id}>{ht.name}</option>
+                ))}
+              </select>
             </div>
           </div>
 
@@ -264,7 +341,11 @@ export default function ReportsPage() {
                       <th className="py-3 px-4 font-semibold text-slate-700 text-sm w-48">Personel</th>
                     )}
                     <th className="py-3 px-4 font-semibold text-slate-700 text-sm w-1/4">Vatandaş Bilgisi</th>
+                    <th className="py-3 px-4 font-semibold text-slate-700 text-sm">Tür</th>
                     <th className="py-3 px-4 font-semibold text-slate-700 text-sm">Yapılan İşlem</th>
+                    {session?.user?.role === "superadmin" && (
+                      <th className="py-3 px-4 font-semibold text-slate-700 text-sm text-right print:hidden">İşlem</th>
+                    )}
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-slate-100">
@@ -281,9 +362,21 @@ export default function ReportsPage() {
                       <td className="py-4 px-4 text-sm text-slate-800 font-medium align-top border-t border-slate-100 print:whitespace-normal print:break-words">
                         {t.citizenInfo}
                       </td>
+                      <td className="py-4 px-4 text-sm align-top border-t border-slate-100">
+                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          {t.helpType?.name || "-"}
+                        </span>
+                      </td>
                       <td className="py-4 px-4 text-sm text-slate-600 whitespace-pre-wrap align-top border-t border-slate-100 print:whitespace-pre-wrap print:break-words">
                         {t.actionTaken}
                       </td>
+                      {session?.user?.role === "superadmin" && (
+                        <td className="py-4 px-4 text-sm align-top text-right border-t border-slate-100 print:hidden">
+                          <button onClick={() => handleDelete(t._id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition" title="Sil">
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </td>
+                      )}
                     </tr>
                   ))}
                 </tbody>

@@ -20,6 +20,11 @@ const TransactionSchema = new mongoose.Schema(
       set: encryptData,
       get: decryptData,
     },
+    helpType: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'HelpType',
+      required: false,
+    },
   },
   { 
     timestamps: true,
