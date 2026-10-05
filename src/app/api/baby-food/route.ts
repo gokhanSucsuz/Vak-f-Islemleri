@@ -12,10 +12,21 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 
+    const url = new URL(req.url);
+    const dateStart = url.searchParams.get("dateStart");
+    const dateEnd = url.searchParams.get("dateEnd");
+
     await dbConnect();
 
-    // All roles can view all records
-    const records = await BabyFood.find({}).populate('createdBy', 'name').sort({ createdAt: -1 });
+    const query: any = {};
+    if (dateStart || dateEnd) {
+      query.createdAt = {};
+      if (dateStart) query.createdAt.$gte = new Date(dateStart);
+      if (dateEnd) query.createdAt.$lte = new Date(dateEnd);
+    }
+
+    // All roles can view all records (or filtered by date)
+    const records = await BabyFood.find(query).populate('createdBy', 'name').sort({ createdAt: -1 });
     
     return NextResponse.json(records);
   } catch (error: any) {

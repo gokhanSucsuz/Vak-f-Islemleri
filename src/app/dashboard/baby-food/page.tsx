@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
-import { Plus, Search, Edit2, Trash2, Baby, Package, Users, Activity, Settings, X } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Baby, Package, Users, Activity, Settings, X, Calendar, Filter } from "lucide-react";
 
 type BabyFoodType = {
   _id: string;
@@ -56,12 +56,23 @@ export default function BabyFoodPage() {
     quantity: 1,
   });
 
+  const [dateStart, setDateStart] = useState("");
+  const [dateEnd, setDateEnd] = useState("");
+
   const userRole = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
 
   const fetchRecords = async () => {
     try {
-      const res = await fetch("/api/baby-food");
+      const params = new URLSearchParams();
+      if (dateStart) params.append("dateStart", new Date(dateStart).toISOString());
+      if (dateEnd) {
+        const endDate = new Date(dateEnd);
+        endDate.setHours(23, 59, 59, 999);
+        params.append("dateEnd", endDate.toISOString());
+      }
+
+      const res = await fetch(`/api/baby-food?${params.toString()}`);
       if (!res.ok) throw new Error("Veriler alınamadı");
       const data = await res.json();
       setRecords(data);
@@ -285,6 +296,44 @@ export default function BabyFoodPage() {
 
       {(userRole === "manager" || userRole === "superadmin") && (
         <div className="space-y-6">
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-end gap-4">
+            <div className="w-full md:w-auto flex-1">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Başlangıç Tarihi</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Calendar className="h-4 w-4 text-slate-400" />
+                </div>
+                <input
+                  type="date"
+                  value={dateStart}
+                  onChange={(e) => setDateStart(e.target.value)}
+                  className="block w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500 transition-all"
+                />
+              </div>
+            </div>
+            <div className="w-full md:w-auto flex-1">
+              <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Bitiş Tarihi</label>
+              <div className="relative">
+                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                  <Calendar className="h-4 w-4 text-slate-400" />
+                </div>
+                <input
+                  type="date"
+                  value={dateEnd}
+                  onChange={(e) => setDateEnd(e.target.value)}
+                  className="block w-full pl-9 pr-3 py-2 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500 transition-all"
+                />
+              </div>
+            </div>
+            <button
+              onClick={fetchRecords}
+              className="w-full md:w-auto flex items-center justify-center px-6 py-2 bg-slate-800 text-white rounded-xl hover:bg-slate-900 transition-colors font-medium text-sm"
+            >
+              <Filter className="w-4 h-4 mr-2" />
+              Raporla
+            </button>
+          </div>
+
           <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
             <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 hover:shadow-md transition-shadow">
               <div className="bg-blue-100 p-4 rounded-xl text-blue-600">
