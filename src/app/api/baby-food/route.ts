@@ -15,8 +15,6 @@ export async function GET(req: Request) {
     await dbConnect();
 
     const userAny = session.user as any;
-    
-    // If personnel, they can only see their own records. Superadmin and manager can see all.
     const query = userAny.role === "personnel" ? { createdBy: userAny.id } : {};
 
     const records = await BabyFood.find(query).populate('createdBy', 'name').sort({ createdAt: -1 });
@@ -45,10 +43,11 @@ export async function POST(req: Request) {
     });
 
     try {
+      const itemsDetail = body.items.map((i: any) => `${i.quantity} adet ${i.brand} ${i.foodName} (${i.weight})`).join(', ');
       await Log.create({
         userId: userAny.id,
         action: "Bebek Maması Kaydı Eklendi",
-        details: `${body.motherName} adlı kişiye ${body.foodName} (${body.quantity} adet, ${body.weight}) verildi.`,
+        details: `${body.motherInfo} isimli anneye ${itemsDetail} teslim edildi.`,
       });
     } catch (e) {
       // Ignore log error
@@ -77,7 +76,6 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Kayıt bulunamadı" }, { status: 404 });
     }
 
-    // Personnel can only update their own records
     if (userAny.role === "personnel" && record.createdBy.toString() !== userAny.id) {
       return NextResponse.json({ error: "Bu kaydı düzenleme yetkiniz yok" }, { status: 403 });
     }
@@ -88,7 +86,7 @@ export async function PUT(req: Request) {
       await Log.create({
         userId: userAny.id,
         action: "Bebek Maması Kaydı Güncellendi",
-        details: `${updateData.motherName} kişisinin mama kaydı düzenlendi.`,
+        details: `${updateData.motherInfo} kişisinin mama kaydı düzenlendi.`,
       });
     } catch (e) {
       // Ignore log error
@@ -133,7 +131,7 @@ export async function DELETE(req: Request) {
       await Log.create({
         userId: userAny.id,
         action: "Bebek Maması Kaydı Silindi",
-        details: `${record.motherName} kişisinin mama kaydı silindi.`,
+        details: `${record.motherInfo} kişisinin mama kaydı silindi.`,
       });
     } catch (e) {
       // Ignore log error

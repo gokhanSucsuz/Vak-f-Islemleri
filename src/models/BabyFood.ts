@@ -2,34 +2,26 @@ import mongoose from 'mongoose';
 
 const BabyFoodSchema = new mongoose.Schema(
   {
-    motherName: {
+    motherInfo: {
       type: String,
       required: true,
     },
-    motherTc: {
+    receiver: {
       type: String,
-      required: true,
+      default: "",
     },
     babyName: {
       type: String,
       required: true,
     },
-    foodName: {
-      type: String,
-      required: true,
-    },
-    brand: {
-      type: String,
-      required: true,
-    },
-    quantity: {
-      type: Number,
-      required: true,
-    },
-    weight: {
-      type: String,
-      required: true,
-    },
+    items: [
+      {
+        brand: { type: String, required: true },
+        foodName: { type: String, required: true },
+        weight: { type: String, required: true },
+        quantity: { type: Number, required: true },
+      }
+    ],
     createdBy: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'User',
