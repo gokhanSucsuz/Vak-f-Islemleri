@@ -1,0 +1,146 @@
+import { NextResponse } from "next/server";
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/authOptions";
+import dbConnect from "@/lib/db";
+import BabyFood from "@/models/BabyFood";
+import Log from "@/models/Log";
+
+export async function GET(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
+    }
+
+    await dbConnect();
+
+    const userAny = session.user as any;
+    
+    // If personnel, they can only see their own records. Superadmin and manager can see all.
+    const query = userAny.role === "personnel" ? { createdBy: userAny.id } : {};
+
+    const records = await BabyFood.find(query).populate('createdBy', 'name').sort({ createdAt: -1 });
+    
+    return NextResponse.json(records);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function POST(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    await dbConnect();
+
+    const userAny = session.user as any;
+
+    const newRecord = await BabyFood.create({
+      ...body,
+      createdBy: userAny.id,
+    });
+
+    try {
+      await Log.create({
+        userId: userAny.id,
+        action: "Bebek Maması Kaydı Eklendi",
+        details: `${body.motherName} adlı kişiye ${body.foodName} (${body.quantity} adet, ${body.weight}) verildi.`,
+      });
+    } catch (e) {
+      // Ignore log error
+    }
+
+    return NextResponse.json(newRecord, { status: 201 });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function PUT(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
+    }
+
+    const { _id, ...updateData } = await req.json();
+    await dbConnect();
+
+    const userAny = session.user as any;
+    const record = await BabyFood.findById(_id);
+
+    if (!record) {
+      return NextResponse.json({ error: "Kayıt bulunamadı" }, { status: 404 });
+    }
+
+    // Personnel can only update their own records
+    if (userAny.role === "personnel" && record.createdBy.toString() !== userAny.id) {
+      return NextResponse.json({ error: "Bu kaydı düzenleme yetkiniz yok" }, { status: 403 });
+    }
+
+    const updatedRecord = await BabyFood.findByIdAndUpdate(_id, updateData, { new: true });
+
+    try {
+      await Log.create({
+        userId: userAny.id,
+        action: "Bebek Maması Kaydı Güncellendi",
+        details: `${updateData.motherName} kişisinin mama kaydı düzenlendi.`,
+      });
+    } catch (e) {
+      // Ignore log error
+    }
+
+    return NextResponse.json(updatedRecord);
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
+
+export async function DELETE(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session || !session.user) {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
+    }
+
+    const url = new URL(req.url);
+    const id = url.searchParams.get("id");
+    
+    if (!id) {
+      return NextResponse.json({ error: "ID gerekli" }, { status: 400 });
+    }
+
+    await dbConnect();
+
+    const userAny = session.user as any;
+    const record = await BabyFood.findById(id);
+
+    if (!record) {
+      return NextResponse.json({ error: "Kayıt bulunamadı" }, { status: 404 });
+    }
+
+    if (userAny.role === "personnel" && record.createdBy.toString() !== userAny.id) {
+      return NextResponse.json({ error: "Bu kaydı silme yetkiniz yok" }, { status: 403 });
+    }
+
+    await BabyFood.findByIdAndDelete(id);
+
+    try {
+      await Log.create({
+        userId: userAny.id,
+        action: "Bebek Maması Kaydı Silindi",
+        details: `${record.motherName} kişisinin mama kaydı silindi.`,
+      });
+    } catch (e) {
+      // Ignore log error
+    }
+
+    return NextResponse.json({ success: true });
+  } catch (error: any) {
+    return NextResponse.json({ error: error.message }, { status: 500 });
+  }
+}
