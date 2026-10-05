@@ -36,6 +36,8 @@ export default function ReportsPage() {
 
   // İstatistik datası (Son 7 Gün için)
   const [chartData, setChartData] = useState<any[]>([]);
+  // Yardım türlerine göre istatistik (Seçili tarih aralığı / Tüm zamanlar)
+  const [helpTypeStats, setHelpTypeStats] = useState<{name: string, count: number}[]>([]);
 
   useEffect(() => {
     fetchUsers();
@@ -111,6 +113,17 @@ export default function ReportsPage() {
         const data = await res.json();
         setTransactions(data.transactions);
         calculateChartData(data.transactions);
+
+        // Yardım türü kırılımını hesapla
+        const typeCount: Record<string, number> = {};
+        data.transactions.forEach((t: any) => {
+          const typeName = t.helpType?.name || "Belirtilmemiş";
+          typeCount[typeName] = (typeCount[typeName] || 0) + 1;
+        });
+        const sortedTypes = Object.entries(typeCount)
+          .map(([name, count]) => ({ name, count: count as number }))
+          .sort((a, b) => b.count - a.count);
+        setHelpTypeStats(sortedTypes);
       }
     } catch (error) {
       toast.error("Raporlar yüklenemedi");
@@ -319,6 +332,30 @@ export default function ReportsPage() {
             </ResponsiveContainer>
           </div>
         </div>
+
+        {/* Yardım Türü İstatistikleri Alanı */}
+        {session?.user?.role !== "personnel" && (
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200 print:hidden">
+            <h2 className="text-lg font-bold text-slate-800 mb-4 flex items-center">
+              <BarChart3 className="w-5 h-5 mr-2 text-purple-600" />
+              Seçili Aralıktaki Yardım Türü Dağılımı (Kişi Sayısı)
+            </h2>
+            {helpTypeStats.length === 0 ? (
+              <p className="text-sm text-slate-500 py-4 text-center">Henüz veri yok.</p>
+            ) : (
+              <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+                {helpTypeStats.map((stat, idx) => (
+                  <div key={idx} className="flex justify-between items-center p-4 rounded-xl bg-slate-50 border border-slate-100">
+                    <span className="text-sm font-medium text-slate-700">{stat.name}</span>
+                    <span className="inline-flex items-center justify-center px-3 py-1 text-xs font-bold bg-purple-100 text-purple-700 rounded-full">
+                      {stat.count} Kişi
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Tablo Alanı */}
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden print:overflow-visible print:border-none print:shadow-none">
