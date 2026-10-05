@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
-import { Plus, Search, Edit2, Trash2, Baby, Package, Users, Activity, Settings, X, Calendar, Filter } from "lucide-react";
+import { Plus, Search, Edit2, Trash2, Baby, Package, Users, Activity, Settings, X, Calendar, Filter, Download } from "lucide-react";
 
 type BabyFoodType = {
   _id: string;
@@ -259,8 +259,8 @@ export default function BabyFoodPage() {
   const sortedDetailedStats = Object.entries(detailedStats).sort((a, b) => b[1] - a[1]);
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100 gap-4">
+    <div className="space-y-6 print:space-y-0 print:bg-white">
+      <div className="flex flex-col md:flex-row justify-between items-start md:items-center bg-white p-6 rounded-2xl shadow-sm border border-slate-100 gap-4 print:hidden">
         <div>
           <h1 className="text-2xl font-bold text-slate-800 flex items-center gap-2">
             <Baby className="w-8 h-8 text-pink-500" />
@@ -270,13 +270,22 @@ export default function BabyFoodPage() {
         </div>
         <div className="flex items-center gap-3 w-full md:w-auto">
           {(userRole === "manager" || userRole === "superadmin") && (
-            <button
-              onClick={() => setIsSettingsModalOpen(true)}
-              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl font-medium transition-all"
-            >
-              <Settings className="w-5 h-5" />
-              Mama Türleri
-            </button>
+            <>
+              <button
+                onClick={() => window.print()}
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-5 py-2.5 rounded-xl font-medium transition-all"
+              >
+                <Download className="w-5 h-5" />
+                Rapor Çıktısı Al
+              </button>
+              <button
+                onClick={() => setIsSettingsModalOpen(true)}
+                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-5 py-2.5 rounded-xl font-medium transition-all"
+              >
+                <Settings className="w-5 h-5" />
+                Mama Türleri
+              </button>
+            </>
           )}
           {userRole === "personnel" && (
             <button
@@ -296,7 +305,7 @@ export default function BabyFoodPage() {
 
       {(userRole === "manager" || userRole === "superadmin") && (
         <div className="space-y-6">
-          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-end gap-4">
+          <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex flex-col md:flex-row items-end gap-4 print:hidden">
             <div className="w-full md:w-auto flex-1">
               <label className="block text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2">Başlangıç Tarihi</label>
               <div className="relative">
@@ -382,8 +391,15 @@ export default function BabyFoodPage() {
         </div>
       )}
 
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
-        <div className="p-6 border-b border-slate-100">
+      <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden print:shadow-none print:border-none print:mt-8">
+        <div className="hidden print:block text-center mb-8">
+          <h2 className="text-2xl font-bold text-slate-800">Bebek Maması Raporu</h2>
+          <p className="text-slate-500 mt-1">
+            {dateStart && dateEnd ? `${new Date(dateStart).toLocaleDateString('tr-TR')} - ${new Date(dateEnd).toLocaleDateString('tr-TR')} Tarihleri Arası` : 'Tüm Zamanlar'}
+          </p>
+        </div>
+
+        <div className="p-6 border-b border-slate-100 print:hidden">
           <div className="relative max-w-md">
             <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
             <input
@@ -405,7 +421,7 @@ export default function BabyFoodPage() {
                 <th className="py-4 px-6 text-sm font-semibold text-slate-600 border-b border-slate-100">Mama Detayları</th>
                 <th className="py-4 px-6 text-sm font-semibold text-slate-600 border-b border-slate-100">Personel</th>
                 <th className="py-4 px-6 text-sm font-semibold text-slate-600 border-b border-slate-100">Tarih</th>
-                <th className="py-4 px-6 text-sm font-semibold text-slate-600 border-b border-slate-100 text-right">İşlemler</th>
+                <th className="py-4 px-6 text-sm font-semibold text-slate-600 border-b border-slate-100 text-right print:hidden">İşlemler</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
@@ -451,7 +467,7 @@ export default function BabyFoodPage() {
                     <td className="py-4 px-6 text-sm text-slate-600">
                       {new Date(record.createdAt).toLocaleDateString('tr-TR')}
                     </td>
-                    <td className="py-4 px-6 text-right">
+                    <td className="py-4 px-6 text-right print:hidden">
                       {((userRole === "personnel" && record.createdBy?._id === userId) || userRole === "superadmin" || userRole === "manager") && (
                         <div className="flex items-center justify-end gap-2">
                           <button
