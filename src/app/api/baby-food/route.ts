@@ -14,10 +14,8 @@ export async function GET(req: Request) {
 
     await dbConnect();
 
-    const userAny = session.user as any;
-    const query = userAny.role === "personnel" ? { createdBy: userAny.id } : {};
-
-    const records = await BabyFood.find(query).populate('createdBy', 'name').sort({ createdAt: -1 });
+    // All roles can view all records
+    const records = await BabyFood.find({}).populate('createdBy', 'name').sort({ createdAt: -1 });
     
     return NextResponse.json(records);
   } catch (error: any) {
