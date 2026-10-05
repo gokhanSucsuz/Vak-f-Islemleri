@@ -13,7 +13,7 @@ export async function GET(req: Request) {
     }
 
     await dbConnect();
-    const records = await BabyFoodType.find().sort({ brand: 1, foodName: 1, weight: 1 });
+    const records = await BabyFoodType.find().sort({ brand: 1, weight: 1 });
     return NextResponse.json(records);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
@@ -37,7 +37,7 @@ export async function POST(req: Request) {
       await Log.create({
         userId: userAny.id,
         action: "Mama Tanımı Eklendi",
-        details: `${body.brand} ${body.foodName} (${body.weight}) sisteme eklendi.`,
+        details: `${body.brand} (${body.weight}) sisteme eklendi.`,
       });
     } catch (e) {
       // Ignore log error
@@ -72,7 +72,7 @@ export async function DELETE(req: Request) {
         await Log.create({
           userId: userAny.id,
           action: "Mama Tanımı Silindi",
-          details: `${record.brand} ${record.foodName} (${record.weight}) sistemden silindi.`,
+          details: `${record.brand} (${record.weight}) sistemden silindi.`,
         });
       } catch (e) {
         // Ignore log error

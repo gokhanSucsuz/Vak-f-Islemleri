@@ -8,7 +8,6 @@ import { Plus, Search, Edit2, Trash2, Baby, Package, Users, Activity, Settings, 
 type BabyFoodType = {
   _id: string;
   brand: string;
-  foodName: string;
   weight: string;
 };
 
@@ -48,12 +47,12 @@ export default function BabyFoodPage() {
 
   const [newTypeData, setNewTypeData] = useState({
     brand: "",
-    foodName: "",
     weight: "",
   });
 
   const [currentItem, setCurrentItem] = useState({
     typeId: "",
+    foodName: "",
     quantity: 1,
   });
 
@@ -102,7 +101,7 @@ export default function BabyFoodPage() {
       });
       if (!res.ok) throw new Error("Tanım eklenemedi");
       toast.success("Mama tanımı başarıyla eklendi");
-      setNewTypeData({ brand: "", foodName: "", weight: "" });
+      setNewTypeData({ brand: "", weight: "" });
       fetchFoodTypes();
     } catch (error: any) {
       toast.error(error.message || "Bir hata oluştu");
@@ -123,7 +122,11 @@ export default function BabyFoodPage() {
 
   const addItemToForm = () => {
     if (!currentItem.typeId) {
-      toast.error("Lütfen bir mama türü seçin");
+      toast.error("Lütfen bir mama markası seçin");
+      return;
+    }
+    if (!currentItem.foodName) {
+      toast.error("Lütfen numara/tür bilgisini girin");
       return;
     }
     const selectedType = foodTypes.find(t => t._id === currentItem.typeId);
@@ -135,13 +138,13 @@ export default function BabyFoodPage() {
         ...prev.items,
         {
           brand: selectedType.brand,
-          foodName: selectedType.foodName,
+          foodName: currentItem.foodName,
           weight: selectedType.weight,
           quantity: currentItem.quantity,
         }
       ]
     }));
-    setCurrentItem({ typeId: "", quantity: 1 });
+    setCurrentItem({ typeId: "", foodName: "", quantity: 1 });
   };
 
   const removeItemFromForm = (index: number) => {
@@ -205,7 +208,7 @@ export default function BabyFoodPage() {
       babyName: "",
       items: [],
     });
-    setCurrentItem({ typeId: "", quantity: 1 });
+    setCurrentItem({ typeId: "", foodName: "", quantity: 1 });
   };
 
   const openEditModal = (record: BabyFoodRecord) => {
@@ -463,7 +466,7 @@ export default function BabyFoodPage() {
                 
                 <div className="bg-slate-50 p-4 rounded-xl border border-slate-200 flex flex-col md:flex-row gap-3 items-end">
                   <div className="space-y-1.5 flex-1 w-full">
-                    <label className="text-sm font-medium text-slate-700">Mama Seçimi</label>
+                    <label className="text-sm font-medium text-slate-700">Marka ve Gramaj Seçimi</label>
                     <select
                       value={currentItem.typeId}
                       onChange={(e) => setCurrentItem({ ...currentItem, typeId: e.target.value })}
@@ -472,9 +475,24 @@ export default function BabyFoodPage() {
                       <option value="">Seçiniz...</option>
                       {foodTypes.map(type => (
                         <option key={type._id} value={type._id}>
-                          {type.brand} {type.foodName} ({type.weight})
+                          {type.brand} ({type.weight})
                         </option>
                       ))}
+                    </select>
+                  </div>
+                  <div className="space-y-1.5 w-full md:w-48">
+                    <label className="text-sm font-medium text-slate-700">Numara</label>
+                    <select
+                      value={currentItem.foodName}
+                      onChange={(e) => setCurrentItem({ ...currentItem, foodName: e.target.value })}
+                      className="w-full px-4 py-2 bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500 transition-all"
+                    >
+                      <option value="">Seçiniz...</option>
+                      <option value="1 Numara">1 Numara</option>
+                      <option value="2 Numara">2 Numara</option>
+                      <option value="3 Numara">3 Numara</option>
+                      <option value="4 Numara">4 Numara</option>
+                      <option value="5 Numara">5 Numara</option>
                     </select>
                   </div>
                   <div className="space-y-1.5 w-full md:w-32">
@@ -569,8 +587,8 @@ export default function BabyFoodPage() {
 
             <div className="p-6 overflow-y-auto flex-1 bg-slate-50/50">
               <form onSubmit={handleAddType} className="bg-white p-5 rounded-xl border border-slate-200 mb-8 shadow-sm">
-                <h3 className="text-sm font-semibold text-slate-800 mb-4">Yeni Mama Türü Ekle</h3>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <h3 className="text-sm font-semibold text-slate-800 mb-4">Yeni Marka & Gramaj Ekle</h3>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className="space-y-1.5">
                     <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Marka</label>
                     <input
@@ -579,17 +597,6 @@ export default function BabyFoodPage() {
                       placeholder="Aptamil"
                       value={newTypeData.brand}
                       onChange={(e) => setNewTypeData({ ...newTypeData, brand: e.target.value })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1.5">
-                    <label className="text-xs font-medium text-slate-500 uppercase tracking-wide">Tür / No</label>
-                    <input
-                      required
-                      type="text"
-                      placeholder="1 Numara"
-                      value={newTypeData.foodName}
-                      onChange={(e) => setNewTypeData({ ...newTypeData, foodName: e.target.value })}
                       className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 text-sm"
                     />
                   </div>
@@ -622,11 +629,11 @@ export default function BabyFoodPage() {
                       {foodTypes.map(type => (
                         <li key={type._id} className="flex justify-between items-center p-4 hover:bg-slate-50 transition-colors">
                           <div className="flex items-center gap-3">
-                            <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center text-pink-600">
+                                <div className="w-10 h-10 rounded-full bg-pink-100 flex items-center justify-center text-pink-600">
                               <Package className="w-5 h-5" />
                             </div>
                             <div>
-                              <p className="font-semibold text-slate-800 text-sm">{type.brand} {type.foodName}</p>
+                              <p className="font-semibold text-slate-800 text-sm">{type.brand}</p>
                               <p className="text-xs text-slate-500">{type.weight}</p>
                             </div>
                           </div>

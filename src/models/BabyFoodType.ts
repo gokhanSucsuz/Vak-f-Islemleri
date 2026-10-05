@@ -6,10 +6,6 @@ const BabyFoodTypeSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
-    foodName: {
-      type: String,
-      required: true,
-    },
     weight: {
       type: String,
       required: true,
