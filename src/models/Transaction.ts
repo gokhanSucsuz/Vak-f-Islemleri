@@ -14,12 +14,6 @@ const TransactionSchema = new mongoose.Schema(
       set: encryptData,
       get: decryptData,
     },
-    actionTaken: {
-      type: String,
-      required: true,
-      set: encryptData,
-      get: decryptData,
-    },
     helpType: {
       type: mongoose.Schema.Types.ObjectId,
       ref: 'HelpType',

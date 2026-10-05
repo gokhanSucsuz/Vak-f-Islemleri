@@ -12,9 +12,9 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 
-    const { citizenInfo, actionTaken } = await req.json();
+    const { citizenInfo, helpType } = await req.json();
 
-    if (!citizenInfo || !actionTaken) {
+    if (!citizenInfo) {
       return NextResponse.json({ error: "Eksik bilgi" }, { status: 400 });
     }
 
@@ -37,7 +37,7 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     }
 
     transaction.citizenInfo = citizenInfo;
-    transaction.actionTaken = actionTaken;
+    if (helpType) transaction.helpType = helpType;
     await transaction.save();
 
     const Log = (await import("@/models/Log")).default;

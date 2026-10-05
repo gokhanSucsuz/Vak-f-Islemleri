@@ -12,9 +12,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 
-    const { citizenInfo, actionTaken, helpType } = await req.json();
+    const { citizenInfo, helpType } = await req.json();
 
-    if (!citizenInfo || !actionTaken) {
+    if (!citizenInfo) {
       return NextResponse.json({ error: "Eksik bilgi" }, { status: 400 });
     }
 
@@ -23,7 +23,6 @@ export async function POST(req: Request) {
     const transaction = new Transaction({
       userId: session.user.id,
       citizenInfo,
-      actionTaken,
       helpType: helpType || undefined,
     });
 
@@ -93,8 +92,7 @@ export async function GET(req: Request) {
       const lowerSearch = searchText.toLowerCase();
       filteredTransactions = transactions.filter((t: any) => {
         const infoMatch = t.citizenInfo && t.citizenInfo.toLowerCase().includes(lowerSearch);
-        const actionMatch = t.actionTaken && t.actionTaken.toLowerCase().includes(lowerSearch);
-        return infoMatch || actionMatch;
+        return infoMatch;
       });
     }
 

@@ -342,7 +342,6 @@ export default function ReportsPage() {
                     )}
                     <th className="py-3 px-4 font-semibold text-slate-700 text-sm w-1/4">Vatandaş Bilgisi</th>
                     <th className="py-3 px-4 font-semibold text-slate-700 text-sm">Tür</th>
-                    <th className="py-3 px-4 font-semibold text-slate-700 text-sm">Yapılan İşlem</th>
                     {session?.user?.role === "superadmin" && (
                       <th className="py-3 px-4 font-semibold text-slate-700 text-sm text-right print:hidden">İşlem</th>
                     )}
@@ -366,9 +365,6 @@ export default function ReportsPage() {
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
                           {t.helpType?.name || "-"}
                         </span>
-                      </td>
-                      <td className="py-4 px-4 text-sm text-slate-600 whitespace-pre-wrap align-top border-t border-slate-100 print:whitespace-pre-wrap print:break-words">
-                        {t.actionTaken}
                       </td>
                       {session?.user?.role === "superadmin" && (
                         <td className="py-4 px-4 text-sm align-top text-right border-t border-slate-100 print:hidden">

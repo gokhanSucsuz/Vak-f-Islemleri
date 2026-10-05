@@ -13,7 +13,6 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(false);
   const [formData, setFormData] = useState({
     citizenInfo: "",
-    actionTaken: "",
     helpType: "",
   });
   
@@ -25,7 +24,7 @@ export default function DashboardPage() {
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editFormData, setEditFormData] = useState({
     citizenInfo: "",
-    actionTaken: "",
+    helpType: "",
   });
 
   const fetchData = async () => {
@@ -78,7 +77,7 @@ export default function DashboardPage() {
     setFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+  const handleEditChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
     const { name, value } = e.target;
     setEditFormData(prev => ({ ...prev, [name]: value }));
   };
@@ -96,7 +95,7 @@ export default function DashboardPage() {
 
       if (res.ok) {
         toast.success("İşlem başarıyla kaydedildi!");
-        setFormData({ citizenInfo: "", actionTaken: "", helpType: "" });
+        setFormData({ citizenInfo: "", helpType: "" });
         fetchData();
       } else {
         const data = await res.json();
@@ -148,7 +147,7 @@ export default function DashboardPage() {
     setEditingId(t._id);
     setEditFormData({
       citizenInfo: t.citizenInfo,
-      actionTaken: t.actionTaken,
+      helpType: t.helpType?._id || "",
     });
   };
 
@@ -221,19 +220,6 @@ export default function DashboardPage() {
                 </select>
               </div>
 
-              <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Yapılan İşlem Detayı</label>
-                <textarea
-                  name="actionTaken"
-                  required
-                  rows={3}
-                  value={formData.actionTaken}
-                  onChange={handleChange}
-                  className="block w-full p-4 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
-                  placeholder="Görüşme detayı ve yapılan işlemi buraya yazınız..."
-                ></textarea>
-              </div>
-
               <div className="flex items-center justify-between pt-4 border-t border-slate-100">
                 <div className="flex items-center text-sm text-slate-500">
                   <Clock className="w-4 h-4 mr-2" />
@@ -270,7 +256,6 @@ export default function DashboardPage() {
                 )}
                 <th className="py-3 px-6 font-semibold text-slate-600 text-sm">Vatandaş Bilgisi</th>
                 <th className="py-3 px-6 font-semibold text-slate-600 text-sm">Tür</th>
-                <th className="py-3 px-6 font-semibold text-slate-600 text-sm w-1/2">Yapılan İşlem</th>
                 {session?.user?.role !== "manager" && (
                   <th className="py-3 px-6 font-semibold text-slate-600 text-sm text-right">İşlemler</th>
                 )}
@@ -312,22 +297,22 @@ export default function DashboardPage() {
                       </td>
 
                       <td className="py-4 px-6 align-top border-t border-slate-100">
-                        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-                          {t.helpType?.name || "-"}
-                        </span>
-                      </td>
-                      
-                      <td className="py-4 px-6 align-top border-t border-slate-100">
                         {isEditing ? (
-                          <textarea 
-                            name="actionTaken"
-                            rows={3}
-                            value={editFormData.actionTaken}
+                          <select
+                            name="helpType"
+                            value={editFormData.helpType}
                             onChange={handleEditChange}
                             className="w-full p-2 border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
-                          />
+                          >
+                            <option value="">Seçiniz...</option>
+                            {helpTypes.map((ht: any) => (
+                              <option key={ht._id} value={ht._id}>{ht.name}</option>
+                            ))}
+                          </select>
                         ) : (
-                          <span className="text-sm text-slate-600 whitespace-pre-wrap">{t.actionTaken}</span>
+                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                            {t.helpType?.name || "-"}
+                          </span>
                         )}
                       </td>
                       
