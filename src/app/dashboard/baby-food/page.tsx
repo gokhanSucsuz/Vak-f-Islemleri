@@ -237,7 +237,15 @@ export default function BabyFoodPage() {
     });
     return acc;
   }, {} as Record<string, number>);
-  const topBrand = Object.entries(brandStats).sort((a, b) => b[1] - a[1])[0]?.[0] || "-";
+  const detailedStats = records.reduce((acc, curr) => {
+    curr.items.forEach(item => {
+      const key = `${item.brand} - ${item.foodName} (${item.weight})`;
+      acc[key] = (acc[key] || 0) + item.quantity;
+    });
+    return acc;
+  }, {} as Record<string, number>);
+
+  const sortedDetailedStats = Object.entries(detailedStats).sort((a, b) => b[1] - a[1]);
 
   return (
     <div className="space-y-6">
@@ -259,47 +267,67 @@ export default function BabyFoodPage() {
               Mama Türleri
             </button>
           )}
-          <button
-            onClick={() => {
-              resetForm();
-              setEditingRecord(null);
-              setIsModalOpen(true);
-            }}
-            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-pink-500 hover:bg-pink-600 text-white px-5 py-2.5 rounded-xl font-medium transition-all shadow-lg shadow-pink-500/30"
-          >
-            <Plus className="w-5 h-5" />
-            Yeni Kayıt
-          </button>
+          {userRole === "personnel" && (
+            <button
+              onClick={() => {
+                resetForm();
+                setEditingRecord(null);
+                setIsModalOpen(true);
+              }}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-pink-500 hover:bg-pink-600 text-white px-5 py-2.5 rounded-xl font-medium transition-all shadow-lg shadow-pink-500/30"
+            >
+              <Plus className="w-5 h-5" />
+              Yeni Kayıt
+            </button>
+          )}
         </div>
       </div>
 
       {(userRole === "manager" || userRole === "superadmin") && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 hover:shadow-md transition-shadow">
-            <div className="bg-blue-100 p-4 rounded-xl text-blue-600">
-              <Package className="w-8 h-8" />
+        <div className="space-y-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 hover:shadow-md transition-shadow">
+              <div className="bg-blue-100 p-4 rounded-xl text-blue-600">
+                <Package className="w-8 h-8" />
+              </div>
+              <div>
+                <p className="text-sm text-slate-500 font-medium">Toplam Teslim Edilen Mama</p>
+                <h3 className="text-2xl font-bold text-slate-800">{totalGiven} Adet</h3>
+              </div>
             </div>
-            <div>
-              <p className="text-sm text-slate-500 font-medium">Toplam Teslim Edilen Mama</p>
-              <h3 className="text-2xl font-bold text-slate-800">{totalGiven} Adet</h3>
+            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 hover:shadow-md transition-shadow">
+              <div className="bg-green-100 p-4 rounded-xl text-green-600">
+                <Users className="w-8 h-8" />
+              </div>
+              <div>
+                <p className="text-sm text-slate-500 font-medium">Ulaşılan Aile Sayısı</p>
+                <h3 className="text-2xl font-bold text-slate-800">{uniqueFamilies} Aile</h3>
+              </div>
             </div>
           </div>
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 hover:shadow-md transition-shadow">
-            <div className="bg-green-100 p-4 rounded-xl text-green-600">
-              <Users className="w-8 h-8" />
+
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-100 overflow-hidden">
+            <div className="p-4 border-b border-slate-100 bg-slate-50/50">
+              <h3 className="text-sm font-bold text-slate-700 flex items-center gap-2">
+                <Activity className="w-4 h-4 text-purple-500" />
+                Mamaların Tür ve Numaralarına Göre Dağılımı
+              </h3>
             </div>
-            <div>
-              <p className="text-sm text-slate-500 font-medium">Ulaşılan Aile Sayısı</p>
-              <h3 className="text-2xl font-bold text-slate-800">{uniqueFamilies} Aile</h3>
-            </div>
-          </div>
-          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4 hover:shadow-md transition-shadow">
-            <div className="bg-purple-100 p-4 rounded-xl text-purple-600">
-              <Activity className="w-8 h-8" />
-            </div>
-            <div>
-              <p className="text-sm text-slate-500 font-medium">En Çok Tercih Edilen Marka</p>
-              <h3 className="text-2xl font-bold text-slate-800">{topBrand}</h3>
+            <div className="p-4">
+              {sortedDetailedStats.length === 0 ? (
+                <p className="text-sm text-slate-500 text-center py-4">Henüz veri yok.</p>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                  {sortedDetailedStats.map(([name, count], index) => (
+                    <div key={index} className="flex justify-between items-center p-3 rounded-xl bg-slate-50 border border-slate-100">
+                      <span className="text-sm font-medium text-slate-700">{name}</span>
+                      <span className="inline-flex items-center justify-center px-2.5 py-1 text-xs font-bold bg-purple-100 text-purple-700 rounded-full">
+                        {count} Adet
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           </div>
         </div>
