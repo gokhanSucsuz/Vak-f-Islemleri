@@ -20,6 +20,7 @@ export async function GET() {
 
     return NextResponse.json({ users }, { status: 200 });
   } catch (error) {
+     console.log("GİZLİ VERİTABANI HATASI:", error);
     return NextResponse.json({ error: "Sunucu hatası" }, { status: 500 });
   }
 }
