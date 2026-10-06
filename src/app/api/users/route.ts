@@ -56,6 +56,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json({ message: "Kullanıcı oluşturuldu" }, { status: 201 });
   } catch (error) {
+    console.log("GİZLİ VERİTABANI HATASI:", error);
     return NextResponse.json({ error: "Sunucu hatası" }, { status: 500 });
   }
 }
