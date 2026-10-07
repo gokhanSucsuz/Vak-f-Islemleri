@@ -12,19 +12,21 @@ export default function LoginPage() {
   const [selectedEmail, setSelectedEmail] = useState("");
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
+  const [googleLoginEnabled, setGoogleLoginEnabled] = useState(false);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const router = useRouter();
 
   useEffect(() => {
-    // Sadece Google'dan geçmiş ama tam rol almamış kişi personelleri görebilir
-    if (session && (session as any).googleVerified && !session.user?.role) {
-      fetchUsers();
-    }
-    
-    // Zaten tam yetkili (personel/müdür/superadmin) ise dashboard'a at
-    if (session?.user?.role) {
-      router.push("/dashboard");
-    }
-  }, [session, router]);
+    fetch("/api/settings/system")
+      .then((res) => res.json())
+      .then((data) => {
+        setGoogleLoginEnabled(data.googleLoginEnabled);
+        setSettingsLoaded(true);
+      })
+      .catch(() => {
+        setSettingsLoaded(true);
+      });
+  }, []);
 
   const fetchUsers = async () => {
     try {
@@ -37,6 +39,22 @@ export default function LoginPage() {
       console.error(e);
     }
   };
+
+  useEffect(() => {
+    if (!settingsLoaded) return;
+
+    const isVerified = session && (session as any).googleVerified;
+    const hasRole = session?.user?.role;
+
+    if (hasRole) {
+      router.push("/dashboard");
+      return;
+    }
+
+    if ((!googleLoginEnabled || isVerified) && !hasRole) {
+      fetchUsers();
+    }
+  }, [session, router, settingsLoaded, googleLoginEnabled]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -69,11 +87,13 @@ export default function LoginPage() {
     }
   };
 
-  if (status === "loading") {
+  if (status === "loading" || !settingsLoaded) {
     return <div className="min-h-screen flex items-center justify-center bg-slate-100">Yükleniyor...</div>;
   }
 
   const isGoogleVerified = session && (session as any).googleVerified && !session.user?.role;
+  const isGoogleStepRequired = googleLoginEnabled;
+  const canSeePersonnelForm = !isGoogleStepRequired || isGoogleVerified;
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 relative overflow-hidden p-4">
@@ -84,7 +104,7 @@ export default function LoginPage() {
       <div className="glass-panel w-full max-w-md p-8 rounded-3xl z-10 relative">
         <div className="flex justify-center mb-6">
           <div className="bg-blue-600 p-4 rounded-2xl shadow-lg shadow-blue-500/30">
-            {isGoogleVerified ? (
+            {canSeePersonnelForm ? (
               <KeyRound className="text-white w-10 h-10" />
             ) : (
               <ShieldAlert className="text-white w-10 h-10" />
@@ -93,10 +113,10 @@ export default function LoginPage() {
         </div>
         <h2 className="text-3xl font-bold text-center text-slate-800 mb-2 tracking-tight">Sisteme Giriş</h2>
         <p className="text-center text-slate-500 mb-8 text-sm font-medium">
-          {isGoogleVerified ? "Lütfen adınızı seçip şifrenizi girin." : "Vakıf İşlemleri Yönetim Paneli - Yetki Doğrulaması"}
+          {canSeePersonnelForm ? "Lütfen adınızı seçip şifrenizi girin." : "Vakıf İşlemleri Yönetim Paneli - Yetki Doğrulaması"}
         </p>
 
-        {!isGoogleVerified ? (
+        {!canSeePersonnelForm ? (
           // SADECE GOOGLE GİRİŞİ (1. AŞAMA)
           <div className="space-y-4">
             <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mb-6 text-amber-800 text-sm font-medium text-center">
