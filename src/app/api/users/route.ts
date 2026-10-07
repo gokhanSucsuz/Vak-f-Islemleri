@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import User from "@/models/User";
+import SystemSetting from "@/models/SystemSetting";
 import bcrypt from "bcryptjs";
 
 export async function GET() {
@@ -11,11 +12,18 @@ export async function GET() {
     const hasRole = session?.user?.role === "superadmin" || session?.user?.role === "manager";
     const isGoogleVerified = (session as any)?.googleVerified === true;
     
-    if (!session || (!hasRole && !isGoogleVerified)) {
+    await dbConnect();
+    
+    const setting = await SystemSetting.findOne({ key: "googleLoginEnabled" });
+    const isGoogleLoginEnabled = setting?.value ?? false;
+    
+    if (!session && isGoogleLoginEnabled) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
-
-    await dbConnect();
+    
+    if (session && !hasRole && !isGoogleVerified) {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
+    }
     const users = await User.find({ role: { $in: ["personnel", "manager"] } }).select("-password");
 
     return NextResponse.json({ users }, { status: 200 });

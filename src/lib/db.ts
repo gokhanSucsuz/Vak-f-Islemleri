@@ -7,7 +7,10 @@ if (!cached) {
 }
 
 async function dbConnect() {
-  const MONGODB_URI = process.env.MONGODB_URI!;
+  let MONGODB_URI = process.env.MONGODB_URI!;
+  if (MONGODB_URI && MONGODB_URI.includes("@mongodb-database-")) {
+    MONGODB_URI = MONGODB_URI.replace("@mongodb-database-", "@");
+  }
 
   if (!MONGODB_URI) {
     throw new Error(

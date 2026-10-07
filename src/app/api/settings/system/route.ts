@@ -11,6 +11,7 @@ export async function GET() {
     // Varsayılan olarak kapalı olması istendiği için false dönüyoruz
     return NextResponse.json({ googleLoginEnabled: setting?.value ?? false });
   } catch (error) {
+    console.error("System settings GET error:", error);
     return NextResponse.json({ error: "Ayarlar alınamadı" }, { status: 500 });
   }
 }
