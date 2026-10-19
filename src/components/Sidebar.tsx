@@ -3,7 +3,7 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { LayoutDashboard, Users, FileText, Settings, LogOut, Menu, X, Activity, Baby } from "lucide-react";
+import { LayoutDashboard, Users, FileText, Settings, LogOut, Menu, X, Activity, Baby, Gift } from "lucide-react";
 import { useState } from "react";
 import clsx from "clsx";
 
@@ -16,9 +16,10 @@ export default function Sidebar() {
     { name: "Ana Ekran", href: "/dashboard", icon: LayoutDashboard, roles: ["superadmin", "manager", "personnel"] },
     { name: "Personel Yönetimi", href: "/dashboard/users", icon: Users, roles: ["superadmin"] },
     { name: "Sistem Logları", href: "/dashboard/logs", icon: Activity, roles: ["superadmin"] },
-    { name: "Raporlar", href: "/dashboard/reports", icon: FileText, roles: ["superadmin", "manager"] },
+    { name: "Raporlar", href: "/dashboard/reports", icon: FileText, roles: ["superadmin", "manager", "personnel"] },
     { name: "Yardım Türleri", href: "/dashboard/help-types", icon: FileText, roles: ["superadmin", "manager"] },
     { name: "Bebek Maması", href: "/dashboard/baby-food", icon: Baby, roles: ["superadmin", "manager", "personnel"] },
+    { name: "Ayni Yardım", href: "/dashboard/in-kind-aid", icon: Gift, roles: ["superadmin", "manager", "personnel"] },
     { name: "Şifre Değiştir", href: "/dashboard/settings", icon: Settings, roles: ["superadmin", "manager", "personnel"] },
   ];
 

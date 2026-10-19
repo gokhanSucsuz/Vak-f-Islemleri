@@ -15,6 +15,9 @@ export async function GET(req: Request) {
     const url = new URL(req.url);
     const dateStart = url.searchParams.get("dateStart");
     const dateEnd = url.searchParams.get("dateEnd");
+    const userId = url.searchParams.get("userId");
+    const brand = url.searchParams.get("brand");
+    const search = url.searchParams.get("search");
 
     await dbConnect();
 
@@ -25,8 +28,26 @@ export async function GET(req: Request) {
       if (dateEnd) query.createdAt.$lte = new Date(dateEnd);
     }
 
-    // All roles can view all records (or filtered by date)
-    const records = await BabyFood.find(query).populate('createdBy', 'name').sort({ createdAt: -1 });
+    if (userId) {
+      query.createdBy = userId;
+    }
+
+    if (brand) {
+      query["items.brand"] = brand;
+    }
+
+    if (search && search.trim()) {
+      const regex = new RegExp(search.trim(), "i");
+      query.$or = [
+        { motherInfo: regex },
+        { tcNo: regex },
+        { receiver: regex },
+        { babyName: regex },
+        { "items.foodName": regex },
+      ];
+    }
+
+    const records = await BabyFood.find(query).populate('createdBy', 'name email').sort({ createdAt: -1 });
     
     return NextResponse.json(records);
   } catch (error: any) {
@@ -45,9 +66,11 @@ export async function POST(req: Request) {
     await dbConnect();
 
     const userAny = session.user as any;
+    const tcNo = body.tcNo?.trim() || body.motherInfo?.match(/\b\d{11}\b/)?.[0] || "";
 
     const newRecord = await BabyFood.create({
       ...body,
+      tcNo,
       createdBy: userAny.id,
     });
 
@@ -89,7 +112,8 @@ export async function PUT(req: Request) {
       return NextResponse.json({ error: "Bu kaydı düzenleme yetkiniz yok" }, { status: 403 });
     }
 
-    const updatedRecord = await BabyFood.findByIdAndUpdate(_id, updateData, { new: true });
+    const tcNo = updateData.tcNo?.trim() || updateData.motherInfo?.match(/\b\d{11}\b/)?.[0] || record.tcNo || "";
+    const updatedRecord = await BabyFood.findByIdAndUpdate(_id, { ...updateData, tcNo }, { new: true });
 
     try {
       await Log.create({
