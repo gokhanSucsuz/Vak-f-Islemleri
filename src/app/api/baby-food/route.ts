@@ -66,18 +66,21 @@ export async function POST(req: Request) {
     await dbConnect();
 
     const userAny = session.user as any;
+    const userId = userAny.id || userAny._id;
     const tcNo = body.tcNo?.trim() || body.motherInfo?.match(/\b\d{11}\b/)?.[0] || "";
 
     const newRecord = await BabyFood.create({
       ...body,
       tcNo,
-      createdBy: userAny.id,
+      createdBy: userId,
     });
 
     try {
-      const itemsDetail = body.items.map((i: any) => `${i.quantity} adet ${i.brand} ${i.foodName} (${i.weight})`).join(', ');
+      const itemsDetail = Array.isArray(body.items)
+        ? body.items.map((i: any) => `${i.quantity} adet ${i.brand} ${i.foodName} (${i.weight})`).join(', ')
+        : '';
       await Log.create({
-        userId: userAny.id,
+        userId: userId,
         action: "Bebek Maması Kaydı Eklendi",
         details: `${body.motherInfo} isimli anneye ${itemsDetail} teslim edildi.`,
       });
@@ -87,6 +90,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(newRecord, { status: 201 });
   } catch (error: any) {
+    console.error("Baby food POST error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

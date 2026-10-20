@@ -37,14 +37,13 @@ const BabyFoodSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-BabyFoodSchema.pre('save', function (this: any, next: any) {
+BabyFoodSchema.pre('save', function (this: any) {
   if (!this.tcNo && this.motherInfo) {
     const match = this.motherInfo.match(/\b\d{11}\b/);
     if (match) {
       this.tcNo = match[0];
     }
   }
-  next();
 });
 
 export default mongoose.models.BabyFood || mongoose.model('BabyFood', BabyFoodSchema);

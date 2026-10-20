@@ -72,20 +72,21 @@ export async function POST(req: Request) {
     await dbConnect();
 
     const userAny = session.user as any;
+    const userId = userAny.id || userAny._id;
     const tcNo = body.tcNo?.trim() || body.citizenName?.match(/\b\d{11}\b/)?.[0] || "";
 
     const newRecord = await InKindAid.create({
       ...body,
       tcNo,
-      createdBy: userAny.id,
+      createdBy: userId,
     });
 
     try {
-      const itemsDetail = body.items
-        ?.map((i: any) => `${i.quantity} ${i.unit} ${i.aidType} (${i.specification || "-"})`)
-        .join(", ");
+      const itemsDetail = Array.isArray(body.items)
+        ? body.items.map((i: any) => `${i.quantity} ${i.unit} ${i.aidType} (${i.specification || "-"})`).join(", ")
+        : "";
       await Log.create({
-        userId: userAny.id,
+        userId: userId,
         action: "Ayni Yardım Kaydı Eklendi",
         details: `${body.citizenName} (TC: ${tcNo || "-"}) kişisine ${itemsDetail} teslim edildi.`,
       });
@@ -95,6 +96,7 @@ export async function POST(req: Request) {
 
     return NextResponse.json(newRecord, { status: 201 });
   } catch (error: any) {
+    console.error("In-kind aid POST error:", error);
     return NextResponse.json({ error: error.message }, { status: 500 });
   }
 }

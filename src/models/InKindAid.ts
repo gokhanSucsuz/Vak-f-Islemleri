@@ -49,14 +49,13 @@ const InKindAidSchema = new mongoose.Schema(
   { timestamps: true }
 );
 
-InKindAidSchema.pre('save', function (this: any, next: any) {
+InKindAidSchema.pre('save', function (this: any) {
   if (!this.tcNo && this.citizenName) {
     const match = this.citizenName.match(/\b\d{11}\b/);
     if (match) {
       this.tcNo = match[0];
     }
   }
-  next();
 });
 
 export default mongoose.models.InKindAid || mongoose.model('InKindAid', InKindAidSchema);
