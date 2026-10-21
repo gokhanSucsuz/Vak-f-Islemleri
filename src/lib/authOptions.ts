@@ -83,21 +83,45 @@ export const authOptions: NextAuthOptions = {
       if (account?.provider === "google") {
         token.googleVerified = true;
         // Eski rolleri sıfırlayalım ki tam yetkili gibi girmesin
-        delete (token as any).role;
-        delete (token as any).id;
+        delete token.role;
+        delete token.id;
       } else if (user) {
         token.role = user.role;
         token.id = user.id;
+        token.loginTime = Math.floor(Date.now() / 1000);
       }
+
+      // Güvenlik: 6 Saat Kuralı (6 saat = 21.600 saniye)
+      // Oturum açıldıktan sonra 6 saat geçmişse token'ı geçersiz kıl
+      if (token.loginTime) {
+        const now = Math.floor(Date.now() / 1000);
+        const maxAgeSeconds = 6 * 60 * 60; // 6 saat
+        if (now - (token.loginTime as number) > maxAgeSeconds) {
+          delete token.id;
+          delete token.role;
+          delete token.loginTime;
+          return token;
+        }
+      }
+
       return token;
     },
     async session({ session, token }) {
+      // Token süresi dolmuşsa veya yetkiler silinmişse oturumu geçersiz kıl
+      if (!token || !token.id || !token.role) {
+        return {
+          ...session,
+          user: undefined,
+          expires: new Date(0).toISOString(),
+        } as any;
+      }
+
       if (token.googleVerified) {
         (session as any).googleVerified = true;
       }
       if (token.role && session.user) {
-        (session.user as any).role = token.role as string;
-        (session.user as any).id = token.id as string;
+        session.user.role = token.role as string;
+        session.user.id = token.id as string;
       }
       return session;
     },
@@ -107,6 +131,10 @@ export const authOptions: NextAuthOptions = {
   },
   session: {
     strategy: "jwt",
+    maxAge: 6 * 60 * 60, // 6 saat (21.600 saniye)
+  },
+  jwt: {
+    maxAge: 6 * 60 * 60, // 6 saat (21.600 saniye)
   },
   secret: process.env.NEXTAUTH_SECRET,
 };

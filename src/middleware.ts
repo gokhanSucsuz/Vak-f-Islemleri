@@ -12,11 +12,11 @@ export default withAuth(
   },
   {
     callbacks: {
-      authorized: ({ token }) => !!token,
+      authorized: ({ token }) => !!token?.role && !!token?.id,
     },
   }
 );
 
 export const config = {
-  matcher: ["/dashboard/:path*", "/api/transactions/:path*"],
+  matcher: ["/dashboard/:path*", "/api/transactions/:path*", "/api/baby-food/:path*", "/api/in-kind-aid/:path*"],
 };
