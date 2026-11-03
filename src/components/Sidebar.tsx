@@ -3,7 +3,19 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { useSession, signOut } from "next-auth/react";
-import { LayoutDashboard, Users, FileText, Settings, LogOut, Menu, X, Activity, Baby, Gift } from "lucide-react";
+import {
+  LayoutDashboard,
+  Users,
+  FileText,
+  Settings,
+  LogOut,
+  Menu,
+  X,
+  Activity,
+  Baby,
+  Gift,
+  FolderOpen,
+} from "lucide-react";
 import { useState } from "react";
 import clsx from "clsx";
 
@@ -14,6 +26,7 @@ export default function Sidebar() {
 
   const navItems = [
     { name: "Ana Ekran", href: "/dashboard", icon: LayoutDashboard, roles: ["superadmin", "manager", "personnel"] },
+    { name: "Başvuru Dosyaları", href: "/dashboard/applications", icon: FolderOpen, roles: ["superadmin", "manager", "personnel"] },
     { name: "Personel Yönetimi", href: "/dashboard/users", icon: Users, roles: ["superadmin"] },
     { name: "Sistem Logları", href: "/dashboard/logs", icon: Activity, roles: ["superadmin"] },
     { name: "Raporlar", href: "/dashboard/reports", icon: FileText, roles: ["superadmin", "manager", "personnel"] },

@@ -1,0 +1,88 @@
+import mongoose from 'mongoose';
+
+const ApplicationFileSchema = new mongoose.Schema(
+  {
+    applicationNo: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+      index: true,
+    },
+    applicationNoSeq: {
+      type: Number,
+      index: true,
+      default: 0,
+    },
+    applicantName: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    tcNo: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    phone: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    address: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    fileStatus: {
+      type: String,
+      default: 'Aktif',
+      trim: true,
+    },
+    applicationDate: {
+      type: Date,
+      default: Date.now,
+    },
+    notes: {
+      type: String,
+      default: '',
+    },
+    extraData: {
+      type: mongoose.Schema.Types.Mixed,
+      default: {},
+    },
+    columnHeaders: {
+      type: [String],
+      default: [],
+    },
+    createdBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+    updatedBy: {
+      type: mongoose.Schema.Types.ObjectId,
+      ref: 'User',
+    },
+  },
+  { timestamps: true }
+);
+
+// Pre-save hook: compute applicationNoSeq if numeric
+ApplicationFileSchema.pre('save', function () {
+  if (this.applicationNo) {
+    const num = parseInt(this.applicationNo.toString().replace(/\D/g, ''), 10);
+    this.applicationNoSeq = !isNaN(num) ? num : 0;
+  }
+  // If applicantName is empty or only whitespace, adjust fileStatus if default
+  if (!this.applicantName || this.applicantName.trim() === '') {
+    if (this.fileStatus === 'Aktif') {
+      this.fileStatus = 'Boş Dosya';
+    }
+  } else if (this.fileStatus === 'Boş Dosya' && this.applicantName.trim() !== '') {
+    this.fileStatus = 'Aktif';
+  }
+});
+
+export default mongoose.models.ApplicationFile ||
+  mongoose.model('ApplicationFile', ApplicationFileSchema);
+

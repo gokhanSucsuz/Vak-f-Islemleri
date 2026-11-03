@@ -20,6 +20,10 @@ const UserSchema = new mongoose.Schema(
       enum: ['superadmin', 'manager', 'personnel'],
       default: 'personnel',
     },
+    canManageApplications: {
+      type: Boolean,
+      default: false,
+    },
   },
   { timestamps: true }
 );
