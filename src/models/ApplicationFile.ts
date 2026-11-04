@@ -6,7 +6,6 @@ const ApplicationFileSchema = new mongoose.Schema(
       type: String,
       required: true,
       trim: true,
-      index: true,
     },
     sheetName: {
       type: String,

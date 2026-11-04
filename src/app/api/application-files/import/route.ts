@@ -146,6 +146,7 @@ export async function POST(req: Request) {
     // Toplu işlemler için hazırlık (Chunking 500)
     const CHUNK_SIZE = 500;
     const bulkOps: any[] = [];
+    const seenInSheet = new Map<string, number>();
 
     for (let index = 0; index < itemsToProcess.length; index++) {
       const { row, sheetName, columnHeaders, rowIndex } = itemsToProcess[index];
@@ -180,6 +181,15 @@ export async function POST(req: Request) {
         // Otomatik sıra numarası ata (veri kaybı olmaması için)
         applicationNo = String(rowIndex - 1);
       }
+
+      // Sekme içinde mükerrer başvuru numaralarını ayırt et (veri kaybını ve duplicate key hatasını önler)
+      const sheetKey = `${sheetName}___${applicationNo}`;
+      const prevCount = seenInSheet.get(sheetKey) || 0;
+      seenInSheet.set(sheetKey, prevCount + 1);
+      if (prevCount > 0) {
+        applicationNo = `${applicationNo}-${prevCount + 1}`;
+      }
+
       const numericSeq = parseInt(applicationNo.replace(/\D/g, ""), 10) || rowIndex - 1;
 
       // 2. ADI SOYADI & T.C. AYIKLAMA
@@ -371,19 +381,38 @@ export async function POST(req: Request) {
       });
     }
 
-    // Chunklar halinde hızlı ve güvenli bulkWrite çalıştır
+    // Chunklar halinde hızlı ve güvenli bulkWrite çalıştır (Hata durumunda satır satır kurtarma)
     for (let i = 0; i < bulkOps.length; i += CHUNK_SIZE) {
       const chunk = bulkOps.slice(i, i + CHUNK_SIZE);
-      const res = await ApplicationFile.bulkWrite(chunk, { ordered: false });
-      insertedCount += res.upsertedCount || 0;
-      updatedCount += res.modifiedCount || 0;
+      try {
+        const res = await ApplicationFile.bulkWrite(chunk, { ordered: false });
+        insertedCount += res.upsertedCount || 0;
+        updatedCount += res.modifiedCount || 0;
+      } catch (chunkErr: any) {
+        console.warn("bulkWrite chunk uyarısı, satır bazlı güvenli işleme geçiliyor:", chunkErr.message);
+        for (const op of chunk) {
+          try {
+            const res = await ApplicationFile.updateOne(
+              op.updateOne.filter,
+              op.updateOne.update,
+              { upsert: true }
+            );
+            if (res.upsertedCount) insertedCount++;
+            else if (res.modifiedCount) updatedCount++;
+          } catch (singleErr: any) {
+            const appNo = op.updateOne?.filter?.applicationNo || "Bilinmeyen";
+            errors.push(`Başvuru No: ${appNo} - ${singleErr.message}`);
+            skippedCount++;
+          }
+        }
+      }
     }
 
     try {
       await Log.create({
         userId: session.user.id,
         action: "Excel Dosyası Yüklendi",
-        details: `${batchName} -> Toplam Satır: ${rows.length}, Eklenen: ${insertedCount}, Güncellenen: ${updatedCount}, Boş Dosya: ${emptyFilesCount}, Atlanan: ${skippedCount}`,
+        details: `${batchName} -> Toplam Satır: ${itemsToProcess.length}, Eklenen: ${insertedCount}, Güncellenen: ${updatedCount}, Boş Dosya: ${emptyFilesCount}, Atlanan: ${skippedCount}`,
       });
     } catch (err) {
       console.error("Log error:", err);
@@ -394,7 +423,7 @@ export async function POST(req: Request) {
       batchId,
       batchName,
       summary: {
-        totalProcessed: rows.length,
+        totalProcessed: itemsToProcess.length,
         insertedCount,
         updatedCount,
         emptyFilesCount,
