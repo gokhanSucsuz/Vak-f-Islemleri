@@ -48,6 +48,7 @@ type BabyFoodRecord = {
   motherInfo: string;
   receiver: string;
   babyName: string;
+  deliveryDate?: string;
   items: BabyFoodItem[];
   createdBy: { _id: string; name: string };
   createdAt: string;
@@ -102,6 +103,7 @@ export default function BabyFoodPage() {
     motherInfo: "",
     receiver: "",
     babyName: "",
+    deliveryDate: new Date().toISOString().split("T")[0],
     items: [] as BabyFoodItem[],
   });
 
@@ -392,6 +394,7 @@ export default function BabyFoodPage() {
       motherInfo: "",
       receiver: "",
       babyName: "",
+      deliveryDate: new Date().toISOString().split("T")[0],
       items: [],
     });
     setCurrentItem({ typeId: "", foodName: "", quantity: 1 });
@@ -401,11 +404,17 @@ export default function BabyFoodPage() {
   const openEditModal = (record: BabyFoodRecord) => {
     setEditingRecord(record);
     const tc = record.tcNo || extractTC(record.motherInfo) || "";
+    const rawDate = record.deliveryDate || record.createdAt;
+    const formattedDate = rawDate
+      ? new Date(rawDate).toISOString().split("T")[0]
+      : new Date().toISOString().split("T")[0];
+
     setFormData({
       tcNo: tc,
       motherInfo: record.motherInfo,
       receiver: record.receiver || "",
       babyName: record.babyName,
+      deliveryDate: formattedDate,
       items: record.items,
     });
     setRecentWarning(null);
@@ -458,7 +467,7 @@ export default function BabyFoodPage() {
 
       return {
         "Sıra": i + 1,
-        "Tarih": new Date(r.createdAt).toLocaleDateString("tr-TR"),
+        "Tarih": new Date(r.deliveryDate || r.createdAt).toLocaleDateString("tr-TR"),
         "TC Kimlik No": tc,
         "Anne Bilgisi": r.motherInfo,
         "Teslim Alan": r.receiver || "Kendisi",
@@ -485,7 +494,7 @@ export default function BabyFoodPage() {
 
   // Belirtilen tarih aralığına göre filtrelenen kayıtlar
   const officialPdfRecords = records.filter((r) => {
-    const itemDate = new Date(r.createdAt);
+    const itemDate = new Date(r.deliveryDate || r.createdAt);
     if (pdfDateStart) {
       const start = new Date(pdfDateStart);
       start.setHours(0, 0, 0, 0);
@@ -568,7 +577,7 @@ export default function BabyFoodPage() {
 
         return [
           i + 1,
-          new Date(r.createdAt).toLocaleDateString("tr-TR"),
+          new Date(r.deliveryDate || r.createdAt).toLocaleDateString("tr-TR"),
           tc,
           r.motherInfo,
           r.babyName,
@@ -1071,7 +1080,7 @@ export default function BabyFoodPage() {
                         </span>
                       </td>
                       <td className="py-4 px-5 text-xs text-slate-600 whitespace-nowrap">
-                        {new Date(record.createdAt).toLocaleDateString("tr-TR")}
+                        {new Date(record.deliveryDate || record.createdAt).toLocaleDateString("tr-TR")}
                       </td>
                       <td className="py-4 px-5 text-right whitespace-nowrap">
                         {((userRole === "personnel" && record.createdBy?._id === userId) ||
@@ -1320,7 +1329,7 @@ export default function BabyFoodPage() {
                           <tr key={i} className="border-b">
                             <td className="p-1 border text-center">{i + 1}</td>
                             <td className="p-1 border">
-                              {new Date(r.createdAt).toLocaleDateString("tr-TR")}
+                              {new Date(r.deliveryDate || r.createdAt).toLocaleDateString("tr-TR")}
                             </td>
                             <td className="p-1 border font-mono">
                               {r.tcNo || extractTC(r.motherInfo) || "-"}
@@ -1433,6 +1442,26 @@ export default function BabyFoodPage() {
                   Kişi Bilgileri
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Teslim / Dağıtım Tarihi */}
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-xs font-bold text-slate-700 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4 text-pink-500" />
+                        Teslim / Dağıtım Tarihi
+                      </span>
+                      <span className="text-[11px] font-normal text-slate-500">
+                        (Varsayılan bugündür, önceki günlerde teslim ettiyseniz değiştirebilirsiniz)
+                      </span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={formData.deliveryDate}
+                      onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })}
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-pink-500/20 focus:border-pink-500 text-sm font-semibold text-slate-800 transition-all"
+                    />
+                  </div>
+
                   {/* T.C. Kimlik No Alanı */}
                   <div className="space-y-1.5 md:col-span-1">
                     <label className="text-xs font-bold text-slate-700 flex items-center justify-between">

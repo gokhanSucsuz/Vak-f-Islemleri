@@ -25,9 +25,14 @@ export async function GET(req: Request) {
 
     const query: any = {};
     if (dateStart || dateEnd) {
-      query.createdAt = {};
-      if (dateStart) query.createdAt.$gte = new Date(dateStart);
-      if (dateEnd) query.createdAt.$lte = new Date(dateEnd);
+      const dateFilter: any = {};
+      if (dateStart) dateFilter.$gte = new Date(dateStart);
+      if (dateEnd) dateFilter.$lte = new Date(dateEnd);
+
+      query.$or = [
+        { deliveryDate: dateFilter },
+        { deliveryDate: { $exists: false }, createdAt: dateFilter }
+      ];
     }
 
     if (userId) {
@@ -53,7 +58,7 @@ export async function GET(req: Request) {
 
     const records = await InKindAid.find(query)
       .populate("createdBy", "name email")
-      .sort({ createdAt: -1 });
+      .sort({ deliveryDate: -1, createdAt: -1 });
 
     return NextResponse.json(records);
   } catch (error: any) {
@@ -74,10 +79,12 @@ export async function POST(req: Request) {
     const userAny = session.user as any;
     const userId = userAny.id || userAny._id;
     const tcNo = body.tcNo?.trim() || body.citizenName?.match(/\b\d{11}\b/)?.[0] || "";
+    const deliveryDate = body.deliveryDate ? new Date(body.deliveryDate) : new Date();
 
     const newRecord = await InKindAid.create({
       ...body,
       tcNo,
+      deliveryDate,
       createdBy: userId,
     });
 
@@ -123,9 +130,10 @@ export async function PUT(req: Request) {
     }
 
     const tcNo = updateData.tcNo?.trim() || updateData.citizenName?.match(/\b\d{11}\b/)?.[0] || record.tcNo || "";
+    const deliveryDate = updateData.deliveryDate ? new Date(updateData.deliveryDate) : record.deliveryDate || record.createdAt;
     const updatedRecord = await InKindAid.findByIdAndUpdate(
       _id,
-      { ...updateData, tcNo },
+      { ...updateData, tcNo, deliveryDate },
       { new: true }
     );
 

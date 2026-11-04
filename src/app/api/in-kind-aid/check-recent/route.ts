@@ -21,7 +21,7 @@ export async function GET(req: Request) {
 
     await dbConnect();
     // ensure User model is loaded
-    if (!User) {}
+    if (!User) { }
 
     const thirtyDaysAgo = new Date();
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
@@ -29,24 +29,30 @@ export async function GET(req: Request) {
 
     const recentRecords = await InKindAid.find({
       $and: [
-        { createdAt: { $gte: thirtyDaysAgo } },
+        {
+          $or: [
+            { deliveryDate: { $gte: thirtyDaysAgo } },
+            { deliveryDate: { $exists: false }, createdAt: { $gte: thirtyDaysAgo } },
+          ],
+        },
         {
           $or: [
             { tcNo: tc },
-            { citizenName: { $regex: tc, $options: "i" } }
-          ]
-        }
-      ]
+            { citizenName: { $regex: tc, $options: "i" } },
+          ],
+        },
+      ],
     })
       .populate("createdBy", "name")
-      .sort({ createdAt: -1 });
+      .sort({ deliveryDate: -1, createdAt: -1 });
 
     if (!recentRecords || recentRecords.length === 0) {
       return NextResponse.json({ hasRecentDelivery: false });
     }
 
     const latest = recentRecords[0];
-    const diffTime = Math.abs(Date.now() - new Date(latest.createdAt).getTime());
+    const actualDeliveryDate = latest.deliveryDate || latest.createdAt;
+    const diffTime = Math.abs(Date.now() - new Date(actualDeliveryDate).getTime());
     const daysAgo = Math.floor(diffTime / (1000 * 60 * 60 * 24));
 
     const formattedRecords = recentRecords.map((r: any) => ({
@@ -55,6 +61,7 @@ export async function GET(req: Request) {
       citizenName: r.citizenName,
       receiver: r.receiver,
       items: r.items,
+      deliveryDate: r.deliveryDate || r.createdAt,
       createdAt: r.createdAt,
       personnelName: r.createdBy?.name || "Bilinmiyor",
     }));
@@ -63,7 +70,7 @@ export async function GET(req: Request) {
       hasRecentDelivery: true,
       count: recentRecords.length,
       daysAgo,
-      lastDeliveryDate: latest.createdAt,
+      lastDeliveryDate: actualDeliveryDate,
       latestRecord: formattedRecords[0],
       allRecentRecords: formattedRecords,
     });

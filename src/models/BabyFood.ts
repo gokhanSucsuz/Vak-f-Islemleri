@@ -33,6 +33,11 @@ const BabyFoodSchema = new mongoose.Schema(
       ref: 'User',
       required: true,
     },
+    deliveryDate: {
+      type: Date,
+      default: Date.now,
+      index: true,
+    },
   },
   { timestamps: true }
 );
@@ -43,6 +48,9 @@ BabyFoodSchema.pre('save', function (this: any) {
     if (match) {
       this.tcNo = match[0];
     }
+  }
+  if (!this.deliveryDate) {
+    this.deliveryDate = new Date();
   }
 });
 

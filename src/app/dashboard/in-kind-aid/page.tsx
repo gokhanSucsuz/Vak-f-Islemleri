@@ -45,6 +45,7 @@ type InKindAidRecord = {
   receiver?: string;
   phone?: string;
   address?: string;
+  deliveryDate?: string;
   items: InKindAidItem[];
   notes?: string;
   createdBy: { _id: string; name: string };
@@ -67,6 +68,7 @@ export default function InKindAidPage() {
     receiver: "",
     phone: "",
     address: "",
+    deliveryDate: new Date().toISOString().split("T")[0],
     notes: "",
     items: [] as InKindAidItem[],
   });
@@ -314,6 +316,7 @@ export default function InKindAidPage() {
       receiver: "",
       phone: "",
       address: "",
+      deliveryDate: new Date().toISOString().split("T")[0],
       notes: "",
       items: [],
     });
@@ -324,12 +327,18 @@ export default function InKindAidPage() {
   const openEditModal = (record: InKindAidRecord) => {
     setEditingRecord(record);
     const tc = record.tcNo || extractTC(record.citizenName) || "";
+    const rawDate = record.deliveryDate || record.createdAt;
+    const formattedDate = rawDate
+      ? new Date(rawDate).toISOString().split("T")[0]
+      : new Date().toISOString().split("T")[0];
+
     setFormData({
       tcNo: tc,
       citizenName: record.citizenName,
       receiver: record.receiver || "",
       phone: record.phone || "",
       address: record.address || "",
+      deliveryDate: formattedDate,
       notes: record.notes || "",
       items: record.items,
     });
@@ -382,7 +391,7 @@ export default function InKindAidPage() {
 
       return {
         "Sıra": i + 1,
-        "Tarih": new Date(r.createdAt).toLocaleDateString("tr-TR"),
+        "Tarih": new Date(r.deliveryDate || r.createdAt).toLocaleDateString("tr-TR"),
         "TC Kimlik No": r.tcNo || extractTC(r.citizenName) || "-",
         "Vatandaş Adı": r.citizenName,
         "Teslim Alan": r.receiver || "Kendisi",
@@ -676,7 +685,7 @@ export default function InKindAidPage() {
                         </span>
                       </td>
                       <td className="py-4 px-6 text-sm text-slate-600 whitespace-nowrap">
-                        {new Date(record.createdAt).toLocaleDateString("tr-TR")}
+                        {new Date(record.deliveryDate || record.createdAt).toLocaleDateString("tr-TR")}
                       </td>
                       <td className="py-4 px-6 text-right print:hidden">
                         {((userRole === "personnel" && record.createdBy?._id === userId) ||
@@ -733,6 +742,26 @@ export default function InKindAidPage() {
                   Vatandaş & İletişim Bilgileri
                 </h3>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {/* Teslim / Dağıtım Tarihi */}
+                  <div className="space-y-1.5 md:col-span-2">
+                    <label className="text-sm font-bold text-slate-700 flex items-center justify-between">
+                      <span className="flex items-center gap-1.5">
+                        <Calendar className="w-4 h-4 text-amber-500" />
+                        Teslim / Dağıtım Tarihi
+                      </span>
+                      <span className="text-[11px] font-normal text-slate-500">
+                        (Varsayılan bugündür, önceki günlerde teslim ettiyseniz değiştirebilirsiniz)
+                      </span>
+                    </label>
+                    <input
+                      type="date"
+                      required
+                      value={formData.deliveryDate}
+                      onChange={(e) => setFormData({ ...formData, deliveryDate: e.target.value })}
+                      className="w-full px-4 py-2 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all font-semibold text-slate-800 text-sm"
+                    />
+                  </div>
+
                   {/* T.C. Kimlik Numarası */}
                   <div className="space-y-1.5 md:col-span-1">
                     <label className="text-sm font-medium text-slate-700 flex items-center justify-between">
