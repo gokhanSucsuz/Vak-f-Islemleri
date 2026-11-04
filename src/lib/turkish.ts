@@ -501,3 +501,54 @@ export function matchEdirneMahalleKoy(val: any): string | null {
 
   return null;
 }
+
+/**
+ * Bir veri satırının aslında Excel sütun başlığı olup olmadığını tespit eder.
+ * Kullanıcıların Excel içine araya kopyaladığı mükerrer başlık satırlarının veri olarak eklenmesini önler.
+ */
+export function isHeaderRow(row: Record<string, any>): boolean {
+  if (!row || typeof row !== "object") return false;
+
+  const headerKeywords = [
+    "basvuruno",
+    "adisoyadi",
+    "adsoyad",
+    "esininadi",
+    "esininadisoyadi",
+    "yardimturu",
+    "mahallekoy",
+    "mahalle",
+    "koy",
+    "basvurutarihi",
+    "kayittarihi",
+    "sirano",
+    "tcno",
+    "tckimlikno",
+    "esiyakiniadisoyadi",
+    "esiyakinitcno",
+    "uyrugu",
+    "mahallesikoyu",
+    "mahallesikoy",
+    "mahallekoyu",
+  ];
+
+  let matches = 0;
+  for (const [key, val] of Object.entries(row)) {
+    if (val === undefined || val === null) continue;
+    const cleanK = cleanHeaderKey(key);
+    const cleanV = cleanHeaderKey(String(val));
+    if (!cleanV) continue;
+
+    if (headerKeywords.includes(cleanV)) {
+      matches++;
+    }
+
+    // Sütun adı ile hücre içeriği aynıysa (örn: "BAŞVURU NO" sütununda "BAŞVURU NO" yazıyorsa)
+    if (cleanK && cleanV && cleanK === cleanV && headerKeywords.includes(cleanK)) {
+      return true;
+    }
+  }
+
+  return matches >= 2;
+}
+

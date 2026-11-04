@@ -51,6 +51,7 @@ import {
   extractAndCleanTC,
   parseDateOrExtractDate,
   matchEdirneMahalleKoy,
+  isHeaderRow,
 } from "@/lib/turkish";
 import ModernConfirmDialog, { DialogType } from "@/components/ModernConfirmDialog";
 
@@ -147,9 +148,9 @@ export default function ApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [canManage, setCanManage] = useState(false);
 
-  // Sekmeli Görünüm (Sheet Tabs) Durumları
+  // Sekmeli Görünüm (Sheet Tabs) Durumları - Her sekme ayrı listelenir
   const [sheets, setSheets] = useState<SheetTabInfo[]>([]);
-  const [selectedSheet, setSelectedSheet] = useState<string>("all");
+  const [selectedSheet, setSelectedSheet] = useState<string>("");
   const [activeTableColumns, setActiveTableColumns] = useState<string[]>([]);
 
   // Çoklu Excel Sekme Yükleme Durumları
@@ -298,7 +299,7 @@ export default function ApplicationsPage() {
       params.append("page", String(currentPage));
       params.append("limit", String(pageSize));
       params.append("sortBy", sortBy);
-      if (selectedSheet !== "all") params.append("sheet", selectedSheet);
+      if (selectedSheet) params.append("sheet", selectedSheet);
 
       if (searchTerm.trim()) params.append("search", searchTerm.trim());
       if (filterTab !== "all") params.append("status", filterTab);
@@ -314,8 +315,13 @@ export default function ApplicationsPage() {
         setRecords(recs);
         setCanManage(Boolean(data.canManage));
 
-        if (data.sheets) {
+        if (data.sheets && data.sheets.length > 0) {
           setSheets(data.sheets);
+          // Eğer seçili sekme yoksa, sunucunun döndüğü varsayılan aktif sekmeyi seç
+          if (!selectedSheet || !data.sheets.some((s: any) => s.name === selectedSheet)) {
+            const defSheet = data.activeSheet || (data.sheets.find((s: any) => s.name === "YENİ BAŞVURU KAYIT")?.name) || data.sheets[0].name;
+            setSelectedSheet(defSheet);
+          }
         }
         if (data.activeColumns && data.activeColumns.length > 0) {
           setActiveTableColumns(data.activeColumns);
@@ -354,15 +360,13 @@ export default function ApplicationsPage() {
     }
   }, [selectedSheet, currentPage, pageSize, filterTab, statusFilter, searchTerm, dateStart, dateEnd, minNo, maxNo, sortBy, stats]);
 
-  // Sekme Seçimi Değiştiğinde
+  // Sekme Seçimi Değiştiğinde (Her sekme tamamen bağımsız gösterilir)
   const handleSelectSheet = (sName: string) => {
     setSelectedSheet(sName);
     setCurrentPage(1);
-    if (sName !== "all") {
-      const sObj = sheets.find((item) => item.name === sName);
-      if (sObj && sObj.columnHeaders && sObj.columnHeaders.length > 0) {
-        setActiveTableColumns(sObj.columnHeaders);
-      }
+    const sObj = sheets.find((item) => item.name === sName);
+    if (sObj && sObj.columnHeaders && sObj.columnHeaders.length > 0) {
+      setActiveTableColumns(sObj.columnHeaders);
     }
   };
 
@@ -481,7 +485,7 @@ export default function ApplicationsPage() {
             toast.success(data.message || "Tüm dosya kayıtları silindi.");
             setDialogState((prev) => ({ ...prev, isOpen: false, isLoading: false }));
             invalidateCache();
-            setSelectedSheet("all");
+            setSelectedSheet("");
             fetchRecords(true);
             fetchImportBatches();
           } else {
@@ -561,70 +565,17 @@ export default function ApplicationsPage() {
     sortBy !== "no_desc";
 
   // ---------------------------------------------------------
-  // MANUEL KAYIT VE BOŞ DOSYA ÖNCELİK KONTROLÜ
+  // MANUEL DOSYA EKLEME (Otomatik No Kaldırıldı - Kullanıcı Kendisi Yazar)
   // ---------------------------------------------------------
-  const handleStartManualCreate = async () => {
-    try {
-      const res = await fetch("/api/application-files/empty-files?limit=1");
-      const data = await res.json();
-      const emptyFile = data.firstEmptyFile;
-
-      const nextRes = await fetch("/api/application-files/next-no");
-      const nextData = await nextRes.json();
-      const nextNo = nextData.nextNo || (stats.nextApplicationNo ? String(stats.nextApplicationNo) : "1");
-
-      if (emptyFile) {
-        setDialogState({
-          isOpen: true,
-          type: "question",
-          title: "Boş Dosya Tespit Edildi",
-          message: (
-            <div>
-              <p>
-                Sistemde daha önce oluşturulmuş ancak adı soyadı girilmemiş <strong>boş bir dosya</strong> bulunmaktadır.
-              </p>
-              <div className="mt-3 p-3 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-sm">
-                <div className="font-semibold flex items-center gap-1.5">
-                  <Hash className="w-4 h-4 text-amber-600" />
-                  Mevcut Boş Dosya No: #{emptyFile.applicationNo}
-                </div>
-                {emptyFile.notes && <div className="text-xs text-amber-700 mt-1">Not: {emptyFile.notes}</div>}
-              </div>
-              <p className="mt-3 text-xs text-slate-500">
-                Yeni bir numara (<strong>#{nextNo}</strong>) üretmek yerine bu boş dosyayı doldurmak ister misiniz?
-              </p>
-            </div>
-          ),
-          confirmText: `Evet, Boş Dosyaya (#${emptyFile.applicationNo}) Ekle`,
-          cancelText: "Vazgeç",
-          secondaryAction: {
-            text: `Hayır, Yeni Numara İle (#${nextNo}) Oluştur`,
-            className:
-              "px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold transition-all shadow-md",
-            onClick: () => {
-              setDialogState((prev) => ({ ...prev, isOpen: false }));
-              openFormModalForNew(nextNo);
-            },
-          },
-          onConfirm: () => {
-            setDialogState((prev) => ({ ...prev, isOpen: false }));
-            openFormModalForEmpty(emptyFile);
-          },
-        });
-      } else {
-        openFormModalForNew(nextNo);
-      }
-    } catch (e) {
-      console.error(e);
-      openFormModalForNew(String(stats.nextApplicationNo));
-    }
+  const handleStartManualCreate = () => {
+    openFormModalForNew("");
   };
 
-  const openFormModalForNew = (assignedNo: string) => {
+  const openFormModalForNew = (assignedNo = "") => {
     setEditingRecord(null);
     setTargetEmptyFileId(null);
     setFormData({
-      applicationNo: assignedNo,
+      applicationNo: assignedNo, // Kullanıcı kendisi sıradan yazar!
       applicantName: "",
       spouseName: "",
       tcNo: "",
@@ -633,7 +584,7 @@ export default function ApplicationsPage() {
       neighborhood: "",
       phone: "",
       address: "",
-      applicationDate: "",
+      applicationDate: new Date().toISOString().split("T")[0],
       fileStatus: "Aktif",
       notes: "",
     });
@@ -707,6 +658,7 @@ export default function ApplicationsPage() {
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({
             ...formData,
+            sheetName: selectedSheet || "YENİ BAŞVURU KAYIT",
             targetRecordId: targetEmptyFileId,
           }),
         });
@@ -802,9 +754,14 @@ export default function ApplicationsPage() {
           const mahalleCol = validCols.find((c) => /mahalle|köy|koy|yerleşim/i.test(cleanHeaderKey(c))) || "MAHALLE/KÖY";
           const helpCol = validCols.find((c) => /yardım|yardim/i.test(cleanHeaderKey(c)));
 
-          // Tamamen boş satırları ayıkla ve kaymış Edirne Mahalle/Köy kayıtlarını düzelt
+          // Tamamen boş satırları ayıkla, mükerrer başlık satırlarını atla ve kaymış Edirne Mahalle/Köy kayıtlarını düzelt
           const cleanRows: any[] = [];
           for (const r of rawRows) {
+            // Başlık satırı kontrolü: Eğer satırdaki değerler sütun başlıkları ise atla!
+            if (isHeaderRow(r)) {
+              continue;
+            }
+
             let hasData = false;
             const cleanRow: Record<string, any> = {};
             for (const col of validCols) {
@@ -952,7 +909,7 @@ export default function ApplicationsPage() {
 
       setIsExcelModalOpen(false);
       invalidateCache();
-      setSelectedSheet(sheetsToImport[0]?.sheetName || "all");
+      setSelectedSheet(sheetsToImport[0]?.sheetName || "");
       fetchRecords(true);
 
       const sum = data.summary;
@@ -1016,6 +973,7 @@ export default function ApplicationsPage() {
         const params = new URLSearchParams();
         params.append("all", "true");
         params.append("sortBy", sortBy);
+        if (selectedSheet) params.append("sheet", selectedSheet);
         if (searchTerm.trim()) params.append("search", searchTerm.trim());
 
         if (exportScope === "active") params.append("status", "active");
@@ -1039,18 +997,20 @@ export default function ApplicationsPage() {
     }
 
     const dateStr = new Date().toISOString().split("T")[0];
+    const sheetPrefix = selectedSheet ? `${selectedSheet} - ` : "";
     const filterInfo =
       exportScope === "page"
-        ? `Mevcut Sayfa Listesi (${datasetToExport.length} Kayıt)`
+        ? `${sheetPrefix}Mevcut Sayfa Listesi (${datasetToExport.length} Kayıt)`
         : exportScope === "filtered"
-        ? `Filtrelenmiş Liste (${datasetToExport.length} Kayıt)`
+        ? `${sheetPrefix}Filtrelenmiş Liste (${datasetToExport.length} Kayıt)`
         : exportScope === "all"
-        ? `Tüm Dosyalar (${datasetToExport.length} Kayıt)`
+        ? `${sheetPrefix}Tüm Dosyalar (${datasetToExport.length} Kayıt)`
         : exportScope === "active"
-        ? `Dolu Dosyalar (${datasetToExport.length} Kayıt)`
-        : `Boş Dosyalar (${datasetToExport.length} Kayıt)`;
+        ? `${sheetPrefix}Dolu Dosyalar (${datasetToExport.length} Kayıt)`
+        : `${sheetPrefix}Boş Dosyalar (${datasetToExport.length} Kayıt)`;
 
-    exportStyledApplicationExcel(datasetToExport, `Hane_Basvuru_Dosyalari_${dateStr}`, {
+    const sanitizedFileName = (selectedSheet || "Hane_Basvuru_Dosyalari").replace(/[^a-zA-Z0-9_\u00C0-\u017F-]/g, "_");
+    exportStyledApplicationExcel(datasetToExport, `${sanitizedFileName}_${dateStr}`, {
       institutionName: exportInstitutionName,
       reportTitle: exportReportTitle,
       filterInfo,
@@ -1067,10 +1027,11 @@ export default function ApplicationsPage() {
       return;
     }
     const dateStr = new Date().toISOString().split("T")[0];
-    exportStyledApplicationExcel(records, `Hane_Basvuru_Dosyalari_${dateStr}`, {
+    const sanitizedFileName = (selectedSheet || "Hane_Basvuru_Dosyalari").replace(/[^a-zA-Z0-9_\u00C0-\u017F-]/g, "_");
+    exportStyledApplicationExcel(records, `${sanitizedFileName}_${dateStr}`, {
       institutionName: exportInstitutionName,
       reportTitle: exportReportTitle,
-      filterInfo: `Mevcut Liste (${records.length} Kayıt)`,
+      filterInfo: `${selectedSheet ? `${selectedSheet} - ` : ""}Mevcut Liste (${records.length} Kayıt)`,
     });
     toast.success("Excel tablosu Türkçe karakter uyumlu ve antetli olarak indirildi.");
   };
@@ -1392,12 +1353,12 @@ export default function ApplicationsPage() {
         </div>
 
         <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-purple-50 text-purple-600 flex items-center justify-center">
-            <Sparkles className="w-6 h-6" />
+          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
+            <Layers className="w-6 h-6" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Sıradaki Otomatik No</p>
-            <h3 className="text-2xl font-black text-purple-700">#{stats.nextApplicationNo}</h3>
+            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">Aktif Sekme Kaydı</p>
+            <h3 className="text-2xl font-black text-indigo-700">{totalRecords}</h3>
           </div>
         </div>
       </div>
@@ -1638,21 +1599,6 @@ export default function ApplicationsPage() {
               <Layers className="w-4 h-4 text-indigo-600" />
               Sekmeler:
             </span>
-            <button
-              type="button"
-              onClick={() => handleSelectSheet("all")}
-              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
-                selectedSheet === "all"
-                  ? "bg-slate-900 text-white shadow-md shadow-slate-900/20"
-                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
-              }`}
-            >
-              <FileSpreadsheet className="w-3.5 h-3.5" />
-              Tüm Sekmeler
-              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-200">
-                {stats.totalCount}
-              </span>
-            </button>
             {sheets.map((s) => (
               <button
                 key={s.name}
@@ -2179,13 +2125,13 @@ export default function ApplicationsPage() {
             </div>
 
             <form onSubmit={handleSubmitRecord} className="mt-5 space-y-4">
-              {/* Başvuru No (Birincil Anahtar) */}
+              {/* Başvuru No */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
-                  <span>Başvuru / Hane / Dosya No (Birincil Anahtar)</span>
+                  <span>Başvuru / Hane / Dosya No</span>
                   {!editingRecord && !targetEmptyFileId && (
-                    <span className="text-[11px] font-semibold text-purple-600 bg-purple-50 px-2 py-0.5 rounded-md">
-                      Otomatik Sıradaki No
+                    <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
+                      Manuel Giriş
                     </span>
                   )}
                 </label>
@@ -2198,7 +2144,7 @@ export default function ApplicationsPage() {
                     required
                     value={formData.applicationNo}
                     onChange={(e) => setFormData({ ...formData, applicationNo: e.target.value })}
-                    placeholder="Örn: 104"
+                    placeholder="Dosya / Başvuru Numarasını giriniz (Örn: 102201-20591 veya 104)"
                     className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-200 rounded-xl text-sm font-mono font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                   />
                 </div>

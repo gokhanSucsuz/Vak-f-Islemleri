@@ -12,6 +12,7 @@ import {
   extractAndCleanTC,
   parseDateOrExtractDate,
   matchEdirneMahalleKoy,
+  isHeaderRow,
 } from "@/lib/turkish";
 
 async function checkManagePermission(session: any): Promise<boolean> {
@@ -120,8 +121,8 @@ export async function POST(req: Request) {
           s.columnHeaders && s.columnHeaders.length > 0
             ? s.columnHeaders
             : s.rows && s.rows[0]
-            ? Object.keys(s.rows[0])
-            : [];
+              ? Object.keys(s.rows[0])
+              : [];
 
         // En fazla 6 gerçek sütun (ve __EMPTY olanları tamamen hariç tut)
         const sCols = (rawCols || [])
@@ -129,6 +130,11 @@ export async function POST(req: Request) {
           .slice(0, 6);
 
         (s.rows || []).forEach((r: any, idx: number) => {
+          // Başlık satırı kontrolü: Eğer satırdaki değerler sütun başlıkları ise atla!
+          if (isHeaderRow(r)) {
+            return;
+          }
+
           // Tamamen boş satır kontrolü: Geçerli sütunlarda veya satırdaki herhangi bir alanda dolu değer var mı?
           let hasAnyData = false;
           for (const col of sCols) {
@@ -167,6 +173,11 @@ export async function POST(req: Request) {
         .slice(0, 6);
 
       rows.forEach((r: any, idx: number) => {
+        // Başlık satırı kontrolü: Eğer satırdaki değerler sütun başlıkları ise atla!
+        if (isHeaderRow(r)) {
+          return;
+        }
+
         let hasAnyData = false;
         for (const col of sCols) {
           const val = r[col];
@@ -225,39 +236,37 @@ export async function POST(req: Request) {
       let appNoRaw = customMapping?.applicationNo
         ? row[customMapping.applicationNo]
         : findColumnValue(row, [
-            "Başvuru No",
-            "Basvuru No",
-            "Başvuru Numarası",
-            "Basvuru Numarasi",
-            "Hane No",
-            "Hane Numarası",
-            "Hane Dosya No",
-            "Dosya No",
-            "Dosya Numarası",
-            "BasvuruNo",
-            "DosyaNo",
-            "HaneNo",
-            "Sıra No",
-            "Sira No",
-            "Sıra",
-            "Sira",
-            "No",
-          ]);
+          "Başvuru No",
+          "Basvuru No",
+          "Başvuru Numarası",
+          "Basvuru Numarasi",
+          "Hane No",
+          "Hane Numarası",
+          "Hane Dosya No",
+          "Dosya No",
+          "Dosya Numarası",
+          "BasvuruNo",
+          "DosyaNo",
+          "HaneNo",
+          "Sıra No",
+          "Sira No",
+          "Sıra",
+          "Sira",
+          "No",
+        ]);
 
       let applicationNo = "";
       if (appNoRaw !== undefined && appNoRaw !== null && String(appNoRaw).trim() !== "") {
         applicationNo = String(appNoRaw).trim();
-      } else {
-        // Otomatik sıra numarası ata (veri kaybı olmaması için)
-        applicationNo = String(rowIndex - 1);
       }
 
-      // Sekme içinde mükerrer başvuru numaralarını ayırt et (veri kaybını ve duplicate key hatasını önler)
-      const sheetKey = `${sheetName}___${applicationNo}`;
-      const prevCount = seenInSheet.get(sheetKey) || 0;
-      seenInSheet.set(sheetKey, prevCount + 1);
-      if (prevCount > 0) {
-        applicationNo = `${applicationNo}-${prevCount + 1}`;
+      // Başlık satırı kontrolü: Eğer numara "BAŞVURU NO" veya benzeri ise kesinlikle atla!
+      if (/^(başvuru\s*no|basvuru\s*no|sıra\s*no|sira\s*no|hane\s*no|dosya\s*no)$/i.test(applicationNo)) {
+        continue;
+      }
+
+      if (!applicationNo) {
+        applicationNo = String(rowIndex - 1);
       }
 
       const numericSeq = parseInt(applicationNo.replace(/\D/g, ""), 10) || rowIndex - 1;
@@ -266,20 +275,20 @@ export async function POST(req: Request) {
       let nameRaw = customMapping?.applicantName
         ? row[customMapping.applicantName]
         : findColumnValue(row, [
-            "Adı Soyadı",
-            "Ad Soyad",
-            "Adi Soyadi",
-            "Adı",
-            "Adi",
-            "Müracaatçı",
-            "Muracaatci",
-            "Hak Sahibi",
-            "Vatandaş Adı Soyadı",
-            "Vatandaş",
-            "Başvuran",
-            "İsim",
-            "Ad",
-          ]);
+          "Adı Soyadı",
+          "Ad Soyad",
+          "Adi Soyadi",
+          "Adı",
+          "Adi",
+          "Müracaatçı",
+          "Muracaatci",
+          "Hak Sahibi",
+          "Vatandaş Adı Soyadı",
+          "Vatandaş",
+          "Başvuran",
+          "İsim",
+          "Ad",
+        ]);
 
       const nameStr = nameRaw !== undefined && nameRaw !== null ? String(nameRaw).trim() : "";
       const { tc: tcFromName, cleanText: cleanedApplicantName } = extractAndCleanTC(nameStr);
@@ -295,16 +304,16 @@ export async function POST(req: Request) {
       let spouseRaw = customMapping?.spouseName
         ? row[customMapping.spouseName]
         : findColumnValue(row, [
-            "Eşinin Adı Soyadı",
-            "Eşinin Adı",
-            "Eş Adı Soyadı",
-            "Eş Adı",
-            "Es Adı Soyadı",
-            "Es Adi Soyadi",
-            "Eş",
-            "Es",
-            "Eş Bilgisi",
-          ]);
+          "Eşinin Adı Soyadı",
+          "Eşinin Adı",
+          "Eş Adı Soyadı",
+          "Eş Adı",
+          "Es Adı Soyadı",
+          "Es Adi Soyadi",
+          "Eş",
+          "Es",
+          "Eş Bilgisi",
+        ]);
 
       const spouseStr = spouseRaw !== undefined && spouseRaw !== null ? String(spouseRaw).trim() : "";
       const { tc: tcFromSpouse, cleanText: cleanedSpouseName } = extractAndCleanTC(spouseStr);
@@ -313,15 +322,15 @@ export async function POST(req: Request) {
       let tcRaw = customMapping?.tcNo
         ? row[customMapping.tcNo]
         : findColumnValue(row, [
-            "T.C. Kimlik No",
-            "TC Kimlik No",
-            "TC No",
-            "T.C. No",
-            "TC",
-            "Kimlik No",
-            "TcKimlikNo",
-            "TcNo",
-          ]);
+          "T.C. Kimlik No",
+          "TC Kimlik No",
+          "TC No",
+          "T.C. No",
+          "TC",
+          "Kimlik No",
+          "TcKimlikNo",
+          "TcNo",
+        ]);
 
       let finalTc = tcRaw !== undefined && tcRaw !== null ? String(tcRaw).replace(/\D/g, "").slice(0, 11) : "";
       if (!finalTc && tcFromName) {
@@ -333,23 +342,23 @@ export async function POST(req: Request) {
       let dateColRaw = customMapping?.applicationDate
         ? row[customMapping.applicationDate]
         : findColumnValue(row, [
-            "Başvuru Tarihi",
-            "Kayıt Tarihi",
-            "Basvuru Tarihi",
-            "Kayit Tarihi",
-            "Tarih",
-          ]);
+          "Başvuru Tarihi",
+          "Kayıt Tarihi",
+          "Basvuru Tarihi",
+          "Kayit Tarihi",
+          "Tarih",
+        ]);
 
       let helpTypeColRaw = customMapping?.helpType
         ? row[customMapping.helpType]
         : findColumnValue(row, [
-            "Yardım Türü veya Başvuru Tarihi",
-            "Yardım Türü / Başvuru Tarihi",
-            "Yardım Türü",
-            "Yardim Turu",
-            "Yardım",
-            "Yardim",
-          ]);
+          "Yardım Türü veya Başvuru Tarihi",
+          "Yardım Türü / Başvuru Tarihi",
+          "Yardım Türü",
+          "Yardim Turu",
+          "Yardım",
+          "Yardim",
+        ]);
 
       let applicationDate: Date | null = null;
       let helpType = "";
@@ -378,16 +387,16 @@ export async function POST(req: Request) {
       let neighborhoodRaw = customMapping?.neighborhood
         ? row[customMapping.neighborhood]
         : findColumnValue(row, [
-            "Mahalle/Köy",
-            "Mahalle / Köy",
-            "Mahalle",
-            "Köy",
-            "Mahalle/Koy",
-            "Mahalle / Koy",
-            "Yerleşim Yeri",
-            "Köyü",
-            "Mahallesi",
-          ]);
+          "Mahalle/Köy",
+          "Mahalle / Köy",
+          "Mahalle",
+          "Köy",
+          "Mahalle/Koy",
+          "Mahalle / Koy",
+          "Yerleşim Yeri",
+          "Köyü",
+          "Mahallesi",
+        ]);
 
       let neighborhood = "";
       const directMatch = matchEdirneMahalleKoy(neighborhoodRaw);

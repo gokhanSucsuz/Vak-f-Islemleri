@@ -37,11 +37,20 @@ export async function GET(req: Request) {
 
     const canManage = await checkManagePermission(session);
 
-    // Filtre Sorgusu
+    // Filtre Sorgusu (Her sekme tamamen ayrı ve bağımsız listelenir)
     const query: any = {};
 
-    if (sheet && sheet !== "all") {
-      query.sheetName = sheet;
+    let activeSheet = sheet && sheet !== "all" ? sheet : "";
+    if (!activeSheet) {
+      const distinctSheets = await ApplicationFile.distinct("sheetName");
+      if (distinctSheets && distinctSheets.length > 0) {
+        activeSheet = distinctSheets.includes("YENİ BAŞVURU KAYIT")
+          ? "YENİ BAŞVURU KAYIT"
+          : distinctSheets[0];
+      }
+    }
+    if (activeSheet) {
+      query.sheetName = activeSheet;
     }
 
     if (status === "empty") {
@@ -167,8 +176,8 @@ export async function GET(req: Request) {
 
     // Aktif sekmenin veya mevcut kayıtların Excel sütun başlıkları (En fazla 6 gerçek sütun)
     let activeColumns: string[] = [];
-    if (sheet && sheet !== "all") {
-      const found = sheets.find((s) => s.name === sheet);
+    if (activeSheet) {
+      const found = sheets.find((s) => s.name === activeSheet);
       if (found && found.columnHeaders.length > 0) {
         activeColumns = found.columnHeaders;
       }
@@ -190,6 +199,7 @@ export async function GET(req: Request) {
       records,
       canManage,
       sheets,
+      activeSheet,
       activeColumns,
       pagination: {
         page,
