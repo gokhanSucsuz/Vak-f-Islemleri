@@ -169,6 +169,7 @@ export default function ApplicationsPage() {
 
   // Arama & Filtreleme Durumları
   const [searchTerm, setSearchTerm] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [filterTab, setFilterTab] = useState<"all" | "active" | "empty">("all");
   const [statusFilter, setStatusFilter] = useState("all");
   const [dateStart, setDateStart] = useState("");
@@ -181,11 +182,28 @@ export default function ApplicationsPage() {
   >("no_desc");
   const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
 
-  const [stats, setStats] = useState({
+  // Arama girdisini anlık ve kesintisiz 250ms gecikmeli tetikleme (Debounce)
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedSearch(searchTerm);
+    }, 250);
+    return () => clearTimeout(handler);
+  }, [searchTerm]);
+
+  const [stats, setStats] = useState<{
+    totalCount: number;
+    emptyCount: number;
+    activeCount: number;
+    nextApplicationNo: string | number;
+    nextSeqNumber?: number;
+    sheetPrefix?: string;
+  }>({
     totalCount: 0,
     emptyCount: 0,
     activeCount: 0,
-    nextApplicationNo: 1,
+    nextApplicationNo: "1",
+    nextSeqNumber: 1,
+    sheetPrefix: "",
   });
 
   // Modern Dialog State
@@ -217,6 +235,8 @@ export default function ApplicationsPage() {
   const [isFormModalOpen, setIsFormModalOpen] = useState(false);
   const [editingRecord, setEditingRecord] = useState<ApplicationFileRecord | null>(null);
   const [targetEmptyFileId, setTargetEmptyFileId] = useState<string | null>(null);
+  const [formPrefix, setFormPrefix] = useState("");
+  const [formSeqNo, setFormSeqNo] = useState("");
 
   const [formData, setFormData] = useState({
     applicationNo: "",
@@ -280,7 +300,8 @@ export default function ApplicationsPage() {
 
   // Kayıtları Sunucudan veya Önbellekten Çekme
   const fetchRecords = useCallback(async (ignoreCache = false) => {
-    const cacheKey = `${selectedSheet}_${currentPage}_${pageSize}_${filterTab}_${statusFilter}_${searchTerm.trim()}_${dateStart}_${dateEnd}_${minNo}_${maxNo}_${sortBy}`;
+    const cleanSearch = debouncedSearch.trim();
+    const cacheKey = `${selectedSheet}_${currentPage}_${pageSize}_${filterTab}_${statusFilter}_${cleanSearch}_${dateStart}_${dateEnd}_${minNo}_${maxNo}_${sortBy}`;
 
     // Önbellek kontrolü (Hemen Ara-Bul)
     if (!ignoreCache && cacheRef.current.has(cacheKey)) {
@@ -301,7 +322,7 @@ export default function ApplicationsPage() {
       params.append("sortBy", sortBy);
       if (selectedSheet) params.append("sheet", selectedSheet);
 
-      if (searchTerm.trim()) params.append("search", searchTerm.trim());
+      if (cleanSearch) params.append("search", cleanSearch);
       if (filterTab !== "all") params.append("status", filterTab);
       else if (statusFilter !== "all") params.append("status", statusFilter);
 
@@ -364,7 +385,7 @@ export default function ApplicationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedSheet, currentPage, pageSize, filterTab, statusFilter, searchTerm, dateStart, dateEnd, minNo, maxNo, sortBy, stats]);
+  }, [selectedSheet, currentPage, pageSize, filterTab, statusFilter, debouncedSearch, dateStart, dateEnd, minNo, maxNo, sortBy, stats]);
 
   // Sekme Seçimi Değiştiğinde (Her sekme tamamen bağımsız gösterilir)
   const handleSelectSheet = (sName: string) => {
@@ -380,12 +401,15 @@ export default function ApplicationsPage() {
     if (session) {
       fetchRecords();
     }
-  }, [session, selectedSheet, currentPage, pageSize, filterTab, statusFilter, sortBy]);
+  }, [session, selectedSheet, currentPage, pageSize, filterTab, statusFilter, sortBy, debouncedSearch, dateStart, dateEnd]);
 
   // Arama değiştiğinde 1. sayfaya dön
   const handleSearchChange = (val: string) => {
     setSearchTerm(val);
     setCurrentPage(1);
+    if (!val.trim()) {
+      setDebouncedSearch("");
+    }
   };
 
   // İçe Aktarılan Excel Paketlerini Getir
@@ -571,17 +595,33 @@ export default function ApplicationsPage() {
     sortBy !== "no_desc";
 
   // ---------------------------------------------------------
-  // MANUEL DOSYA EKLEME (Otomatik No Kaldırıldı - Kullanıcı Kendisi Yazar)
+  // MANUEL DOSYA EKLEME (Sabit Kod + Otomatik Sıradaki No Desteği)
   // ---------------------------------------------------------
   const handleStartManualCreate = () => {
-    openFormModalForNew("");
+    openFormModalForNew();
   };
 
-  const openFormModalForNew = (assignedNo = "") => {
+  const openFormModalForNew = () => {
     setEditingRecord(null);
     setTargetEmptyFileId(null);
+
+    // Aktif sekmenin ön eki (örn: YENİ BAŞVURU KAYIT için 102201-) ve sıradaki numarası
+    const pfx =
+      stats.sheetPrefix !== undefined
+        ? stats.sheetPrefix
+        : selectedSheet === "YENİ BAŞVURU KAYIT"
+        ? "102201-"
+        : "";
+    const nextSeq = stats.nextSeqNumber
+      ? String(stats.nextSeqNumber)
+      : stats.nextApplicationNo
+      ? String(stats.nextApplicationNo).replace(pfx, "")
+      : "1";
+
+    setFormPrefix(pfx);
+    setFormSeqNo(nextSeq);
     setFormData({
-      applicationNo: assignedNo, // Kullanıcı kendisi sıradan yazar!
+      applicationNo: pfx ? `${pfx}${nextSeq}` : nextSeq,
       applicantName: "",
       spouseName: "",
       tcNo: "",
@@ -600,6 +640,17 @@ export default function ApplicationsPage() {
   const openFormModalForEmpty = (emptyFile: ApplicationFileRecord) => {
     setEditingRecord(null);
     setTargetEmptyFileId(emptyFile._id);
+
+    // Başvuru numarasından sabit ön eki ve sıra numarasını ayıkla
+    const match = String(emptyFile.applicationNo).trim().match(/^(.*?)(0*[1-9]\d*|0)$/);
+    if (match && match[1]) {
+      setFormPrefix(match[1]);
+      setFormSeqNo(match[2]);
+    } else {
+      setFormPrefix("");
+      setFormSeqNo(emptyFile.applicationNo);
+    }
+
     setFormData({
       applicationNo: emptyFile.applicationNo,
       applicantName: "",
@@ -620,6 +671,17 @@ export default function ApplicationsPage() {
   const openFormModalForEdit = (record: ApplicationFileRecord) => {
     setEditingRecord(record);
     setTargetEmptyFileId(null);
+
+    // Başvuru numarasından sabit ön eki ve sıra numarasını ayıkla
+    const match = String(record.applicationNo).trim().match(/^(.*?)(0*[1-9]\d*|0)$/);
+    if (match && match[1]) {
+      setFormPrefix(match[1]);
+      setFormSeqNo(match[2]);
+    } else {
+      setFormPrefix("");
+      setFormSeqNo(record.applicationNo);
+    }
+
     setFormData({
       applicationNo: record.applicationNo,
       applicantName: record.applicantName || "",
@@ -641,17 +703,38 @@ export default function ApplicationsPage() {
   const handleSubmitRecord = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!formData.applicationNo.trim()) {
+    const cleanSeq = formSeqNo.trim().replace(formPrefix, "");
+    if (!cleanSeq) {
       toast.error("Lütfen Başvuru / Dosya Numarasını giriniz.");
       return;
     }
+
+    const fullAppNo = formPrefix ? `${formPrefix}${cleanSeq}` : cleanSeq;
+
+    // İstemci tarafı anlık mükerrerlik kontrolü (Aynı sekmede iki dosya aynı numaraya sahip olamaz)
+    const isDuplicate = records.some(
+      (r) =>
+        r.applicationNo.toLowerCase() === fullAppNo.toLowerCase() &&
+        (!editingRecord || r._id !== editingRecord._id)
+    );
+    if (isDuplicate) {
+      toast.error(`"${fullAppNo}" başvuru numarası bu sekmede zaten mevcut! Lütfen farklı bir numara girin.`);
+      return;
+    }
+
+    const payload = {
+      ...formData,
+      applicationNo: fullAppNo,
+      sheetName: selectedSheet || "YENİ BAŞVURU KAYIT",
+      targetRecordId: targetEmptyFileId,
+    };
 
     try {
       if (editingRecord) {
         const res = await fetch(`/api/application-files/${editingRecord._id}`, {
           method: "PUT",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify(formData),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const errData = await res.json();
@@ -662,11 +745,7 @@ export default function ApplicationsPage() {
         const res = await fetch("/api/application-files", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            ...formData,
-            sheetName: selectedSheet || "YENİ BAŞVURU KAYIT",
-            targetRecordId: targetEmptyFileId,
-          }),
+          body: JSON.stringify(payload),
         });
         if (!res.ok) {
           const errData = await res.json();
@@ -1205,14 +1284,19 @@ export default function ApplicationsPage() {
     }
 
     const normCol = col.toLowerCase();
+    const cleanColName = cleanHeaderKey(col);
     if (
       normCol.includes("başvuru") ||
       normCol.includes("dosya") ||
-      normCol.includes("hane no")
+      normCol.includes("hane no") ||
+      cleanColName === "basvuruno" ||
+      cleanColName === "dosyano" ||
+      cleanColName === "haneno"
     ) {
       return (
-        <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 font-mono font-bold text-slate-800 text-xs">
-          #{String(val)}
+        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 border border-blue-200/90 text-blue-800 font-mono font-black text-sm shadow-xs tracking-wide">
+          <Hash className="w-3.5 h-3.5 text-blue-500 shrink-0" />
+          {String(val).replace(/^#/, "")}
         </span>
       );
     }
@@ -1423,18 +1507,30 @@ export default function ApplicationsPage() {
           {/* Anlık Arama ve Gelişmiş Filtre Düğmesi */}
           <div className="flex items-center gap-2 w-full lg:w-auto flex-1 lg:max-w-xl justify-end">
             <div className="relative w-full">
-              <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
+              {loading || (searchTerm && searchTerm !== debouncedSearch) ? (
+                <div className="absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <div className="w-4 h-4 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
+              )}
               <input
                 type="text"
-                placeholder="Başvuru no, isim, eş, TC, mahalle veya yardım türü..."
+                placeholder="Başvuru no, isim, eş, TC, mahalle veya yardım türü ile anlık ara..."
                 value={searchTerm}
                 onChange={(e) => handleSearchChange(e.target.value)}
-                className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
+                className="w-full pl-10 pr-9 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all font-medium text-slate-900"
               />
               {searchTerm && (
                 <button
-                  onClick={() => handleSearchChange("")}
+                  type="button"
+                  onClick={() => {
+                    setSearchTerm("");
+                    setDebouncedSearch("");
+                    setCurrentPage(1);
+                  }}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                  title="Aramayı Temizle"
                 >
                   <X className="w-3.5 h-3.5" />
                 </button>
@@ -2131,28 +2227,76 @@ export default function ApplicationsPage() {
             </div>
 
             <form onSubmit={handleSubmitRecord} className="mt-5 space-y-4">
-              {/* Başvuru No */}
+              {/* Başvuru No (Sabit Kod ve Sıradaki Numara) */}
               <div>
                 <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5 flex items-center justify-between">
                   <span>Başvuru / Hane / Dosya No</span>
-                  {!editingRecord && !targetEmptyFileId && (
-                    <span className="text-[11px] font-semibold text-slate-600 bg-slate-100 px-2 py-0.5 rounded-md">
-                      Manuel Giriş
-                    </span>
-                  )}
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                    <Hash className="h-4 w-4 text-slate-400" />
+                  <div className="flex items-center gap-2">
+                    {formPrefix && (
+                      <span className="text-[11px] font-bold text-blue-700 bg-blue-50 border border-blue-200 px-2 py-0.5 rounded-md">
+                        Sabit Kod: {formPrefix}
+                      </span>
+                    )}
+                    {!editingRecord && !targetEmptyFileId && (
+                      <span className="text-[11px] font-semibold text-emerald-700 bg-emerald-50 border border-emerald-200 px-2 py-0.5 rounded-md">
+                        Önerilen Sıradaki No
+                      </span>
+                    )}
                   </div>
-                  <input
-                    type="text"
-                    required
-                    value={formData.applicationNo}
-                    onChange={(e) => setFormData({ ...formData, applicationNo: e.target.value })}
-                    placeholder="Dosya / Başvuru Numarasını giriniz (Örn: 102201-20591 veya 104)"
-                    className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-200 rounded-xl text-sm font-mono font-bold bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
+                </label>
+
+                {formPrefix ? (
+                  <div className="flex rounded-xl shadow-xs overflow-hidden border border-slate-300 focus-within:ring-2 focus-within:ring-blue-500 focus-within:border-blue-500">
+                    <span className="inline-flex items-center px-3.5 bg-slate-100 text-slate-800 font-mono font-black text-sm border-r border-slate-300 select-none">
+                      {formPrefix}
+                    </span>
+                    <input
+                      type="text"
+                      required
+                      value={formSeqNo}
+                      onChange={(e) => {
+                        const val = e.target.value.replace(formPrefix, "").trim();
+                        setFormSeqNo(val);
+                      }}
+                      placeholder={String(stats.nextSeqNumber || "1")}
+                      className="block w-full px-3.5 py-2.5 text-sm font-mono font-bold bg-white focus:outline-none text-slate-900"
+                    />
+                  </div>
+                ) : (
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                      <Hash className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <input
+                      type="text"
+                      required
+                      value={formSeqNo}
+                      onChange={(e) => setFormSeqNo(e.target.value)}
+                      placeholder="Örn: 269 veya 104"
+                      className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-300 rounded-xl text-sm font-mono font-bold bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 text-slate-900"
+                    />
+                  </div>
+                )}
+
+                {/* Numara Önizlemesi ve Canlı Mükerrer Kontrolü */}
+                <div className="flex items-center justify-between mt-1.5 text-xs">
+                  <span className="text-slate-500 font-medium">
+                    Kayıt edilecek tam numara:{" "}
+                    <strong className="text-blue-700 font-mono font-black">
+                      #{formPrefix ? `${formPrefix}${formSeqNo.trim()}` : formSeqNo.trim()}
+                    </strong>
+                  </span>
+                  {formSeqNo.trim() &&
+                    records.some(
+                      (r) =>
+                        r.applicationNo.toLowerCase() ===
+                          (formPrefix ? `${formPrefix}${formSeqNo.trim()}` : formSeqNo.trim()).toLowerCase() &&
+                        (!editingRecord || r._id !== editingRecord._id)
+                    ) && (
+                      <span className="text-red-600 font-bold flex items-center gap-1 text-[11px]">
+                        ⚠️ Bu numara bu sekmede zaten kayıtlı!
+                      </span>
+                    )}
                 </div>
               </div>
 

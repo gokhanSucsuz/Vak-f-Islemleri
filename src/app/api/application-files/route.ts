@@ -5,6 +5,7 @@ import dbConnect from "@/lib/db";
 import ApplicationFile from "@/models/ApplicationFile";
 import User from "@/models/User";
 import Log from "@/models/Log";
+import { toTurkishRegexPattern } from "@/lib/turkish";
 
 async function checkManagePermission(session: any): Promise<boolean> {
   if (!session?.user) return false;
@@ -80,27 +81,33 @@ export async function GET(req: Request) {
       }
     }
 
-    // Arama Filtresi (Tüm ana alanlarda arar)
+    // Arama Filtresi (Tüm ana alanlarda çoklu kelime ve Türkçe uyumlu arar)
     if (search) {
-      const searchRegex = new RegExp(search, "i");
-      const searchConditions: any[] = [
-        { applicationNo: searchRegex },
-        { applicantName: searchRegex },
-        { spouseName: searchRegex },
-        { tcNo: searchRegex },
-        { spouseTcNo: searchRegex },
-        { helpType: searchRegex },
-        { neighborhood: searchRegex },
-        { phone: searchRegex },
-        { address: searchRegex },
-        { notes: searchRegex },
-      ];
+      const tokens = search.split(/\s+/).filter(Boolean);
+      const tokenConditions = tokens.map((token) => {
+        const pattern = toTurkishRegexPattern(token);
+        const tokenRegex = new RegExp(pattern, "i");
+        return {
+          $or: [
+            { applicationNo: tokenRegex },
+            { applicantName: tokenRegex },
+            { spouseName: tokenRegex },
+            { tcNo: tokenRegex },
+            { spouseTcNo: tokenRegex },
+            { helpType: tokenRegex },
+            { neighborhood: tokenRegex },
+            { phone: tokenRegex },
+            { address: tokenRegex },
+            { notes: tokenRegex },
+          ],
+        };
+      });
 
       if (query.$or) {
-        query.$and = [{ $or: query.$or }, { $or: searchConditions }];
+        query.$and = [{ $or: query.$or }, ...tokenConditions];
         delete query.$or;
       } else {
-        query.$or = searchConditions;
+        query.$and = query.$and ? [...query.$and, ...tokenConditions] : tokenConditions;
       }
     }
 
@@ -142,15 +149,31 @@ export async function GET(req: Request) {
     });
     const activeCount = totalCount - emptyCount;
 
-    // Sıradaki en yüksek numara
-    const highestRecord = await ApplicationFile.findOne()
+    // Aktif sekmeye göre sıradaki en yüksek numara ve sekme ön eki
+    const highestRecord = await ApplicationFile.findOne(
+      activeSheet ? { sheetName: activeSheet } : {}
+    )
       .sort({ applicationNoSeq: -1 })
       .select("applicationNoSeq applicationNo")
       .lean();
 
-    const nextApplicationNo = highestRecord?.applicationNoSeq
-      ? highestRecord.applicationNoSeq + 1
-      : 1;
+    let sheetPrefix = "";
+    let nextSeqNumber = 1;
+    let fullNextApplicationNo = "1";
+
+    if (highestRecord && highestRecord.applicationNo) {
+      const match = String(highestRecord.applicationNo).trim().match(/^(.*?)(0*[1-9]\d*|0)$/);
+      if (match) {
+        sheetPrefix = match[1];
+        const num = parseInt(match[2], 10);
+        nextSeqNumber = !isNaN(num) ? num + 1 : 1;
+        fullNextApplicationNo = `${sheetPrefix}${nextSeqNumber}`;
+      }
+    } else if (activeSheet === "YENİ BAŞVURU KAYIT") {
+      sheetPrefix = "102201-";
+      nextSeqNumber = 1;
+      fullNextApplicationNo = "102201-1";
+    }
 
     // Sistemde kayıtlı tüm sekmeleri ve kayıt sayılarını getir
     const sheetsAgg = await ApplicationFile.aggregate([
@@ -218,7 +241,9 @@ export async function GET(req: Request) {
         totalCount,
         emptyCount,
         activeCount,
-        nextApplicationNo,
+        nextApplicationNo: fullNextApplicationNo,
+        nextSeqNumber,
+        sheetPrefix,
       },
     });
   } catch (error: any) {

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
 import {
@@ -349,20 +349,33 @@ export default function InKindAidPage() {
     }
   };
 
-  // Türkçe Karakter Uyumlu Arama Filtreleme
-  const filteredRecords = records.filter(
-    (record) =>
-      (record.tcNo && turkishIncludes(record.tcNo, searchTerm)) ||
-      turkishIncludes(record.citizenName, searchTerm) ||
-      (record.receiver && turkishIncludes(record.receiver, searchTerm)) ||
-      (record.phone && turkishIncludes(record.phone, searchTerm)) ||
-      (record.address && turkishIncludes(record.address, searchTerm)) ||
-      record.items.some(
-        (it) =>
-          turkishIncludes(it.aidType, searchTerm) ||
-          (it.specification && turkishIncludes(it.specification, searchTerm))
-      )
-  );
+  // Türkçe Karakter Uyumlu Anlık Arama Filtreleme (Yüksek Performans & Kesin Eşleşme)
+  const filteredRecords = useMemo(() => {
+    const cleanSearch = searchTerm.trim();
+    if (!cleanSearch) return records;
+
+    return records.filter((record) => {
+      const itemsText = (record.items || [])
+        .map((it) => `${it.aidType || ""} ${it.specification || ""}`)
+        .join(" ");
+
+      const combinedText = [
+        record.tcNo,
+        record.citizenName,
+        record.receiver,
+        record.phone,
+        record.address,
+        record.notes,
+        record.createdBy?.name,
+        itemsText,
+        record.deliveryDate ? new Date(record.deliveryDate).toLocaleDateString("tr-TR") : "",
+      ]
+        .filter(Boolean)
+        .join(" ");
+
+      return turkishIncludes(combinedText, cleanSearch);
+    });
+  }, [records, searchTerm]);
 
   const totalItemCount = records.reduce(
     (acc, curr) => acc + curr.items.reduce((sum, item) => sum + item.quantity, 0),
@@ -573,14 +586,24 @@ export default function InKindAidPage() {
 
         <div className="p-6 border-b border-slate-100 print:hidden flex flex-col sm:flex-row justify-between items-center gap-4">
           <div className="relative w-full max-w-md">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 w-5 h-5" />
+            <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4 pointer-events-none" />
             <input
               type="text"
               placeholder="Türkçe karakter duyarlı TC, Vatandaş Adı, Teslim Alan veya Yardım Türü ara..."
               value={searchTerm}
               onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all text-sm"
+              className="w-full pl-10 pr-9 py-2.5 bg-slate-50 border border-slate-200 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-all text-sm font-medium text-slate-900"
             />
+            {searchTerm && (
+              <button
+                type="button"
+                onClick={() => setSearchTerm("")}
+                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                title="Aramayı Temizle"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
           </div>
           <span className="text-xs text-slate-500 font-medium">
             Toplam <strong>{filteredRecords.length}</strong> kayıt listeleniyor

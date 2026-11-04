@@ -61,20 +61,59 @@ export function cleanHeaderKey(key: string): string {
 }
 
 /**
+ * Regex özel karakterlerini güvenli bir şekilde kaçırır
+ */
+export function escapeRegex(text: string): string {
+  if (!text) return "";
+  return text.replace(/[-[\]{}()*+?.,\\^$|#\s]/g, "\\$&");
+}
+
+/**
+ * Türkçe karakter uyumlu esnek Regex arama deseni üretir.
+ * Örneğin "c" yazıldığında [cçCÇ], "i" yazıldığında [ıIİi] desenini döndürerek
+ * veritabanı veya istemci tarafında mükemmel eşleşme sağlar.
+ */
+export function toTurkishRegexPattern(text: string): string {
+  if (!text) return "";
+  const escaped = escapeRegex(text);
+  return escaped
+    .replace(/[cçCÇ]/g, "[cçCÇ]")
+    .replace(/[gğGĞ]/g, "[gğGĞ]")
+    .replace(/[ıIİi]/g, "[ıIİi]")
+    .replace(/[oöOÖ]/g, "[oöOÖ]")
+    .replace(/[sşSŞ]/g, "[sşSŞ]")
+    .replace(/[uüUÜ]/g, "[uüUÜ]");
+}
+
+/**
  * Türkçe karakter uyumlu metin arama kontrolü.
  * Hem orijinal Türkçe yerel karakterlerle hem de normalize edilmiş halleriyle kontrol eder.
+ * Çoklu kelime desteği sağlar (kullanıcı birden fazla kelime girdiğinde her kelimenin metinde bulunmasını arar).
+ * Boşluk veya normalize edilmiş boşluk hatasıyla tüm kayıtların eşleşmesini kesin olarak engeller.
  */
 export function turkishIncludes(source: string, search: string): boolean {
   if (!search) return true;
+  const cleanSearch = search.trim();
+  if (!cleanSearch) return true;
   if (!source) return false;
+  const cleanSource = source.trim();
+  if (!cleanSource) return false;
 
-  const sourceTr = toTurkishLower(source);
-  const searchTr = toTurkishLower(search);
-  if (sourceTr.includes(searchTr)) return true;
+  const searchTokens = cleanSearch.split(/\s+/).filter(Boolean);
+  if (searchTokens.length === 0) return true;
 
-  const sourceNorm = normalizeTurkish(source);
-  const searchNorm = normalizeTurkish(search);
-  return sourceNorm.includes(searchNorm);
+  const sourceTr = toTurkishLower(cleanSource);
+  const sourceNorm = normalizeTurkish(cleanSource);
+
+  return searchTokens.every((token) => {
+    const tokenTr = toTurkishLower(token);
+    if (sourceTr.includes(tokenTr)) return true;
+
+    const tokenNorm = normalizeTurkish(token);
+    if (tokenNorm && sourceNorm.includes(tokenNorm)) return true;
+
+    return false;
+  });
 }
 
 /**
