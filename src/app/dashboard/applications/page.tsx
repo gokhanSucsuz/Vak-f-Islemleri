@@ -150,7 +150,7 @@ export default function ApplicationsPage() {
 
   // Sekmeli Görünüm (Sheet Tabs) Durumları - Her sekme ayrı listelenir
   const [sheets, setSheets] = useState<SheetTabInfo[]>([]);
-  const [selectedSheet, setSelectedSheet] = useState<string>("");
+  const [selectedSheet, setSelectedSheet] = useState<string>("YENİ BAŞVURU KAYIT");
   const [activeTableColumns, setActiveTableColumns] = useState<string[]>([]);
 
   // Çoklu Excel Sekme Yükleme Durumları
@@ -316,10 +316,16 @@ export default function ApplicationsPage() {
         setCanManage(Boolean(data.canManage));
 
         if (data.sheets && data.sheets.length > 0) {
-          setSheets(data.sheets);
-          // Eğer seçili sekme yoksa, sunucunun döndüğü varsayılan aktif sekmeyi seç
-          if (!selectedSheet || !data.sheets.some((s: any) => s.name === selectedSheet)) {
-            const defSheet = data.activeSheet || (data.sheets.find((s: any) => s.name === "YENİ BAŞVURU KAYIT")?.name) || data.sheets[0].name;
+          // YENİ BAŞVURU KAYIT sekmesi her zaman en başta yer alsın
+          const sortedSheets = [...data.sheets].sort((a: any, b: any) => {
+            if (a.name === "YENİ BAŞVURU KAYIT") return -1;
+            if (b.name === "YENİ BAŞVURU KAYIT") return 1;
+            return a.name.localeCompare(b.name, "tr");
+          });
+          setSheets(sortedSheets);
+          // Eğer seçili sekme yoksa veya listede yoksa, YENİ BAŞVURU KAYIT sekmesini seç
+          if (!selectedSheet || !sortedSheets.some((s: any) => s.name === selectedSheet)) {
+            const defSheet = (sortedSheets.find((s: any) => s.name === "YENİ BAŞVURU KAYIT")?.name) || data.activeSheet || sortedSheets[0].name;
             setSelectedSheet(defSheet);
           }
         }
@@ -485,7 +491,7 @@ export default function ApplicationsPage() {
             toast.success(data.message || "Tüm dosya kayıtları silindi.");
             setDialogState((prev) => ({ ...prev, isOpen: false, isLoading: false }));
             invalidateCache();
-            setSelectedSheet("");
+            setSelectedSheet("YENİ BAŞVURU KAYIT");
             fetchRecords(true);
             fetchImportBatches();
           } else {
@@ -909,7 +915,7 @@ export default function ApplicationsPage() {
 
       setIsExcelModalOpen(false);
       invalidateCache();
-      setSelectedSheet(sheetsToImport[0]?.sheetName || "");
+      setSelectedSheet(sheetsToImport.find((s) => s.sheetName === "YENİ BAŞVURU KAYIT")?.sheetName || sheetsToImport[0]?.sheetName || "YENİ BAŞVURU KAYIT");
       fetchRecords(true);
 
       const sum = data.summary;

@@ -174,6 +174,13 @@ export async function GET(req: Request) {
           .slice(0, 6),
       }));
 
+    // YENİ BAŞVURU KAYIT sekmesi varsayılan olarak her zaman en başta yer alsın
+    sheets.sort((a, b) => {
+      if (a.name === "YENİ BAŞVURU KAYIT") return -1;
+      if (b.name === "YENİ BAŞVURU KAYIT") return 1;
+      return a.name.localeCompare(b.name, "tr");
+    });
+
     // Aktif sekmenin veya mevcut kayıtların Excel sütun başlıkları (En fazla 6 gerçek sütun)
     let activeColumns: string[] = [];
     if (activeSheet) {
