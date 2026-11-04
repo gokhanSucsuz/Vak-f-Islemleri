@@ -325,3 +325,179 @@ export function exportStyledApplicationExcel(
   const cleanFileName = fileName.endsWith(".xlsx") ? fileName : `${fileName}.xlsx`;
   XLSX.writeFile(workbook, cleanFileName, { bookType: "xlsx" });
 }
+
+/**
+ * Edirne Merkez Mahalleleri (24 Resmi Mahalle + Yerel Kayıtlar)
+ */
+export const EDIRNE_MAHALLELERI = [
+  "1. MURAT", "1.MURAT", "BİRİNCİ MURAT", "I. MURAT",
+  "100. YIL", "100.YIL",
+  "ABDURRAHMAN",
+  "ATATÜRK",
+  "BABADEMİRTAŞ", "BABA DEMİRTAŞ",
+  "BARIŞ",
+  "BARUTLUK",
+  "BELEDİYE EVLERİ",
+  "CUMHURİYET",
+  "ÇAVUŞBEY", "ÇAVUŞ BEY",
+  "DİLAVERBEY", "DİLAVER BEY", "DOĞANDİLAVERBEY", "DOĞAN DİLAVER BEY",
+  "DURSUNLU",
+  "FATİH",
+  "İSTASYON",
+  "IZGIN",
+  "KARAAĞAÇ", "KARA AĞAÇ",
+  "KOCASİNAN", "KOCA SİNAN",
+  "KOZLUK",
+  "KURTULUŞ",
+  "MEDRESE ALİ BEY", "MEDRESE ALİBEY", "MEDRESEALİBEY",
+  "MENZİLAHIR", "MENZİL AHIR",
+  "MEYDAN",
+  "MIZRAKLI",
+  "MİMAR SİNAN", "MİMARSİNAN",
+  "MİTHATPAŞA", "MİTHAT PAŞA",
+  "NİŞANCIPAŞA", "NİŞANCI PAŞA",
+  "SABUNİ",
+  "SARICAPAŞA", "SARICA PAŞA",
+  "ŞÜKRÜPAŞA", "ŞÜKRÜ PAŞA",
+  "TALATPAŞA", "TALAT PAŞA",
+  "UMURBEY", "UMUR BEY",
+  "YANCIKÇI ŞAHİN", "YANCIKÇIŞAHİN",
+  "YENİİMARET", "YENİ İMARET",
+  "YEŞİLYURT",
+  "YILDIRIM BEYAZIT", "YILDIRIM BEYAZID", "YILDIRIM BEYAZIT MAH",
+  "YILDIRIM HACI SARRAF", "YILDIRIM HACISARRAF", "HACI SARRAF",
+  "ZAVİYE"
+];
+
+/**
+ * Edirne Merkez Köyleri (38 Köy + Varyasyonlar)
+ */
+export const EDIRNE_KOYLERI = [
+  "AHİ", "AHİKÖY", "AHİ KÖYÜ",
+  "AVARIZ",
+  "BOSNA", "BOSNAKÖY", "BOSNA KÖYÜ",
+  "BUDAKDOĞANCA",
+  "BÜYÜKDÖLLÜK", "BÜYÜK DÖLLÜK",
+  "BÜYÜKİSMAİLCE", "BÜYÜKİSMAİLÇE", "BÜYÜK İSMAİLCE",
+  "DEĞİRMENYANI", "DEĞİRMEN YANI",
+  "DEĞİRMENYENİ", "DEĞİRMEN YENİ", "DEĞİRMENYENİKÖY",
+  "DEMİRHANLI",
+  "DOYRAN",
+  "EKMEKÇİ",
+  "ELÇİLİ",
+  "ESKİKADIN", "ESKİ KADIN",
+  "HACIUMUR", "HACI UMUR",
+  "HASANAĞA", "HASAN AĞA",
+  "HATİP", "HATİPKÖY", "HATİP KÖY",
+  "HIDIRAĞA", "HIDIR AĞA",
+  "İSKENDER", "İSKENDERKÖY", "İSKENDER KÖY",
+  "KARAKASIM",
+  "KARAYUSUF", "KARA YUSUF",
+  "KAYAPA",
+  "KEMAL", "KEMALKÖY", "KEMAL KÖY",
+  "KORUCU", "KORUCUKÖY",
+  "KÖŞENÇİFTLİĞİ", "KÖŞEN ÇİFTLİĞİ",
+  "KÜÇÜKDÖLLÜK", "KÜÇÜK DÖLLÜK",
+  "MENEKŞESOFULAR", "MENEKŞE SOFULAR",
+  "MURATÇALI",
+  "MUSABEYLİ",
+  "ORHANİYE",
+  "SARAYAKPINAR", "SARAY AKPINAR",
+  "SAZLIDERE",
+  "SUAKACAĞI", "SU AKACAĞI",
+  "TAYAKADIN", "TAYA KADIN",
+  "UZGAÇ",
+  "ÜYÜKLÜTATAR", "ÜYÜKLÜ TATAR",
+  "YENİKADIN", "YENİ KADIN",
+  "YOLÜSTÜ"
+];
+
+function normalizeForLocationMatch(s: string): string {
+  if (!s) return "";
+  return String(s)
+    .replace(/Ğ/g, "g").replace(/ğ/g, "g")
+    .replace(/Ü/g, "u").replace(/ü/g, "u")
+    .replace(/Ş/g, "s").replace(/ş/g, "s")
+    .replace(/İ/g, "i").replace(/ı/g, "i").replace(/I/g, "i")
+    .replace(/Ö/g, "o").replace(/ö/g, "o")
+    .replace(/Ç/g, "c").replace(/ç/g, "c")
+    .toLowerCase()
+    .replace(/[\s\-_/\\.:,;()[\]{}*+]/g, "")
+    .trim();
+}
+
+// Canonical lookup tablosu
+const EDIRNE_LOCATION_MAP = new Map<string, string>();
+
+for (const m of EDIRNE_MAHALLELERI) {
+  const norm = normalizeForLocationMatch(m);
+  const canon = m.toLocaleUpperCase("tr-TR");
+  EDIRNE_LOCATION_MAP.set(norm, canon);
+  EDIRNE_LOCATION_MAP.set(normalizeForLocationMatch(m + "MAHALLESI"), canon);
+  EDIRNE_LOCATION_MAP.set(normalizeForLocationMatch(m + "MAH"), canon);
+}
+
+for (const k of EDIRNE_KOYLERI) {
+  const norm = normalizeForLocationMatch(k);
+  const canon = k.toLocaleUpperCase("tr-TR");
+  EDIRNE_LOCATION_MAP.set(norm, canon);
+  EDIRNE_LOCATION_MAP.set(normalizeForLocationMatch(k + "KOYU"), canon);
+  EDIRNE_LOCATION_MAP.set(normalizeForLocationMatch(k + "KOY"), canon);
+}
+
+/**
+ * Verilen metnin Edirne Merkez mahalle veya köy adı olup olmadığını ayırt eder.
+ * Mahalle veya köy ise standart/kanonik adını döner, değilse null döner.
+ * Telefon numaralarını, tarihleri, yardım türlerini (GSS, ŞNT, YB+) ve notları filtreler.
+ */
+export function matchEdirneMahalleKoy(val: any): string | null {
+  if (val === undefined || val === null) return null;
+  const str = String(val).trim();
+  if (!str) return null;
+
+  // Rakam, telefon veya T.C. kontrolü
+  const digitsOnly = str.replace(/\D/g, "");
+  if (digitsOnly.length >= 7) return null;
+  if (/^\d+$/.test(str)) return null;
+  if (/^\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4}$/.test(str)) return null;
+
+  // Yardım türleri veya sistem metinlerini hariç tut
+  const upper = str.toLocaleUpperCase("tr-TR");
+  if (
+    upper.includes("GSS") ||
+    upper.includes("ŞNT") ||
+    upper.includes("SNT") ||
+    upper.includes("YB+") ||
+    upper.includes("YARDIM") ||
+    upper.includes("AKTARIM") ||
+    upper.includes("EVRAK") ||
+    upper.includes("PROJE") ||
+    upper.includes("TAKİP") ||
+    upper.includes("TAKIP")
+  ) {
+    return null;
+  }
+
+  const norm = normalizeForLocationMatch(str);
+  if (!norm || norm.length < 3) return null;
+
+  // 1. Doğrudan eşleşme
+  if (EDIRNE_LOCATION_MAP.has(norm)) {
+    return EDIRNE_LOCATION_MAP.get(norm)!;
+  }
+
+  // 2. "mahallesi", "mah", "koyu", "koy" eklerini temizleyerek kontrol
+  const stripped = norm.replace(/mahallesi$|mah$|koyu$|koy$/g, "");
+  if (EDIRNE_LOCATION_MAP.has(stripped)) {
+    return EDIRNE_LOCATION_MAP.get(stripped)!;
+  }
+
+  // 3. Eşleşme kontrolü
+  for (const [key, canon] of EDIRNE_LOCATION_MAP.entries()) {
+    if (key.length >= 4 && norm === key) {
+      return canon;
+    }
+  }
+
+  return null;
+}

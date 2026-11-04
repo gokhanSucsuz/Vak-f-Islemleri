@@ -11,6 +11,7 @@ import {
   extractTC,
   extractAndCleanTC,
   parseDateOrExtractDate,
+  matchEdirneMahalleKoy,
 } from "@/lib/turkish";
 
 async function checkManagePermission(session: any): Promise<boolean> {
@@ -387,8 +388,35 @@ export async function POST(req: Request) {
             "Köyü",
             "Mahallesi",
           ]);
-      const neighborhood =
-        neighborhoodRaw !== undefined && neighborhoodRaw !== null ? String(neighborhoodRaw).trim() : "";
+
+      let neighborhood = "";
+      const directMatch = matchEdirneMahalleKoy(neighborhoodRaw);
+
+      if (directMatch) {
+        neighborhood = directMatch;
+      } else {
+        // Satırdaki diğer hücrelerde (özellikle bir sonraki sütun / __EMPTY vb.) Edirne mahalle/köyü var mı?
+        let shiftedMatch: string | null = null;
+        for (const [colK, colV] of Object.entries(row)) {
+          const m = matchEdirneMahalleKoy(colV);
+          if (m) {
+            shiftedMatch = m;
+            break;
+          }
+        }
+
+        if (shiftedMatch) {
+          neighborhood = shiftedMatch;
+          // Eğer mahalle sütununda mahalle harici başka bir veri varsa (örn: "GSS", "VERİ AKTARIMI")
+          // ve yardım türü boşsa veya sadece bir tarih içeriyorsa, bu veriyi yardım türüne koru:
+          const rawStr = String(neighborhoodRaw || "").trim();
+          if (rawStr && !helpType && !matchEdirneMahalleKoy(rawStr)) {
+            helpType = rawStr;
+          }
+        } else if (neighborhoodRaw !== undefined && neighborhoodRaw !== null) {
+          neighborhood = String(neighborhoodRaw).trim();
+        }
+      }
 
       // 7. TELEFON & ADRES
       let phoneRaw = customMapping?.phone
@@ -414,6 +442,15 @@ export async function POST(req: Request) {
       for (const col of cleanHeaders) {
         if (row[col] !== undefined && row[col] !== null) {
           extraData[col] = row[col];
+        }
+      }
+
+      // MAHALLE/KÖY sütunu varsa veya belirlendiyse, extraData içindeki mahalle değerini de güncelle
+      for (const col of cleanHeaders) {
+        if (/mahalle|köy|koy|yerleşim/i.test(cleanHeaderKey(col))) {
+          if (neighborhood) {
+            extraData[col] = neighborhood;
+          }
         }
       }
 

@@ -50,6 +50,7 @@ import {
   exportStyledApplicationExcel,
   extractAndCleanTC,
   parseDateOrExtractDate,
+  matchEdirneMahalleKoy,
 } from "@/lib/turkish";
 import ModernConfirmDialog, { DialogType } from "@/components/ModernConfirmDialog";
 
@@ -99,6 +100,31 @@ interface ImportBatchInfo {
   count: number;
   firstCreatedAt: string;
   lastCreatedAt: string;
+}
+
+/**
+ * Sayfalama numaralarını mükerrerlik olmadan ardışık ve güvenli şekilde hesaplar
+ */
+function getPaginationPages(current: number, total: number, maxVisible = 5): number[] {
+  if (total <= 0) return [1];
+  if (total <= maxVisible) {
+    return Array.from({ length: total }, (_, i) => i + 1);
+  }
+  let start = current - Math.floor(maxVisible / 2);
+  let end = current + Math.floor(maxVisible / 2);
+  if (start < 1) {
+    start = 1;
+    end = maxVisible;
+  }
+  if (end > total) {
+    end = total;
+    start = total - maxVisible + 1;
+  }
+  const pages: number[] = [];
+  for (let p = start; p <= end; p++) {
+    pages.push(p);
+  }
+  return pages;
 }
 
 export default function ApplicationsPage() {
@@ -772,7 +798,11 @@ export default function ApplicationsPage() {
             .filter((c) => c && typeof c === "string" && !c.startsWith("__EMPTY") && c.trim() !== "")
             .slice(0, 6);
 
-          // Tamamen boş satırları ayıkla (hiçbir geçerli sütununda değer olmayan satırlar)
+          // Mahalle/Köy ve Yardım Türü sütun başlıklarını tespit et
+          const mahalleCol = validCols.find((c) => /mahalle|köy|koy|yerleşim/i.test(cleanHeaderKey(c))) || "MAHALLE/KÖY";
+          const helpCol = validCols.find((c) => /yardım|yardim/i.test(cleanHeaderKey(c)));
+
+          // Tamamen boş satırları ayıkla ve kaymış Edirne Mahalle/Köy kayıtlarını düzelt
           const cleanRows: any[] = [];
           for (const r of rawRows) {
             let hasData = false;
@@ -784,6 +814,39 @@ export default function ApplicationsPage() {
                 hasData = true;
               }
             }
+
+            // KURAL: Eğer mahalle/köy sütunundaki değer boşsa veya geçerli bir Edirne mahalle/köy adı değilse;
+            // bir sonraki sütunlardaki hücreleri kontrol et. Eğer Edirne mahalle/köy adı varsa o alana ekle;
+            // mahalle veya köy adı dışında başka bir durum (örn: telefon, not vb.) var ise diğer sütunda o veri kalacak.
+            const currentMahalleVal = cleanRow[mahalleCol];
+            const directMahalleMatch = matchEdirneMahalleKoy(currentMahalleVal);
+
+            if (directMahalleMatch) {
+              cleanRow[mahalleCol] = directMahalleMatch;
+            } else {
+              // Satırdaki diğer hücrelerde (özellikle sonraki sütun / __EMPTY) Edirne mahalle/köyü var mı?
+              let shiftedMahalle: string | null = null;
+              for (const [key, cellVal] of Object.entries(r)) {
+                if (key === mahalleCol) continue;
+                const match = matchEdirneMahalleKoy(cellVal);
+                if (match) {
+                  shiftedMahalle = match;
+                  break;
+                }
+              }
+
+              if (shiftedMahalle) {
+                // Eğer mahalle sütununda önceden başka bir veri varsa (örn: "GSS", "VERİ AKTARIMI")
+                // ve yardım türü sütunu boşsa ya da sadece tarih içeriyorsa, bu veriyi yardım türüne koru:
+                const prevStr = String(currentMahalleVal || "").trim();
+                if (prevStr && helpCol && (!cleanRow[helpCol] || /^\d{1,2}[./\-]\d{1,2}[./\-]\d{2,4}$/.test(String(cleanRow[helpCol])))) {
+                  cleanRow[helpCol] = prevStr;
+                }
+                cleanRow[mahalleCol] = shiftedMahalle;
+                hasData = true;
+              }
+            }
+
             // Satırda en az bir alanda veri varsa listeye al, tamamen boşsa yok say
             if (hasData) {
               cleanRows.push(cleanRow);
@@ -1060,8 +1123,22 @@ export default function ApplicationsPage() {
     }
 
     // 2. Standart model alanlarıyla eşleştir
+    const cleanCol = cleanHeaderKey(col);
+
+    // Mahalle / Köy kontrolü: Eğer modelde veya hücrede eşleşen geçerli Edirne mahalle/köyü varsa öncelikle onu kullan
+    if (cleanCol.includes("mahalle") || cleanCol.includes("koy") || cleanCol.includes("yerlesim")) {
+      const matchNeigh = matchEdirneMahalleKoy(record.neighborhood);
+      const matchExtra = matchEdirneMahalleKoy(val);
+      if (matchNeigh) {
+        val = matchNeigh;
+      } else if (matchExtra) {
+        val = matchExtra;
+      } else if (record.neighborhood) {
+        val = record.neighborhood;
+      }
+    }
+
     if (val === undefined || val === null || String(val).trim() === "") {
-      const cleanCol = cleanHeaderKey(col);
       if (
         cleanCol.includes("basvuru") ||
         cleanCol.includes("dosya") ||
@@ -1731,25 +1808,19 @@ export default function ApplicationsPage() {
 
             {/* Sayfa Butonları */}
             <div className="flex items-center gap-1 px-1">
-              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
-                let pageNum = currentPage - 2 + i;
-                if (pageNum < 1) pageNum = i + 1;
-                if (pageNum > totalPages) return null;
-
-                return (
-                  <button
-                    key={pageNum}
-                    onClick={() => setCurrentPage(pageNum)}
-                    className={`w-8 h-8 rounded-xl text-xs font-bold transition-all ${
-                      currentPage === pageNum
-                        ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
-                        : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100"
-                    }`}
-                  >
-                    {pageNum}
-                  </button>
-                );
-              })}
+              {getPaginationPages(currentPage, totalPages).map((pageNum) => (
+                <button
+                  key={pageNum}
+                  onClick={() => setCurrentPage(pageNum)}
+                  className={`w-8 h-8 rounded-xl text-xs font-bold transition-all ${
+                    currentPage === pageNum
+                      ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                      : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100"
+                  }`}
+                >
+                  {pageNum}
+                </button>
+              ))}
             </div>
 
             <button
