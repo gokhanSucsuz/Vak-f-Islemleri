@@ -30,6 +30,7 @@ export async function GET(req: Request) {
     const dateEnd = searchParams.get("dateEnd");
     // Varsayılan sıralama: Son kayıttan ilk kayıta doğru (no_desc)
     const sortBy = searchParams.get("sortBy") || "no_desc";
+    const sheet = searchParams.get("sheet");
     const page = Math.max(parseInt(searchParams.get("page") || "1", 10), 1);
     const limit = Math.max(parseInt(searchParams.get("limit") || "50", 10), 1);
     const fetchAll = searchParams.get("all") === "true";
@@ -38,6 +39,10 @@ export async function GET(req: Request) {
 
     // Filtre Sorgusu
     const query: any = {};
+
+    if (sheet && sheet !== "all") {
+      query.sheetName = sheet;
+    }
 
     if (status === "empty") {
       query.$or = [
@@ -138,9 +143,48 @@ export async function GET(req: Request) {
       ? highestRecord.applicationNoSeq + 1
       : 1;
 
+    // Sistemde kayıtlı tüm sekmeleri ve kayıt sayılarını getir
+    const sheetsAgg = await ApplicationFile.aggregate([
+      {
+        $group: {
+          _id: "$sheetName",
+          count: { $sum: 1 },
+          columnHeaders: { $first: "$columnHeaders" },
+        },
+      },
+      { $sort: { _id: 1 } },
+    ]);
+
+    const sheets = sheetsAgg
+      .filter((s) => s._id)
+      .map((s) => ({
+        name: s._id as string,
+        count: s.count as number,
+        columnHeaders: (s.columnHeaders || []) as string[],
+      }));
+
+    // Aktif sekmenin veya mevcut kayıtların Excel sütun başlıkları
+    let activeColumns: string[] = [];
+    if (sheet && sheet !== "all") {
+      const found = sheets.find((s) => s.name === sheet);
+      if (found && found.columnHeaders.length > 0) {
+        activeColumns = found.columnHeaders;
+      }
+    }
+    if (activeColumns.length === 0 && records.length > 0) {
+      activeColumns =
+        records[0].columnHeaders && records[0].columnHeaders.length > 0
+          ? records[0].columnHeaders
+          : records[0].extraData
+          ? Object.keys(records[0].extraData)
+          : [];
+    }
+
     return NextResponse.json({
       records,
       canManage,
+      sheets,
+      activeColumns,
       pagination: {
         page,
         limit,
@@ -179,6 +223,7 @@ export async function POST(req: Request) {
     const body = await req.json();
     const {
       applicationNo,
+      sheetName,
       applicantName,
       spouseName,
       tcNo,
@@ -195,6 +240,7 @@ export async function POST(req: Request) {
     } = body;
 
     const trimmedAppNo = (applicationNo || "").toString().trim();
+    const targetSheet = (sheetName || "Sayfa 1").trim();
     if (!trimmedAppNo) {
       return NextResponse.json(
         { error: "Başvuru / Dosya Numarası zorunludur." },
@@ -222,6 +268,7 @@ export async function POST(req: Request) {
 
       existing.applicationNo = trimmedAppNo;
       existing.applicationNoSeq = numericSeq;
+      existing.sheetName = targetSheet;
       existing.applicantName = (applicantName || "").trim();
       existing.spouseName = (spouseName || "").trim();
       existing.tcNo = (tcNo || "").trim();
@@ -255,11 +302,14 @@ export async function POST(req: Request) {
     }
 
     // Yeni kayıt oluşturma senaryosu
-    const duplicate = await ApplicationFile.findOne({ applicationNo: trimmedAppNo });
+    const duplicate = await ApplicationFile.findOne({
+      applicationNo: trimmedAppNo,
+      sheetName: targetSheet,
+    });
     if (duplicate) {
       return NextResponse.json(
         {
-          error: `Başvuru / Dosya No (${trimmedAppNo}) sistemde zaten kayıtlı! Lütfen farklı bir numara kullanın.`,
+          error: `Başvuru / Dosya No (${trimmedAppNo}) "${targetSheet}" sekmesinde zaten kayıtlı! Lütfen farklı bir numara kullanın.`,
         },
         { status: 409 }
       );
@@ -268,6 +318,7 @@ export async function POST(req: Request) {
     const newRecord = new ApplicationFile({
       applicationNo: trimmedAppNo,
       applicationNoSeq: numericSeq,
+      sheetName: targetSheet,
       applicantName: (applicantName || "").trim(),
       spouseName: (spouseName || "").trim(),
       tcNo: (tcNo || "").trim(),

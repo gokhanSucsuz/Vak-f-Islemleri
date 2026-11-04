@@ -86,9 +86,48 @@ export async function POST(req: Request) {
 
     await dbConnect();
     const body = await req.json();
-    const { rows, customMapping, fileName = "Excel Yüklemesi" } = body;
+    const { rows, sheets, customMapping, fileName = "Excel Yüklemesi" } = body;
 
-    if (!Array.isArray(rows) || rows.length === 0) {
+    interface ProcessItem {
+      row: Record<string, any>;
+      sheetName: string;
+      columnHeaders: string[];
+      rowIndex: number;
+    }
+
+    const itemsToProcess: ProcessItem[] = [];
+
+    if (sheets && Array.isArray(sheets) && sheets.length > 0) {
+      for (const s of sheets) {
+        const sName = (s.sheetName || "Sayfa 1").trim();
+        const sCols =
+          s.columnHeaders && s.columnHeaders.length > 0
+            ? s.columnHeaders
+            : s.rows && s.rows[0]
+            ? Object.keys(s.rows[0])
+            : [];
+        (s.rows || []).forEach((r: any, idx: number) => {
+          itemsToProcess.push({
+            row: r,
+            sheetName: sName,
+            columnHeaders: sCols,
+            rowIndex: idx + 2,
+          });
+        });
+      }
+    } else if (Array.isArray(rows) && rows.length > 0) {
+      const cols = rows[0] ? Object.keys(rows[0]) : [];
+      rows.forEach((r: any, idx: number) => {
+        itemsToProcess.push({
+          row: r,
+          sheetName: (r._sheetName || body.sheetName || "Sayfa 1").trim(),
+          columnHeaders: cols,
+          rowIndex: idx + 2,
+        });
+      });
+    }
+
+    if (itemsToProcess.length === 0) {
       return NextResponse.json(
         { error: "Yüklenecek veri satırı bulunamadı." },
         { status: 400 }
@@ -108,9 +147,8 @@ export async function POST(req: Request) {
     const CHUNK_SIZE = 500;
     const bulkOps: any[] = [];
 
-    for (let index = 0; index < rows.length; index++) {
-      const row = rows[index];
-      const rowIndex = index + 2;
+    for (let index = 0; index < itemsToProcess.length; index++) {
+      const { row, sheetName, columnHeaders, rowIndex } = itemsToProcess[index];
 
       // 1. BAŞVURU NO (Birincil Anahtar / Primary Key)
       let appNoRaw = customMapping?.applicationNo
@@ -130,17 +168,19 @@ export async function POST(req: Request) {
             "HaneNo",
             "Sıra No",
             "Sira No",
+            "Sıra",
+            "Sira",
             "No",
           ]);
 
-      if (appNoRaw === undefined || appNoRaw === null || String(appNoRaw).trim() === "") {
-        skippedCount++;
-        errors.push(`Satır ${rowIndex}: Başvuru/Hane/Dosya numarası boş olduğu için atlandı.`);
-        continue;
+      let applicationNo = "";
+      if (appNoRaw !== undefined && appNoRaw !== null && String(appNoRaw).trim() !== "") {
+        applicationNo = String(appNoRaw).trim();
+      } else {
+        // Otomatik sıra numarası ata (veri kaybı olmaması için)
+        applicationNo = String(rowIndex - 1);
       }
-
-      const applicationNo = String(appNoRaw).trim();
-      const numericSeq = parseInt(applicationNo.replace(/\D/g, ""), 10) || 0;
+      const numericSeq = parseInt(applicationNo.replace(/\D/g, ""), 10) || rowIndex - 1;
 
       // 2. ADI SOYADI & T.C. AYIKLAMA
       let nameRaw = customMapping?.applicantName
@@ -289,17 +329,20 @@ export async function POST(req: Request) {
       // 9. DİĞER EK SÜTUNLAR (Kaybı önlemek için)
       const extraData: Record<string, any> = {};
       for (const [k, v] of Object.entries(row)) {
-        extraData[k] = v;
+        if (!k.startsWith("_")) {
+          extraData[k] = v;
+        }
       }
 
       // bulkWrite updateOne (upsert)
       bulkOps.push({
         updateOne: {
-          filter: { applicationNo },
+          filter: { applicationNo, sheetName },
           update: {
             $set: {
               applicationNo,
               applicationNoSeq: numericSeq,
+              sheetName,
               applicantName: isNameEmpty ? "" : cleanedApplicantName,
               spouseName: cleanedSpouseName || "",
               tcNo: finalTc || "",
@@ -313,7 +356,10 @@ export async function POST(req: Request) {
               importBatchId: batchId,
               importBatchName: batchName,
               extraData: extraData,
-              columnHeaders: Object.keys(row),
+              columnHeaders:
+                columnHeaders && columnHeaders.length > 0
+                  ? columnHeaders
+                  : Object.keys(extraData),
               updatedBy: session.user.id,
             },
             $setOnInsert: {
@@ -388,10 +434,10 @@ export async function DELETE(req: Request) {
     const clearAll = searchParams.get("clearAll") === "true";
 
     if (clearAll) {
-      // Tüm kayıtları sıfırlama (Yalnızca Süper Admin)
-      if (session.user.role !== "superadmin") {
+      // Tüm kayıtları sıfırlama (Süper Admin veya Yetkilendirilmiş Kullanıcı)
+      if (!canManage) {
         return NextResponse.json(
-          { error: "Tüm kayıtları sıfırlama yetkisi yalnızca Süper Admin'e aittir." },
+          { error: "Tüm kayıtları sıfırlama yetkiniz bulunmamaktadır." },
           { status: 403 }
         );
       }
@@ -411,7 +457,7 @@ export async function DELETE(req: Request) {
 
       return NextResponse.json({
         success: true,
-        message: `Sistemdeki tüm ${count} dosya kaydı başarıyla silindi.`,
+        message: `Sistemdeki tüm ${count} dosya kaydı başarıyla silindi. Yeni dosyanızı yükleyebilirsiniz.`,
         deletedCount: count,
       });
     }

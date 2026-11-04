@@ -45,6 +45,7 @@ export async function PUT(
     if (trimmedAppNo !== record.applicationNo) {
       const duplicate = await ApplicationFile.findOne({
         applicationNo: trimmedAppNo,
+        sheetName: record.sheetName || "Sayfa 1",
         _id: { $ne: id },
       });
       if (duplicate) {

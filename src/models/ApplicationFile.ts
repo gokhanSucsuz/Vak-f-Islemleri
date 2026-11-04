@@ -5,7 +5,12 @@ const ApplicationFileSchema = new mongoose.Schema(
     applicationNo: {
       type: String,
       required: true,
-      unique: true,
+      trim: true,
+      index: true,
+    },
+    sheetName: {
+      type: String,
+      default: 'Sayfa 1',
       trim: true,
       index: true,
     },
@@ -96,6 +101,9 @@ const ApplicationFileSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+// Başvuru no ve sekme adına göre benzersiz indeks
+ApplicationFileSchema.index({ applicationNo: 1, sheetName: 1 }, { unique: true });
 
 // Pre-save hook: compute applicationNoSeq if numeric
 ApplicationFileSchema.pre('save', function () {

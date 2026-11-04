@@ -56,6 +56,7 @@ interface ApplicationFileRecord {
   _id: string;
   applicationNo: string;
   applicationNoSeq: number;
+  sheetName?: string;
   applicantName: string;
   spouseName?: string;
   tcNo: string;
@@ -75,6 +76,12 @@ interface ApplicationFileRecord {
   updatedBy?: { name: string; email: string };
   createdAt: string;
   updatedAt: string;
+}
+
+interface SheetTabInfo {
+  name: string;
+  count: number;
+  columnHeaders: string[];
 }
 
 interface UserPermission {
@@ -113,6 +120,19 @@ export default function ApplicationsPage() {
   const [loading, setLoading] = useState(true);
   const [canManage, setCanManage] = useState(false);
 
+  // Sekmeli Görünüm (Sheet Tabs) Durumları
+  const [sheets, setSheets] = useState<SheetTabInfo[]>([]);
+  const [selectedSheet, setSelectedSheet] = useState<string>("all");
+  const [activeTableColumns, setActiveTableColumns] = useState<string[]>([]);
+
+  // Çoklu Excel Sekme Yükleme Durumları
+  const [parsedSheets, setParsedSheets] = useState<{
+    [key: string]: { rows: any[]; columns: string[] };
+  }>({});
+  const [sheetNamesList, setSheetNamesList] = useState<string[]>([]);
+  const [activePreviewSheet, setActivePreviewSheet] = useState<string>("");
+  const [selectedUploadSheets, setSelectedUploadSheets] = useState<{ [key: string]: boolean }>({});
+
   // Sayfalama (Pagination) Durumları
   const [currentPage, setCurrentPage] = useState(1);
   const [pageSize, setPageSize] = useState(50);
@@ -150,16 +170,19 @@ export default function ApplicationsPage() {
     confirmText?: string;
     cancelText?: string;
     onConfirm?: () => void;
+    onClose?: () => void;
     secondaryAction?: {
       text: string;
       onClick: () => void;
       className?: string;
     };
+    isLoading?: boolean;
   }>({
     isOpen: false,
     title: "",
     message: null,
     type: "question",
+    isLoading: false,
   });
 
   // Record Form Modal State
@@ -229,7 +252,7 @@ export default function ApplicationsPage() {
 
   // Kayıtları Sunucudan veya Önbellekten Çekme
   const fetchRecords = useCallback(async (ignoreCache = false) => {
-    const cacheKey = `${currentPage}_${pageSize}_${filterTab}_${statusFilter}_${searchTerm.trim()}_${dateStart}_${dateEnd}_${minNo}_${maxNo}_${sortBy}`;
+    const cacheKey = `${selectedSheet}_${currentPage}_${pageSize}_${filterTab}_${statusFilter}_${searchTerm.trim()}_${dateStart}_${dateEnd}_${minNo}_${maxNo}_${sortBy}`;
 
     // Önbellek kontrolü (Hemen Ara-Bul)
     if (!ignoreCache && cacheRef.current.has(cacheKey)) {
@@ -248,6 +271,7 @@ export default function ApplicationsPage() {
       params.append("page", String(currentPage));
       params.append("limit", String(pageSize));
       params.append("sortBy", sortBy);
+      if (selectedSheet !== "all") params.append("sheet", selectedSheet);
 
       if (searchTerm.trim()) params.append("search", searchTerm.trim());
       if (filterTab !== "all") params.append("status", filterTab);
@@ -262,6 +286,21 @@ export default function ApplicationsPage() {
         const recs = data.records || [];
         setRecords(recs);
         setCanManage(Boolean(data.canManage));
+
+        if (data.sheets) {
+          setSheets(data.sheets);
+        }
+        if (data.activeColumns && data.activeColumns.length > 0) {
+          setActiveTableColumns(data.activeColumns);
+        } else if (recs.length > 0) {
+          const cols =
+            recs[0].columnHeaders && recs[0].columnHeaders.length > 0
+              ? recs[0].columnHeaders
+              : recs[0].extraData
+              ? Object.keys(recs[0].extraData)
+              : [];
+          if (cols.length > 0) setActiveTableColumns(cols);
+        }
 
         if (data.pagination) {
           setTotalPages(data.pagination.totalPages || 1);
@@ -286,13 +325,25 @@ export default function ApplicationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [currentPage, pageSize, filterTab, statusFilter, searchTerm, dateStart, dateEnd, minNo, maxNo, sortBy, stats]);
+  }, [selectedSheet, currentPage, pageSize, filterTab, statusFilter, searchTerm, dateStart, dateEnd, minNo, maxNo, sortBy, stats]);
+
+  // Sekme Seçimi Değiştiğinde
+  const handleSelectSheet = (sName: string) => {
+    setSelectedSheet(sName);
+    setCurrentPage(1);
+    if (sName !== "all") {
+      const sObj = sheets.find((item) => item.name === sName);
+      if (sObj && sObj.columnHeaders && sObj.columnHeaders.length > 0) {
+        setActiveTableColumns(sObj.columnHeaders);
+      }
+    }
+  };
 
   useEffect(() => {
     if (session) {
       fetchRecords();
     }
-  }, [session, currentPage, pageSize, filterTab, statusFilter, sortBy]);
+  }, [session, selectedSheet, currentPage, pageSize, filterTab, statusFilter, sortBy]);
 
   // Arama değiştiğinde 1. sayfaya dön
   const handleSearchChange = (val: string) => {
@@ -318,8 +369,12 @@ export default function ApplicationsPage() {
 
   // Belirli bir Excel Yükleme Paketini Sil
   const handleDeleteBatch = (batch: ImportBatchInfo) => {
+    // Katman çakışması veya arkada kalma olmaması için aktif modalı kapat
+    setIsBatchManageModalOpen(false);
+
     setDialogState({
       isOpen: true,
+      isLoading: false,
       type: "danger",
       title: "Excel Yükleme Paketini Sil",
       message: (
@@ -330,7 +385,12 @@ export default function ApplicationsPage() {
       ),
       confirmText: "Evet, Paketi Sil",
       cancelText: "Vazgeç",
+      onClose: () => {
+        setDialogState((prev) => ({ ...prev, isOpen: false }));
+        setIsBatchManageModalOpen(true);
+      },
       onConfirm: async () => {
+        setDialogState((prev) => ({ ...prev, isLoading: true }));
         try {
           const res = await fetch(`/api/application-files/import?batchId=${batch._id}`, {
             method: "DELETE",
@@ -338,34 +398,53 @@ export default function ApplicationsPage() {
           const data = await res.json();
           if (res.ok) {
             toast.success(data.message || "Excel paketi başarıyla silindi.");
-            setDialogState((prev) => ({ ...prev, isOpen: false }));
+            setDialogState((prev) => ({ ...prev, isOpen: false, isLoading: false }));
             invalidateCache();
             fetchRecords(true);
             fetchImportBatches();
+            setIsBatchManageModalOpen(true);
           } else {
             toast.error(data.error || "Silinemedi.");
+            setDialogState((prev) => ({ ...prev, isLoading: false }));
+            setIsBatchManageModalOpen(true);
           }
         } catch (e) {
           toast.error("Bir hata oluştu.");
+          setDialogState((prev) => ({ ...prev, isLoading: false }));
+          setIsBatchManageModalOpen(true);
         }
       },
     });
   };
 
-  // Tüm Başvuru Dosyalarını Sıfırla (Süper Admin)
+  // Tüm Başvuru Dosyalarını Sıfırla (Süper Admin veya Yetkili Kullanıcı)
   const handleClearAllRecords = () => {
+    // Katman çakışması veya arkada kalma olmaması için aktif modalı HEMEN kapat
+    setIsBatchManageModalOpen(false);
+
     setDialogState({
       isOpen: true,
+      isLoading: false,
       type: "danger",
       title: "DİKKAT: TÜM DOSYA VERİTABANINI SIFIRLA",
       message: (
-        <span className="text-red-700 font-semibold">
-          Sistemde kayıtlı bulunan tüm başvuru ve hane dosyaları tamamen silinecektir! Bu işlem tüm geçmişi kalıcı olarak siler. Devam etmek istediğinize emin misiniz?
-        </span>
+        <div className="space-y-2">
+          <p className="text-red-700 font-semibold text-base">
+            Sistemde kayıtlı bulunan tüm ({stats.totalCount}) başvuru ve hane dosyası tamamen silinecektir!
+          </p>
+          <p className="text-xs text-slate-500">
+            Bu işlem tüm geçmiş kayıtları ve sekmeleri kalıcı olarak temizler. Eski kayıtlar silindikten sonra yeni Excel dosyanızı sekmeleriyle birlikte sıfırdan rahatlıkla yükleyebilirsiniz.
+          </p>
+        </div>
       ),
       confirmText: "TÜM KAYITLARI SİL",
       cancelText: "İptal",
+      onClose: () => {
+        setDialogState((prev) => ({ ...prev, isOpen: false }));
+        setIsBatchManageModalOpen(true);
+      },
       onConfirm: async () => {
+        setDialogState((prev) => ({ ...prev, isLoading: true }));
         try {
           const res = await fetch("/api/application-files/import?clearAll=true", {
             method: "DELETE",
@@ -373,15 +452,20 @@ export default function ApplicationsPage() {
           const data = await res.json();
           if (res.ok) {
             toast.success(data.message || "Tüm dosya kayıtları silindi.");
-            setDialogState((prev) => ({ ...prev, isOpen: false }));
-            setIsBatchManageModalOpen(false);
+            setDialogState((prev) => ({ ...prev, isOpen: false, isLoading: false }));
             invalidateCache();
+            setSelectedSheet("all");
             fetchRecords(true);
+            fetchImportBatches();
           } else {
             toast.error(data.error || "Silinemedi.");
+            setDialogState((prev) => ({ ...prev, isLoading: false }));
+            setIsBatchManageModalOpen(true);
           }
         } catch (e) {
           toast.error("Bir hata oluştu.");
+          setDialogState((prev) => ({ ...prev, isLoading: false }));
+          setIsBatchManageModalOpen(true);
         }
       },
     });
@@ -620,6 +704,7 @@ export default function ApplicationsPage() {
   const handleDeleteRecord = (record: ApplicationFileRecord) => {
     setDialogState({
       isOpen: true,
+      isLoading: false,
       type: "danger",
       title: "Dosya Kaydını Sil",
       message: (
@@ -630,27 +715,29 @@ export default function ApplicationsPage() {
       confirmText: "Evet, Sil",
       cancelText: "Vazgeç",
       onConfirm: async () => {
+        setDialogState((prev) => ({ ...prev, isLoading: true }));
         try {
           const res = await fetch(`/api/application-files/${record._id}`, { method: "DELETE" });
           if (res.ok) {
             toast.success("Kayıt silindi.");
-            setDialogState((prev) => ({ ...prev, isOpen: false }));
+            setDialogState((prev) => ({ ...prev, isOpen: false, isLoading: false }));
             invalidateCache();
             fetchRecords(true);
           } else {
             const data = await res.json();
             toast.error(data.error || "Silinemedi.");
+            setDialogState((prev) => ({ ...prev, isLoading: false }));
           }
         } catch (e) {
           toast.error("Bir hata oluştu.");
+          setDialogState((prev) => ({ ...prev, isLoading: false }));
         }
       },
     });
   };
 
   // ---------------------------------------------------------
-  // EXCEL DOSYASI OKUMA & İÇE AKTARMA (IMPORT)
-  // Sütunlar: Başvuru no, adı soyadı, eşinin adı soyadı, yardım türü veya başvuru tarihi, mahalle/köy
+  // EXCEL DOSYASI OKUMA & İÇE AKTARMA (IMPORT - ÇOKLU SEKME DESTEĞİ)
   // ---------------------------------------------------------
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -663,48 +750,70 @@ export default function ApplicationsPage() {
       try {
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: "binary", cellDates: true });
-        const firstSheetName = wb.SheetNames[0];
-        const ws = wb.Sheets[firstSheetName];
-        const rawJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+        const sheetNames = wb.SheetNames;
 
-        if (!rawJson || rawJson.length === 0) {
+        if (!sheetNames || sheetNames.length === 0) {
+          toast.error("Excel dosyasında sayfa bulunamadı.");
+          return;
+        }
+
+        const allSheetsData: { [key: string]: { rows: any[]; columns: string[] } } = {};
+        const checkboxes: { [key: string]: boolean } = {};
+        let totalRows = 0;
+
+        for (const sName of sheetNames) {
+          const ws = wb.Sheets[sName];
+          const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
+          const cols = rawRows.length > 0 ? Object.keys(rawRows[0]) : [];
+          allSheetsData[sName] = { rows: rawRows, columns: cols };
+          checkboxes[sName] = true;
+          totalRows += rawRows.length;
+        }
+
+        if (totalRows === 0) {
           toast.error("Seçilen Excel dosyasında veri satırı bulunamadı.");
           return;
         }
 
-        const cols = Object.keys(rawJson[0]);
-        setDetectedColumns(cols);
-        setParsedRows(rawJson);
+        const firstSheet = sheetNames[0];
+        setParsedSheets(allSheetsData);
+        setSheetNamesList(sheetNames);
+        setSelectedUploadSheets(checkboxes);
+        setActivePreviewSheet(firstSheet);
+        setDetectedColumns(allSheetsData[firstSheet].columns);
+        setParsedRows(allSheetsData[firstSheet].rows);
+
+        const firstCols = allSheetsData[firstSheet].columns;
 
         // Otomatik sütun eşleştirmesi
         const mapping = {
           applicationNo:
-            cols.find((c) =>
+            firstCols.find((c) =>
               /başvuru\s*no|basvuru\s*no|hane\s*no|dosya\s*no|sıra\s*no|sira\s*no|no/i.test(c)
-            ) || cols[0] || "",
+            ) || firstCols[0] || "",
           applicantName:
-            cols.find((c) =>
+            firstCols.find((c) =>
               /adı\s*soyadı|ad\s*soyad|adi\s*soyadi|adı|adi|müracaatçı|hak\s*sahibi|vatandaş/i.test(c)
             ) || "",
           spouseName:
-            cols.find((c) =>
+            firstCols.find((c) =>
               /eşinin\s*adı|eş\s*adı|es\s*adi|eş\s*soyadı|es\s*soyadi|eş|es/i.test(c)
             ) || "",
           helpType:
-            cols.find((c) =>
+            firstCols.find((c) =>
               /yardım\s*türü|yardim\s*turu|başvuru\s*tarihi|yardım|yardim/i.test(c)
             ) || "",
           applicationDate:
-            cols.find((c) =>
+            firstCols.find((c) =>
               /başvuru\s*tarihi|kayıt\s*tarihi|basvuru\s*tarihi|kayit\s*tarihi|tarih/i.test(c)
             ) || "",
           neighborhood:
-            cols.find((c) =>
+            firstCols.find((c) =>
               /mahalle\s*\/?\s*köy|mahalle|köy|mahalle\s*\/?\s*koy|koy/i.test(c)
             ) || "",
-          tcNo: cols.find((c) => /t\.?c\.?\s*kimlik|tc\s*no|kimlik\s*no/i.test(c)) || "",
-          phone: cols.find((c) => /telefon|cep|gsm|tel/i.test(c)) || "",
-          address: cols.find((c) => /adres|ikametgah/i.test(c)) || "",
+          tcNo: firstCols.find((c) => /t\.?c\.?\s*kimlik|tc\s*no|kimlik\s*no/i.test(c)) || "",
+          phone: firstCols.find((c) => /telefon|cep|gsm|tel/i.test(c)) || "",
+          address: firstCols.find((c) => /adres|ikametgah/i.test(c)) || "",
         };
 
         setCustomMapping(mapping);
@@ -720,15 +829,29 @@ export default function ApplicationsPage() {
   };
 
   const handleExecuteImport = async () => {
-    if (!parsedRows.length) return;
     setUploadingExcel(true);
 
     try {
+      // Seçili sekmeleri içe aktar
+      const sheetsToImport = Object.keys(selectedUploadSheets)
+        .filter((sName) => selectedUploadSheets[sName])
+        .map((sName) => ({
+          sheetName: sName,
+          rows: parsedSheets[sName]?.rows || [],
+          columnHeaders: parsedSheets[sName]?.columns || [],
+        }));
+
+      if (sheetsToImport.length === 0) {
+        toast.error("Lütfen içe aktarılacak en az bir sekme seçiniz.");
+        setUploadingExcel(false);
+        return;
+      }
+
       const res = await fetch("/api/application-files/import", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          rows: parsedRows,
+          sheets: sheetsToImport,
           customMapping,
           fileName: excelFileName,
         }),
@@ -741,17 +864,19 @@ export default function ApplicationsPage() {
 
       setIsExcelModalOpen(false);
       invalidateCache();
+      setSelectedSheet(sheetsToImport[0]?.sheetName || "all");
       fetchRecords(true);
 
       const sum = data.summary;
       setDialogState({
         isOpen: true,
+        isLoading: false,
         type: "success",
         title: "Excel Verileri Başarıyla Yüklendi!",
         message: (
           <div className="space-y-3">
-            <p>
-              Excel tablosundaki veriler güvenli bir şekilde sisteme aktarılmıştır. T.C. kimlik numaraları ve tarihler kurallara göre otomatik ayrıştırılmıştır.
+            <p className="text-slate-700 text-sm">
+              Excel tablosundaki veriler orijinal sütun düzeni ve sekmeleriyle eksiksiz sisteme aktarılmıştır.
             </p>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="p-2.5 bg-blue-50 text-blue-900 rounded-xl font-medium">
@@ -761,7 +886,7 @@ export default function ApplicationsPage() {
                 Yeni Eklenen: <strong>{sum.insertedCount}</strong>
               </div>
               <div className="p-2.5 bg-purple-50 text-purple-900 rounded-xl font-medium">
-                Güncellenen: <strong>{sum.updatedCount}</strong>
+                Aktarılan Sekme: <strong>{sheetsToImport.length}</strong>
               </div>
               <div className="p-2.5 bg-amber-50 text-amber-900 rounded-xl font-medium">
                 Boş Dosya: <strong>{sum.emptyFilesCount}</strong>
@@ -769,7 +894,7 @@ export default function ApplicationsPage() {
             </div>
             {data.errors?.length > 0 && (
               <div className="p-3 bg-red-50 text-red-800 rounded-xl text-xs">
-                <span className="font-semibold block mb-1">Bazı satırlar atlandı:</span>
+                <span className="font-semibold block mb-1">Uyarılar:</span>
                 <ul className="list-disc pl-4 space-y-0.5">
                   {data.errors.map((e: string, i: number) => (
                     <li key={i}>{e}</li>
@@ -862,6 +987,154 @@ export default function ApplicationsPage() {
     toast.success("Excel tablosu Türkçe karakter uyumlu ve antetli olarak indirildi.");
   };
 
+  // Aktif sekmenin veya yüklenen dosyanın orijinal sütunları
+  const getTableColumns = (): string[] => {
+    if (activeTableColumns && activeTableColumns.length > 0) {
+      return activeTableColumns;
+    }
+    if (records.length > 0) {
+      if (records[0].columnHeaders && records[0].columnHeaders.length > 0) {
+        return records[0].columnHeaders;
+      }
+      if (records[0].extraData) {
+        const keys = Object.keys(records[0].extraData);
+        if (keys.length > 0) return keys;
+      }
+    }
+    return [
+      "Başvuru No",
+      "Adı Soyadı",
+      "T.C. Kimlik No",
+      "Eşinin Adı Soyadı",
+      "Yardım Türü",
+      "Başvuru Tarihi",
+      "Mahalle / Köy",
+      "Durum",
+    ];
+  };
+
+  const tableColumns = getTableColumns();
+
+  // Hücre içeriğini dinamik & düzeni bozmadan formatlama
+  const renderCellContent = (col: string, record: ApplicationFileRecord) => {
+    let val: any = undefined;
+    if (record.extraData && record.extraData[col] !== undefined) {
+      val = record.extraData[col];
+    } else {
+      const norm = col.toLowerCase().replace(/[\s\-_/]/g, "");
+      if (
+        norm.includes("başvuru") ||
+        norm.includes("basvuru") ||
+        norm.includes("dosya") ||
+        norm.includes("haneno")
+      ) {
+        val = record.applicationNo;
+      } else if (
+        norm.includes("ad") &&
+        norm.includes("soyad") &&
+        !norm.includes("eş") &&
+        !norm.includes("es")
+      ) {
+        val = record.applicantName;
+      } else if (norm.includes("eş") || norm.includes("es")) {
+        val = record.spouseName;
+      } else if (norm.includes("tc") || norm.includes("kimlik")) {
+        val = record.tcNo;
+      } else if (norm.includes("yardım") || norm.includes("yardim")) {
+        val = record.helpType;
+      } else if (norm.includes("mahalle") || norm.includes("köy") || norm.includes("koy")) {
+        val = record.neighborhood;
+      } else if (norm.includes("tarih")) {
+        val = record.applicationDate;
+      } else if (norm.includes("telefon") || norm.includes("tel") || norm.includes("gsm")) {
+        val = record.phone;
+      } else if (norm.includes("adres")) {
+        val = record.address;
+      } else if (norm.includes("durum")) {
+        val = record.fileStatus;
+      } else if (norm.includes("not") || norm.includes("açıklama")) {
+        val = record.notes;
+      }
+    }
+
+    if (val === undefined || val === null || String(val).trim() === "") {
+      const norm = col.toLowerCase();
+      if (
+        (norm.includes("ad") ||
+          norm.includes("müracaat") ||
+          norm.includes("hak") ||
+          norm.includes("vatandaş")) &&
+        !norm.includes("eş") &&
+        !norm.includes("es")
+      ) {
+        return (
+          <div className="flex items-center gap-1.5">
+            <span className="px-2 py-0.5 rounded-full text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200/60">
+              Boş Dosya
+            </span>
+            {canManage && (
+              <button
+                type="button"
+                onClick={() => openFormModalForEmpty(record)}
+                className="text-[11px] text-blue-600 hover:text-blue-800 font-bold underline flex items-center gap-0.5"
+              >
+                Doldur
+              </button>
+            )}
+          </div>
+        );
+      }
+      return <span className="text-slate-300 font-mono">-</span>;
+    }
+
+    if (val instanceof Date) {
+      return (
+        <span className="text-slate-600 font-mono text-xs">
+          {val.toLocaleDateString("tr-TR")}
+        </span>
+      );
+    }
+    if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}T/.test(val)) {
+      const d = new Date(val);
+      if (!isNaN(d.getTime())) {
+        return (
+          <span className="text-slate-600 font-mono text-xs">
+            {d.toLocaleDateString("tr-TR")}
+          </span>
+        );
+      }
+    }
+
+    if (val === "Boş Dosya") {
+      return (
+        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200/60">
+          Boş Dosya
+        </span>
+      );
+    } else if (val === "Aktif") {
+      return (
+        <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-emerald-100 text-emerald-800 border border-emerald-200/60">
+          Aktif
+        </span>
+      );
+    }
+
+    const normCol = col.toLowerCase();
+    if (
+      normCol.includes("başvuru") ||
+      normCol.includes("dosya") ||
+      normCol.includes("hane no")
+    ) {
+      return (
+        <span className="inline-flex items-center px-2 py-0.5 rounded-lg bg-slate-100 border border-slate-200 font-mono font-bold text-slate-800 text-xs">
+          #{String(val)}
+        </span>
+      );
+    }
+
+    return <span className="text-slate-800 text-sm font-medium">{String(val)}</span>;
+  };
+
   return (
     <div className="space-y-6">
       {/* Gizli Excel File Input */}
@@ -871,20 +1144,6 @@ export default function ApplicationsPage() {
         accept=".xlsx, .xls, .csv"
         className="hidden"
         onChange={handleFileSelect}
-      />
-
-      {/* Modern Dialog Bileşeni */}
-      <ModernConfirmDialog
-        isOpen={dialogState.isOpen}
-        onClose={() => setDialogState((prev) => ({ ...prev, isOpen: false }))}
-        title={dialogState.title}
-        message={dialogState.message}
-        details={dialogState.details}
-        type={dialogState.type}
-        confirmText={dialogState.confirmText}
-        cancelText={dialogState.cancelText}
-        onConfirm={dialogState.onConfirm}
-        secondaryAction={dialogState.secondaryAction}
       />
 
       {/* Üst Başlık & Butonlar */}
@@ -1253,33 +1512,89 @@ export default function ApplicationsPage() {
         </div>
       </div>
 
-      {/* Kayıt Tablosu (Sütunlar: Başvuru no, adı soyadı, eşinin adı soyadı, yardım türü veya başvuru tarihi, mahalle/köy) */}
+      {/* EXCEL SEKME TABS (SEKMELİ GÖRÜNÜM) */}
+      {sheets.length > 0 && (
+        <div className="bg-white p-3 rounded-2xl border border-slate-200/80 shadow-sm flex items-center justify-between gap-3 overflow-x-auto">
+          <div className="flex items-center gap-2 overflow-x-auto py-0.5">
+            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider flex items-center gap-1.5 flex-shrink-0">
+              <Layers className="w-4 h-4 text-indigo-600" />
+              Sekmeler:
+            </span>
+            <button
+              type="button"
+              onClick={() => handleSelectSheet("all")}
+              className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+                selectedSheet === "all"
+                  ? "bg-slate-900 text-white shadow-md shadow-slate-900/20"
+                  : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+              }`}
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5" />
+              Tüm Sekmeler
+              <span className="px-1.5 py-0.5 rounded-full text-[10px] bg-slate-700 text-slate-200">
+                {stats.totalCount}
+              </span>
+            </button>
+            {sheets.map((s) => (
+              <button
+                key={s.name}
+                type="button"
+                onClick={() => handleSelectSheet(s.name)}
+                className={`px-3.5 py-1.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+                  selectedSheet === s.name
+                    ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/20"
+                    : "bg-slate-100 text-slate-700 hover:bg-indigo-50 hover:text-indigo-600"
+                }`}
+              >
+                <FileText className="w-3.5 h-3.5" />
+                {s.name}
+                <span
+                  className={`px-1.5 py-0.5 rounded-full text-[10px] ${
+                    selectedSheet === s.name
+                      ? "bg-white/20 text-white"
+                      : "bg-white text-slate-600 border border-slate-200"
+                  }`}
+                >
+                  {s.count}
+                </span>
+              </button>
+            ))}
+          </div>
+
+          <div className="text-xs text-slate-400 whitespace-nowrap flex-shrink-0 hidden md:block">
+            {tableColumns.length} Sütun Görüntüleniyor
+          </div>
+        </div>
+      )}
+
+      {/* Kayıt Tablosu (Excel Sütunlarına Göre Dinamik & Bozulmayan Düzen) */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-sm">
             <thead>
-              <tr className="bg-slate-50/70 border-b border-slate-100">
-                <th className="py-4 px-4 font-bold text-slate-700 w-32">
-                  <span className="flex items-center gap-1">
-                    <Hash className="w-3.5 h-3.5 text-blue-600" />
-                    Başvuru No
-                  </span>
+              <tr className="bg-slate-50/80 border-b border-slate-200">
+                <th className="py-3.5 px-4 font-bold text-slate-600 w-14 text-center text-xs">
+                  #
                 </th>
-                <th className="py-4 px-4 font-bold text-slate-700">Adı Soyadı / TC</th>
-                <th className="py-4 px-4 font-bold text-slate-700">Eşinin Adı Soyadı</th>
-                <th className="py-4 px-4 font-bold text-slate-700">Yardım Türü</th>
-                <th className="py-4 px-4 font-bold text-slate-700 w-36">Kayıt / Başvuru Tarihi</th>
-                <th className="py-4 px-4 font-bold text-slate-700">Mahalle / Köy</th>
-                <th className="py-4 px-4 font-bold text-slate-700 w-28">Durum</th>
+                {tableColumns.map((col) => (
+                  <th
+                    key={col}
+                    className="py-3.5 px-4 font-bold text-slate-700 whitespace-nowrap text-left border-b border-slate-200 text-xs tracking-wider"
+                  >
+                    {col}
+                  </th>
+                ))}
                 {canManage && (
-                  <th className="py-4 px-4 font-bold text-slate-700 text-right w-24">İşlemler</th>
+                  <th className="py-3.5 px-4 font-bold text-slate-700 text-right whitespace-nowrap sticky right-0 bg-slate-50/95 backdrop-blur-sm z-10 w-24">
+                    İşlemler
+                  </th>
                 )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-500">
+                  <td colSpan={tableColumns.length + 2} className="py-12 text-center text-slate-500">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                       Dosyalar yükleniyor...
@@ -1288,134 +1603,39 @@ export default function ApplicationsPage() {
                 </tr>
               ) : records.length === 0 ? (
                 <tr>
-                  <td colSpan={8} className="py-12 text-center text-slate-400">
+                  <td colSpan={tableColumns.length + 2} className="py-12 text-center text-slate-400">
                     Aranan kriterlere uygun dosya kaydı bulunamadı.
                   </td>
                 </tr>
               ) : (
-                records.map((record) => {
+                records.map((record, idx) => {
                   const isEmpty = !record.applicantName || record.applicantName.trim() === "";
-
-                  const displayDate = record.applicationDate
-                    ? new Date(record.applicationDate).toLocaleDateString("tr-TR")
-                    : record.createdAt
-                    ? new Date(record.createdAt).toLocaleDateString("tr-TR")
-                    : "";
 
                   return (
                     <tr
                       key={record._id}
-                      className={`hover:bg-slate-50/80 transition-colors ${
+                      className={`hover:bg-indigo-50/20 transition-colors ${
                         isEmpty ? "bg-amber-50/30" : ""
                       }`}
                     >
-                      {/* Başvuru No (Primary Key) */}
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 border border-slate-200 text-slate-800 text-xs">
-                          #{record.applicationNo}
-                        </span>
+                      {/* Sıra No */}
+                      <td className="py-3.5 px-4 font-mono text-xs text-slate-400 text-center whitespace-nowrap">
+                        {(currentPage - 1) * pageSize + idx + 1}
                       </td>
 
-                      {/* Adı Soyadı & TC */}
-                      <td className="py-3.5 px-4 font-semibold">
-                        {isEmpty ? (
-                          <div className="flex items-center gap-2">
-                            <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200/60">
-                              Boş Dosya
-                            </span>
-                            {canManage && (
-                              <button
-                                onClick={() => openFormModalForEmpty(record)}
-                                className="text-xs text-blue-600 hover:text-blue-800 font-bold underline flex items-center gap-0.5"
-                              >
-                                Doldur <ArrowRight className="w-3 h-3" />
-                              </button>
-                            )}
-                          </div>
-                        ) : (
-                          <div>
-                            <span className="text-slate-800 text-sm block font-bold">
-                              {record.applicantName}
-                            </span>
-                            {record.tcNo && (
-                              <span className="font-mono text-[11px] text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
-                                TC: {record.tcNo}
-                              </span>
-                            )}
-                          </div>
-                        )}
-                      </td>
-
-                      {/* Eşinin Adı Soyadı */}
-                      <td className="py-3.5 px-4 text-xs text-slate-700">
-                        {record.spouseName ? (
-                          <div>
-                            <span className="font-semibold block">{record.spouseName}</span>
-                            {record.spouseTcNo && (
-                              <span className="text-[10px] text-slate-400 font-mono">
-                                TC: {record.spouseTcNo}
-                              </span>
-                            )}
-                          </div>
-                        ) : (
-                          <span className="text-slate-300">-</span>
-                        )}
-                      </td>
-
-                      {/* Yardım Türü */}
-                      <td className="py-3.5 px-4 text-xs font-medium text-slate-700">
-                        {record.helpType ? (
-                          <span className="inline-block px-2 py-0.5 rounded-lg bg-blue-50 text-blue-800 border border-blue-100 font-semibold text-[11px]">
-                            {record.helpType}
-                          </span>
-                        ) : (
-                          <span className="text-slate-300">-</span>
-                        )}
-                      </td>
-
-                      {/* Kayıt / Başvuru Tarihi (Yoksa boş kalır!) */}
-                      <td className="py-3.5 px-4 text-xs text-slate-600 whitespace-nowrap">
-                        {displayDate ? (
-                          <span className="font-mono font-medium">{displayDate}</span>
-                        ) : (
-                          <span className="text-slate-300">-</span>
-                        )}
-                      </td>
-
-                      {/* Mahalle / Köy */}
-                      <td className="py-3.5 px-4 text-xs text-slate-700">
-                        {record.neighborhood || record.address ? (
-                          <div className="flex items-center gap-1 font-medium">
-                            <MapPin className="w-3 h-3 text-slate-400 flex-shrink-0" />
-                            <span className="truncate max-w-xs">
-                              {record.neighborhood || record.address}
-                            </span>
-                          </div>
-                        ) : (
-                          <span className="text-slate-300">-</span>
-                        )}
-                      </td>
-
-                      {/* Durum */}
-                      <td className="py-3.5 px-4">
-                        <span
-                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
-                            isEmpty
-                              ? "bg-amber-100 text-amber-800 border border-amber-200"
-                              : record.fileStatus === "Pasif"
-                              ? "bg-slate-100 text-slate-700"
-                              : "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                          }`}
-                        >
-                          {isEmpty ? "Boş Dosya" : record.fileStatus || "Aktif"}
-                        </span>
-                      </td>
+                      {/* Dinamik Excel Sütunları */}
+                      {tableColumns.map((col) => (
+                        <td key={col} className="py-3.5 px-4 whitespace-nowrap">
+                          {renderCellContent(col, record)}
+                        </td>
+                      ))}
 
                       {/* İşlemler */}
                       {canManage && (
-                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap sticky right-0 bg-white/95 backdrop-blur-sm z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.03)]">
                           <div className="flex items-center justify-end gap-1">
                             <button
+                              type="button"
                               onClick={() => openFormModalForEdit(record)}
                               className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
                               title="Düzenle"
@@ -1423,6 +1643,7 @@ export default function ApplicationsPage() {
                               <Edit3 className="w-4 h-4" />
                             </button>
                             <button
+                              type="button"
                               onClick={() => handleDeleteRecord(record)}
                               className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
                               title="Sil"
@@ -1595,8 +1816,8 @@ export default function ApplicationsPage() {
                 </div>
               )}
 
-              {/* Süper Admin: Tüm Veritabanını Temizleme Seçeneği */}
-              {isSuperAdmin && (
+              {/* Süper Admin veya Yetkili Kullanıcı: Tüm Veritabanını Temizleme Seçeneği */}
+              {(isSuperAdmin || canManage) && (
                 <div className="mt-6 p-4 bg-red-50/70 border border-red-200 rounded-2xl space-y-2">
                   <div className="flex items-center justify-between">
                     <div>
@@ -2103,6 +2324,75 @@ export default function ApplicationsPage() {
             </div>
 
             <div className="mt-5 space-y-4">
+              {/* ÇOKLU SEKME SEÇİCİ */}
+              {sheetNamesList.length > 1 && (
+                <div className="p-4 bg-slate-100 rounded-2xl border border-slate-200">
+                  <div className="flex items-center justify-between mb-2">
+                    <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                      <Layers className="w-4 h-4 text-indigo-600" />
+                      Excel Sekmeleri ({sheetNamesList.length} Sekme Tespit Edildi):
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const allSelected = sheetNamesList.every((s) => selectedUploadSheets[s]);
+                        const next: { [k: string]: boolean } = {};
+                        sheetNamesList.forEach((s) => {
+                          next[s] = !allSelected;
+                        });
+                        setSelectedUploadSheets(next);
+                      }}
+                      className="text-[11px] font-semibold text-indigo-600 hover:underline"
+                    >
+                      {sheetNamesList.every((s) => selectedUploadSheets[s]) ? "Seçimi Kaldır" : "Tümünü Seç"}
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-2">
+                    {sheetNamesList.map((sName) => {
+                      const isChecked = selectedUploadSheets[sName] !== false;
+                      const rowCount = parsedSheets[sName]?.rows?.length || 0;
+                      const isCurrent = activePreviewSheet === sName;
+                      return (
+                        <div
+                          key={sName}
+                          onClick={() => {
+                            setActivePreviewSheet(sName);
+                            setDetectedColumns(parsedSheets[sName]?.columns || []);
+                            setParsedRows(parsedSheets[sName]?.rows || []);
+                          }}
+                          className={`cursor-pointer px-3 py-1.5 rounded-xl border text-xs font-semibold flex items-center gap-2 transition-all ${
+                            isCurrent
+                              ? "bg-indigo-600 text-white border-indigo-600 shadow-sm"
+                              : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onClick={(e) => e.stopPropagation()}
+                            onChange={(e) => {
+                              setSelectedUploadSheets((prev) => ({
+                                ...prev,
+                                [sName]: e.target.checked,
+                              }));
+                            }}
+                            className="rounded text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                          />
+                          <span>{sName}</span>
+                          <span
+                            className={`text-[10px] px-1.5 py-0.2 rounded-full ${
+                              isCurrent ? "bg-white/20 text-white" : "bg-slate-100 text-slate-500"
+                            }`}
+                          >
+                            {rowCount} satır
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
               <div className="p-4 bg-indigo-50/70 border border-indigo-200/60 rounded-2xl text-xs text-indigo-900 leading-relaxed space-y-1">
                 <span className="font-bold block">Otomatik Dönüştürme Kuralları:</span>
                 <p>• <strong>Başvuru No:</strong> Birincil anahtar (Primary Key) olarak kaydedilir.</p>
@@ -2393,6 +2683,24 @@ export default function ApplicationsPage() {
           </div>
         </div>
       )}
+
+      {/* Modern Dialog Bileşeni - En son render edilerek tüm pencerelerin ve modalların üstünde kalması garanti altına alındı */}
+      <ModernConfirmDialog
+        isOpen={dialogState.isOpen}
+        onClose={() => {
+          if (dialogState.onClose) dialogState.onClose();
+          else setDialogState((prev) => ({ ...prev, isOpen: false }));
+        }}
+        title={dialogState.title}
+        message={dialogState.message}
+        details={dialogState.details}
+        type={dialogState.type}
+        confirmText={dialogState.confirmText}
+        cancelText={dialogState.cancelText}
+        onConfirm={dialogState.onConfirm}
+        secondaryAction={dialogState.secondaryAction}
+        isLoading={dialogState.isLoading}
+      />
     </div>
   );
 }

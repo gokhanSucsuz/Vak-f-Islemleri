@@ -91,17 +91,24 @@ export default function ModernConfirmDialog({
   const IconComponent = iconConfig.icon;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+    <div
+      className="fixed inset-0 flex items-center justify-center p-4"
+      style={{ zIndex: 99999 }}
+    >
       {/* Arka plan karartması */}
       <div
         className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm transition-opacity animate-in fade-in duration-200"
+        style={{ zIndex: 99999 }}
         onClick={() => {
           if (!isLoading) onClose();
         }}
       />
 
       {/* Modal Kutusu */}
-      <div className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 overflow-hidden z-10 animate-in zoom-in-95 duration-200">
+      <div
+        className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 overflow-hidden animate-in zoom-in-95 duration-200"
+        style={{ zIndex: 100000 }}
+      >
         <button
           onClick={onClose}
           disabled={isLoading}
