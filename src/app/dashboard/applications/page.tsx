@@ -46,6 +46,7 @@ import {
 } from "lucide-react";
 import {
   turkishIncludes,
+  cleanHeaderKey,
   exportStyledApplicationExcel,
   extractAndCleanTC,
   parseDateOrExtractDate,
@@ -764,10 +765,34 @@ export default function ApplicationsPage() {
         for (const sName of sheetNames) {
           const ws = wb.Sheets[sName];
           const rawRows: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
-          const cols = rawRows.length > 0 ? Object.keys(rawRows[0]) : [];
-          allSheetsData[sName] = { rows: rawRows, columns: cols };
+          
+          // Sadece geçerli sütunları al (En fazla 6 sütun, __EMPTY veya boş olanları tamamen hariç tut)
+          const allRawCols = rawRows.length > 0 ? Object.keys(rawRows[0]) : [];
+          const validCols = allRawCols
+            .filter((c) => c && typeof c === "string" && !c.startsWith("__EMPTY") && c.trim() !== "")
+            .slice(0, 6);
+
+          // Tamamen boş satırları ayıkla (hiçbir geçerli sütununda değer olmayan satırlar)
+          const cleanRows: any[] = [];
+          for (const r of rawRows) {
+            let hasData = false;
+            const cleanRow: Record<string, any> = {};
+            for (const col of validCols) {
+              const val = r[col];
+              cleanRow[col] = val !== undefined && val !== null ? val : "";
+              if (String(cleanRow[col]).trim() !== "") {
+                hasData = true;
+              }
+            }
+            // Satırda en az bir alanda veri varsa listeye al, tamamen boşsa yok say
+            if (hasData) {
+              cleanRows.push(cleanRow);
+            }
+          }
+
+          allSheetsData[sName] = { rows: cleanRows, columns: validCols };
           checkboxes[sName] = true;
-          totalRows += rawRows.length;
+          totalRows += cleanRows.length;
         }
 
         if (totalRows === 0) {
@@ -789,7 +814,7 @@ export default function ApplicationsPage() {
         const mapping = {
           applicationNo:
             firstCols.find((c) =>
-              /başvuru\s*no|basvuru\s*no|hane\s*no|dosya\s*no|sıra\s*no|sira\s*no|no/i.test(c)
+              /başvuru\s*no|basvuru\s*no|hane\s*no|dosya\s*no|sıra\s*no|sira\s*no|^no$/i.test(c.trim())
             ) || firstCols[0] || "",
           applicantName:
             firstCols.find((c) =>
@@ -809,7 +834,7 @@ export default function ApplicationsPage() {
             ) || "",
           neighborhood:
             firstCols.find((c) =>
-              /mahalle\s*\/?\s*köy|mahalle|köy|mahalle\s*\/?\s*koy|koy/i.test(c)
+              /mahalle|köy|koy|yerleşim/i.test(cleanHeaderKey(c))
             ) || "",
           tcNo: firstCols.find((c) => /t\.?c\.?\s*kimlik|tc\s*no|kimlik\s*no/i.test(c)) || "",
           phone: firstCols.find((c) => /telefon|cep|gsm|tel/i.test(c)) || "",
@@ -987,30 +1012,30 @@ export default function ApplicationsPage() {
     toast.success("Excel tablosu Türkçe karakter uyumlu ve antetli olarak indirildi.");
   };
 
-  // Aktif sekmenin veya yüklenen dosyanın orijinal sütunları
+  // Aktif sekmenin veya yüklenen dosyanın orijinal sütunları (En fazla 6 sütun, __EMPTY tamamen hariç)
   const getTableColumns = (): string[] => {
+    let cols: string[] = [];
     if (activeTableColumns && activeTableColumns.length > 0) {
-      return activeTableColumns;
-    }
-    if (records.length > 0) {
+      cols = activeTableColumns;
+    } else if (records.length > 0) {
       if (records[0].columnHeaders && records[0].columnHeaders.length > 0) {
-        return records[0].columnHeaders;
-      }
-      if (records[0].extraData) {
-        const keys = Object.keys(records[0].extraData);
-        if (keys.length > 0) return keys;
+        cols = records[0].columnHeaders;
+      } else if (records[0].extraData) {
+        cols = Object.keys(records[0].extraData);
       }
     }
-    return [
-      "Başvuru No",
-      "Adı Soyadı",
-      "T.C. Kimlik No",
-      "Eşinin Adı Soyadı",
-      "Yardım Türü",
-      "Başvuru Tarihi",
-      "Mahalle / Köy",
-      "Durum",
-    ];
+    if (cols.length === 0) {
+      cols = [
+        "Başvuru No",
+        "Adı Soyadı",
+        "Eşinin Adı Soyadı",
+        "Yardım Türü",
+        "Mahalle / Köy",
+      ];
+    }
+    return cols
+      .filter((c) => c && typeof c === "string" && !c.startsWith("__EMPTY") && c.trim() !== "")
+      .slice(0, 6);
   };
 
   const tableColumns = getTableColumns();
@@ -1018,41 +1043,57 @@ export default function ApplicationsPage() {
   // Hücre içeriğini dinamik & düzeni bozmadan formatlama
   const renderCellContent = (col: string, record: ApplicationFileRecord) => {
     let val: any = undefined;
-    if (record.extraData && record.extraData[col] !== undefined) {
-      val = record.extraData[col];
-    } else {
-      const norm = col.toLowerCase().replace(/[\s\-_/]/g, "");
+
+    // 1. extraData içinde doğrudan veya esnek anahtarla ara
+    if (record.extraData) {
+      if (record.extraData[col] !== undefined && String(record.extraData[col]).trim() !== "") {
+        val = record.extraData[col];
+      } else {
+        const cleanCol = cleanHeaderKey(col);
+        for (const [k, v] of Object.entries(record.extraData)) {
+          if (cleanHeaderKey(k) === cleanCol && v !== undefined && v !== null && String(v).trim() !== "") {
+            val = v;
+            break;
+          }
+        }
+      }
+    }
+
+    // 2. Standart model alanlarıyla eşleştir
+    if (val === undefined || val === null || String(val).trim() === "") {
+      const cleanCol = cleanHeaderKey(col);
       if (
-        norm.includes("başvuru") ||
-        norm.includes("basvuru") ||
-        norm.includes("dosya") ||
-        norm.includes("haneno")
+        cleanCol.includes("basvuru") ||
+        cleanCol.includes("dosya") ||
+        cleanCol.includes("haneno") ||
+        cleanCol === "no" ||
+        cleanCol === "sirano" ||
+        cleanCol === "sira"
       ) {
         val = record.applicationNo;
       } else if (
-        norm.includes("ad") &&
-        norm.includes("soyad") &&
-        !norm.includes("eş") &&
-        !norm.includes("es")
+        cleanCol.includes("ad") &&
+        cleanCol.includes("soyad") &&
+        !cleanCol.includes("es")
       ) {
         val = record.applicantName;
-      } else if (norm.includes("eş") || norm.includes("es")) {
+      } else if (cleanCol.includes("es")) {
         val = record.spouseName;
-      } else if (norm.includes("tc") || norm.includes("kimlik")) {
+      } else if (cleanCol.includes("tc") || cleanCol.includes("kimlik")) {
         val = record.tcNo;
-      } else if (norm.includes("yardım") || norm.includes("yardim")) {
+      } else if (cleanCol.includes("yardim")) {
         val = record.helpType;
-      } else if (norm.includes("mahalle") || norm.includes("köy") || norm.includes("koy")) {
+      } else if (cleanCol.includes("mahalle") || cleanCol.includes("koy") || cleanCol.includes("yerlesim")) {
         val = record.neighborhood;
-      } else if (norm.includes("tarih")) {
+      } else if (cleanCol.includes("tarih")) {
         val = record.applicationDate;
-      } else if (norm.includes("telefon") || norm.includes("tel") || norm.includes("gsm")) {
+      } else if (cleanCol.includes("telefon") || cleanCol.includes("tel") || cleanCol.includes("gsm")) {
         val = record.phone;
-      } else if (norm.includes("adres")) {
+      } else if (cleanCol.includes("adres")) {
         val = record.address;
-      } else if (norm.includes("durum")) {
+      } else if (cleanCol.includes("durum")) {
         val = record.fileStatus;
-      } else if (norm.includes("not") || norm.includes("açıklama")) {
+      } else if (cleanCol.includes("not") || cleanCol.includes("aciklama")) {
         val = record.notes;
       }
     }

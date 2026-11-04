@@ -7,6 +7,7 @@ import User from "@/models/User";
 import Log from "@/models/Log";
 import {
   normalizeTurkish,
+  cleanHeaderKey,
   extractTC,
   extractAndCleanTC,
   parseDateOrExtractDate,
@@ -20,17 +21,31 @@ async function checkManagePermission(session: any): Promise<boolean> {
   return Boolean(dbUser?.role === "superadmin" || dbUser?.canManageApplications);
 }
 
-// Sütun başlığını esnek Türkçe normalize kontrol ile bulma
+// Sütun başlığını esnek Türkçe normalize ve temizlenmiş anahtar kontrolü ile bulma
 function findColumnValue(row: Record<string, any>, possibleNames: string[]): any {
-  const keys = Object.keys(row);
-  for (const name of possibleNames) {
-    const normTarget = normalizeTurkish(name);
+  if (!row) return undefined;
+  const keys = Object.keys(row).filter((k) => !k.startsWith("__EMPTY") && k.trim() !== "");
+  const cleanTargets = possibleNames.map(cleanHeaderKey);
+
+  // 1. Temizlenmiş tam eşleşme (örn: "MAHALLE / KÖY" -> "mahallekoy")
+  for (const target of cleanTargets) {
     for (const key of keys) {
-      if (normalizeTurkish(key) === normTarget) {
+      if (cleanHeaderKey(key) === target) {
         return row[key];
       }
     }
   }
+
+  // 2. Temizlenmiş kısmi eşleşme
+  for (const target of cleanTargets) {
+    for (const key of keys) {
+      const cleanK = cleanHeaderKey(key);
+      if (cleanK.includes(target) || target.includes(cleanK)) {
+        return row[key];
+      }
+    }
+  }
+
   return undefined;
 }
 
@@ -100,13 +115,42 @@ export async function POST(req: Request) {
     if (sheets && Array.isArray(sheets) && sheets.length > 0) {
       for (const s of sheets) {
         const sName = (s.sheetName || "Sayfa 1").trim();
-        const sCols =
+        const rawCols =
           s.columnHeaders && s.columnHeaders.length > 0
             ? s.columnHeaders
             : s.rows && s.rows[0]
             ? Object.keys(s.rows[0])
             : [];
+
+        // En fazla 6 gerçek sütun (ve __EMPTY olanları tamamen hariç tut)
+        const sCols = (rawCols || [])
+          .filter((c: string) => c && typeof c === "string" && !c.startsWith("__EMPTY") && c.trim() !== "")
+          .slice(0, 6);
+
         (s.rows || []).forEach((r: any, idx: number) => {
+          // Tamamen boş satır kontrolü: Geçerli sütunlarda veya satırdaki herhangi bir alanda dolu değer var mı?
+          let hasAnyData = false;
+          for (const col of sCols) {
+            const val = r[col];
+            if (val !== undefined && val !== null && String(val).trim() !== "") {
+              hasAnyData = true;
+              break;
+            }
+          }
+          if (!hasAnyData) {
+            for (const [k, v] of Object.entries(r)) {
+              if (!k.startsWith("__EMPTY") && !k.startsWith("_") && v !== undefined && v !== null && String(v).trim() !== "") {
+                hasAnyData = true;
+                break;
+              }
+            }
+          }
+
+          // Hiçbir sütununda veri yoksa bu satırı tamamen atla!
+          if (!hasAnyData) {
+            return;
+          }
+
           itemsToProcess.push({
             row: r,
             sheetName: sName,
@@ -116,12 +160,37 @@ export async function POST(req: Request) {
         });
       }
     } else if (Array.isArray(rows) && rows.length > 0) {
-      const cols = rows[0] ? Object.keys(rows[0]) : [];
+      const rawCols = rows[0] ? Object.keys(rows[0]) : [];
+      const sCols = rawCols
+        .filter((c: string) => c && typeof c === "string" && !c.startsWith("__EMPTY") && c.trim() !== "")
+        .slice(0, 6);
+
       rows.forEach((r: any, idx: number) => {
+        let hasAnyData = false;
+        for (const col of sCols) {
+          const val = r[col];
+          if (val !== undefined && val !== null && String(val).trim() !== "") {
+            hasAnyData = true;
+            break;
+          }
+        }
+        if (!hasAnyData) {
+          for (const [k, v] of Object.entries(r)) {
+            if (!k.startsWith("__EMPTY") && !k.startsWith("_") && v !== undefined && v !== null && String(v).trim() !== "") {
+              hasAnyData = true;
+              break;
+            }
+          }
+        }
+
+        if (!hasAnyData) {
+          return;
+        }
+
         itemsToProcess.push({
           row: r,
           sheetName: (r._sheetName || body.sheetName || "Sayfa 1").trim(),
-          columnHeaders: cols,
+          columnHeaders: sCols,
           rowIndex: idx + 2,
         });
       });
@@ -336,11 +405,15 @@ export async function POST(req: Request) {
       const fileStatus = isNameEmpty ? "Boş Dosya" : "Aktif";
       if (isNameEmpty) emptyFilesCount++;
 
-      // 9. DİĞER EK SÜTUNLAR (Kaybı önlemek için)
+      // 9. DİĞER EK SÜTUNLAR (En fazla 6 gerçek sütun, __EMPTY tamamen hariç)
+      const cleanHeaders = (columnHeaders || [])
+        .filter((c: string) => c && typeof c === "string" && !c.startsWith("__EMPTY") && c.trim() !== "")
+        .slice(0, 6);
+
       const extraData: Record<string, any> = {};
-      for (const [k, v] of Object.entries(row)) {
-        if (!k.startsWith("_")) {
-          extraData[k] = v;
+      for (const col of cleanHeaders) {
+        if (row[col] !== undefined && row[col] !== null) {
+          extraData[col] = row[col];
         }
       }
 
@@ -366,10 +439,7 @@ export async function POST(req: Request) {
               importBatchId: batchId,
               importBatchName: batchName,
               extraData: extraData,
-              columnHeaders:
-                columnHeaders && columnHeaders.length > 0
-                  ? columnHeaders
-                  : Object.keys(extraData),
+              columnHeaders: cleanHeaders,
               updatedBy: session.user.id,
             },
             $setOnInsert: {

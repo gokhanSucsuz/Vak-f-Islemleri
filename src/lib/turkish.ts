@@ -41,6 +41,26 @@ export function normalizeTurkish(str: string): string {
 }
 
 /**
+ * Sütun başlıklarını boşluk, noktalama, bölü, alt çizgi ve Türkçe karakterlerden arındırarak
+ * esnek ve hatasız eşleştirilmesini sağlar.
+ * Örn: "MAHALLE / KÖY" -> "mahallekoy", "YARDIM TÜRÜ " -> "yardimturu"
+ */
+export function cleanHeaderKey(key: string): string {
+  if (!key) return "";
+  return key
+    .replace(/\r?\n|\r/g, " ")
+    .replace(/[\s\-_/\\.:,;()[\]{}*+]/g, "")
+    .replace(/Ğ/g, "g").replace(/ğ/g, "g")
+    .replace(/Ü/g, "u").replace(/ü/g, "u")
+    .replace(/Ş/g, "s").replace(/ş/g, "s")
+    .replace(/İ/g, "i").replace(/ı/g, "i").replace(/I/g, "i")
+    .replace(/Ö/g, "o").replace(/ö/g, "o")
+    .replace(/Ç/g, "c").replace(/ç/g, "c")
+    .toLowerCase()
+    .trim();
+}
+
+/**
  * Türkçe karakter uyumlu metin arama kontrolü.
  * Hem orijinal Türkçe yerel karakterlerle hem de normalize edilmiş halleriyle kontrol eder.
  */

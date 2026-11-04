@@ -160,10 +160,12 @@ export async function GET(req: Request) {
       .map((s) => ({
         name: s._id as string,
         count: s.count as number,
-        columnHeaders: (s.columnHeaders || []) as string[],
+        columnHeaders: ((s.columnHeaders || []) as string[])
+          .filter((c) => c && typeof c === "string" && !c.startsWith("__EMPTY") && c.trim() !== "")
+          .slice(0, 6),
       }));
 
-    // Aktif sekmenin veya mevcut kayıtların Excel sütun başlıkları
+    // Aktif sekmenin veya mevcut kayıtların Excel sütun başlıkları (En fazla 6 gerçek sütun)
     let activeColumns: string[] = [];
     if (sheet && sheet !== "all") {
       const found = sheets.find((s) => s.name === sheet);
@@ -179,6 +181,10 @@ export async function GET(req: Request) {
           ? Object.keys(records[0].extraData)
           : [];
     }
+
+    activeColumns = activeColumns
+      .filter((c) => c && typeof c === "string" && !c.startsWith("__EMPTY") && c.trim() !== "")
+      .slice(0, 6);
 
     return NextResponse.json({
       records,
