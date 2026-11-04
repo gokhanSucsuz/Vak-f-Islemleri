@@ -19,17 +19,38 @@ const ApplicationFileSchema = new mongoose.Schema(
       default: '',
       trim: true,
     },
-    tcNo: {
+    spouseName: {
       type: String,
       default: '',
       trim: true,
     },
-    phone: {
+    tcNo: {
+      type: String,
+      default: '',
+      trim: true,
+      index: true,
+    },
+    spouseTcNo: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    helpType: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    neighborhood: {
       type: String,
       default: '',
       trim: true,
     },
     address: {
+      type: String,
+      default: '',
+      trim: true,
+    },
+    phone: {
       type: String,
       default: '',
       trim: true,
@@ -41,9 +62,18 @@ const ApplicationFileSchema = new mongoose.Schema(
     },
     applicationDate: {
       type: Date,
-      default: Date.now,
+      default: null,
     },
     notes: {
+      type: String,
+      default: '',
+    },
+    importBatchId: {
+      type: String,
+      default: '',
+      index: true,
+    },
+    importBatchName: {
       type: String,
       default: '',
     },
@@ -85,4 +115,3 @@ ApplicationFileSchema.pre('save', function () {
 
 export default mongoose.models.ApplicationFile ||
   mongoose.model('ApplicationFile', ApplicationFileSchema);
-

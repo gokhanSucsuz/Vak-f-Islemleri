@@ -28,11 +28,15 @@ export async function GET(req: Request) {
     const status = searchParams.get("status") || "all"; // "all" | "empty" | "active" | "passive" | "archive"
     const dateStart = searchParams.get("dateStart");
     const dateEnd = searchParams.get("dateEnd");
-    const sortBy = searchParams.get("sortBy") || "no_asc";
+    // Varsayılan sıralama: Son kayıttan ilk kayıta doğru (no_desc)
+    const sortBy = searchParams.get("sortBy") || "no_desc";
+    const page = Math.max(parseInt(searchParams.get("page") || "1", 10), 1);
+    const limit = Math.max(parseInt(searchParams.get("limit") || "50", 10), 1);
+    const fetchAll = searchParams.get("all") === "true";
 
     const canManage = await checkManagePermission(session);
 
-    // Filter Query
+    // Filtre Sorgusu
     const query: any = {};
 
     if (status === "empty") {
@@ -62,13 +66,17 @@ export async function GET(req: Request) {
       }
     }
 
-    // Arama Filtresi
+    // Arama Filtresi (Tüm ana alanlarda arar)
     if (search) {
       const searchRegex = new RegExp(search, "i");
       const searchConditions: any[] = [
         { applicationNo: searchRegex },
         { applicantName: searchRegex },
+        { spouseName: searchRegex },
         { tcNo: searchRegex },
+        { spouseTcNo: searchRegex },
+        { helpType: searchRegex },
+        { neighborhood: searchRegex },
         { phone: searchRegex },
         { address: searchRegex },
         { notes: searchRegex },
@@ -82,9 +90,11 @@ export async function GET(req: Request) {
       }
     }
 
-    // Sıralama
-    let sortOptions: any = { applicationNoSeq: 1, applicationNo: 1 };
-    if (sortBy === "no_desc") {
+    // Sıralama (Varsayılan: Son kayıttan ilk kayıta)
+    let sortOptions: any = { applicationNoSeq: -1, createdAt: -1 };
+    if (sortBy === "no_asc") {
+      sortOptions = { applicationNoSeq: 1, applicationNo: 1 };
+    } else if (sortBy === "no_desc") {
       sortOptions = { applicationNoSeq: -1, applicationNo: -1 };
     } else if (sortBy === "date_desc") {
       sortOptions = { createdAt: -1 };
@@ -96,21 +106,29 @@ export async function GET(req: Request) {
       sortOptions = { applicantName: -1 };
     }
 
-    // Retrieve records
-    const records = await ApplicationFile.find(query)
+    // Sayfalama (Pagination)
+    let queryExec = ApplicationFile.find(query)
       .populate("createdBy", "name email")
       .populate("updatedBy", "name email")
-      .sort(sortOptions)
-      .lean();
+      .sort(sortOptions);
 
-    // Stats
+    if (!fetchAll) {
+      const skip = (page - 1) * limit;
+      queryExec = queryExec.skip(skip).limit(limit);
+    }
+
+    const records = await queryExec.lean();
+    const totalMatched = await ApplicationFile.countDocuments(query);
+    const totalPages = fetchAll ? 1 : Math.ceil(totalMatched / limit) || 1;
+
+    // Genel İstatistikler
     const totalCount = await ApplicationFile.countDocuments();
     const emptyCount = await ApplicationFile.countDocuments({
       $or: [{ applicantName: { $in: ["", null] } }, { fileStatus: "Boş Dosya" }],
     });
     const activeCount = totalCount - emptyCount;
 
-    // Find highest applicationNoSeq to compute next number
+    // Sıradaki en yüksek numara
     const highestRecord = await ApplicationFile.findOne()
       .sort({ applicationNoSeq: -1 })
       .select("applicationNoSeq applicationNo")
@@ -123,6 +141,12 @@ export async function GET(req: Request) {
     return NextResponse.json({
       records,
       canManage,
+      pagination: {
+        page,
+        limit,
+        totalRecords: totalMatched,
+        totalPages,
+      },
       stats: {
         totalCount,
         emptyCount,
@@ -156,13 +180,18 @@ export async function POST(req: Request) {
     const {
       applicationNo,
       applicantName,
+      spouseName,
       tcNo,
+      spouseTcNo,
+      helpType,
+      neighborhood,
       phone,
       address,
+      applicationDate,
       fileStatus,
       notes,
       extraData,
-      targetRecordId, // If user is filling an existing empty file
+      targetRecordId,
     } = body;
 
     const trimmedAppNo = (applicationNo || "").toString().trim();
@@ -181,7 +210,7 @@ export async function POST(req: Request) {
       ? "Boş Dosya"
       : "Aktif";
 
-    // Scenario A: Filling an existing empty record
+    // Boş bir dosyayı doldurma senaryosu
     if (targetRecordId) {
       const existing = await ApplicationFile.findById(targetRecordId);
       if (!existing) {
@@ -194,9 +223,14 @@ export async function POST(req: Request) {
       existing.applicationNo = trimmedAppNo;
       existing.applicationNoSeq = numericSeq;
       existing.applicantName = (applicantName || "").trim();
+      existing.spouseName = (spouseName || "").trim();
       existing.tcNo = (tcNo || "").trim();
+      existing.spouseTcNo = (spouseTcNo || "").trim();
+      existing.helpType = (helpType || "").trim();
+      existing.neighborhood = (neighborhood || "").trim();
       existing.phone = (phone || "").trim();
       existing.address = (address || "").trim();
+      existing.applicationDate = applicationDate ? new Date(applicationDate) : null;
       existing.notes = (notes || "").trim();
       existing.fileStatus = resolvedStatus;
       if (extraData) existing.extraData = { ...existing.extraData, ...extraData };
@@ -220,7 +254,7 @@ export async function POST(req: Request) {
       });
     }
 
-    // Scenario B: Creating a new record
+    // Yeni kayıt oluşturma senaryosu
     const duplicate = await ApplicationFile.findOne({ applicationNo: trimmedAppNo });
     if (duplicate) {
       return NextResponse.json(
@@ -235,9 +269,14 @@ export async function POST(req: Request) {
       applicationNo: trimmedAppNo,
       applicationNoSeq: numericSeq,
       applicantName: (applicantName || "").trim(),
+      spouseName: (spouseName || "").trim(),
       tcNo: (tcNo || "").trim(),
+      spouseTcNo: (spouseTcNo || "").trim(),
+      helpType: (helpType || "").trim(),
+      neighborhood: (neighborhood || "").trim(),
       phone: (phone || "").trim(),
       address: (address || "").trim(),
+      applicationDate: applicationDate ? new Date(applicationDate) : null,
       fileStatus: resolvedStatus,
       notes: (notes || "").trim(),
       extraData: extraData || {},

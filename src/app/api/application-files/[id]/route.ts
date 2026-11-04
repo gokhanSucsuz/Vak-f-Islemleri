@@ -59,10 +59,17 @@ export async function PUT(
     }
 
     record.applicantName = (body.applicantName ?? record.applicantName).trim();
+    record.spouseName = (body.spouseName ?? record.spouseName).trim();
     record.tcNo = (body.tcNo ?? record.tcNo).trim();
+    record.spouseTcNo = (body.spouseTcNo ?? record.spouseTcNo).trim();
+    record.helpType = (body.helpType ?? record.helpType).trim();
+    record.neighborhood = (body.neighborhood ?? record.neighborhood).trim();
     record.phone = (body.phone ?? record.phone).trim();
     record.address = (body.address ?? record.address).trim();
     record.notes = (body.notes ?? record.notes).trim();
+    if (body.applicationDate !== undefined) {
+      record.applicationDate = body.applicationDate ? new Date(body.applicationDate) : null;
+    }
     if (body.fileStatus) record.fileStatus = body.fileStatus;
     if (body.extraData) record.extraData = { ...record.extraData, ...body.extraData };
     record.updatedBy = session.user.id;
@@ -134,4 +141,3 @@ export async function DELETE(
     );
   }
 }
-

@@ -5,7 +5,12 @@ import dbConnect from "@/lib/db";
 import ApplicationFile from "@/models/ApplicationFile";
 import User from "@/models/User";
 import Log from "@/models/Log";
-import { normalizeTurkish, extractTC } from "@/lib/turkish";
+import {
+  normalizeTurkish,
+  extractTC,
+  extractAndCleanTC,
+  parseDateOrExtractDate,
+} from "@/lib/turkish";
 
 async function checkManagePermission(session: any): Promise<boolean> {
   if (!session?.user) return false;
@@ -15,7 +20,7 @@ async function checkManagePermission(session: any): Promise<boolean> {
   return Boolean(dbUser?.role === "superadmin" || dbUser?.canManageApplications);
 }
 
-// Helper to find a matching column header by common naming variations
+// Sütun başlığını esnek Türkçe normalize kontrol ile bulma
 function findColumnValue(row: Record<string, any>, possibleNames: string[]): any {
   const keys = Object.keys(row);
   for (const name of possibleNames) {
@@ -29,6 +34,41 @@ function findColumnValue(row: Record<string, any>, possibleNames: string[]): any
   return undefined;
 }
 
+// GET: Yüklenen Excel paketlerinin (Batch) listesini döner
+export async function GET(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
+    }
+
+    await dbConnect();
+
+    // importBatchId'ye göre grupla
+    const batches = await ApplicationFile.aggregate([
+      {
+        $match: { importBatchId: { $exists: true, $ne: "" } },
+      },
+      {
+        $group: {
+          _id: "$importBatchId",
+          name: { $first: "$importBatchName" },
+          count: { $sum: 1 },
+          firstCreatedAt: { $min: "$createdAt" },
+          lastCreatedAt: { $max: "$createdAt" },
+        },
+      },
+      { $sort: { firstCreatedAt: -1 } },
+    ]);
+
+    return NextResponse.json({ batches });
+  } catch (error: any) {
+    console.error("GET /api/application-files/import error:", error);
+    return NextResponse.json({ error: "Sunucu hatası" }, { status: 500 });
+  }
+}
+
+// POST: Excel satırlarını hızlı, güvenli ve kurallara uygun olarak sisteme aktarır
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -46,7 +86,7 @@ export async function POST(req: Request) {
 
     await dbConnect();
     const body = await req.json();
-    const { rows, updateExisting = true, customMapping } = body;
+    const { rows, customMapping, fileName = "Excel Yüklemesi" } = body;
 
     if (!Array.isArray(rows) || rows.length === 0) {
       return NextResponse.json(
@@ -55,17 +95,24 @@ export async function POST(req: Request) {
       );
     }
 
+    const batchId = `batch_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`;
+    const batchName = `${fileName} - ${new Date().toLocaleDateString("tr-TR")} ${new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}`;
+
     let insertedCount = 0;
     let updatedCount = 0;
     let emptyFilesCount = 0;
     let skippedCount = 0;
     const errors: string[] = [];
 
+    // Toplu işlemler için hazırlık (Chunking 500)
+    const CHUNK_SIZE = 500;
+    const bulkOps: any[] = [];
+
     for (let index = 0; index < rows.length; index++) {
       const row = rows[index];
-      const rowIndex = index + 2; // Excel row numbering usually starts at 2 (1 = header)
+      const rowIndex = index + 2;
 
-      // 1. Resolve Application No (Primary Key / Hane No / Dosya No)
+      // 1. BAŞVURU NO (Birincil Anahtar / Primary Key)
       let appNoRaw = customMapping?.applicationNo
         ? row[customMapping.applicationNo]
         : findColumnValue(row, [
@@ -87,7 +134,6 @@ export async function POST(req: Request) {
           ]);
 
       if (appNoRaw === undefined || appNoRaw === null || String(appNoRaw).trim() === "") {
-        // If row has no application number, we cannot use it as primary key
         skippedCount++;
         errors.push(`Satır ${rowIndex}: Başvuru/Hane/Dosya numarası boş olduğu için atlandı.`);
         continue;
@@ -96,7 +142,7 @@ export async function POST(req: Request) {
       const applicationNo = String(appNoRaw).trim();
       const numericSeq = parseInt(applicationNo.replace(/\D/g, ""), 10) || 0;
 
-      // 2. Resolve Applicant Name (Adı Soyadı)
+      // 2. ADI SOYADI & T.C. AYIKLAMA
       let nameRaw = customMapping?.applicantName
         ? row[customMapping.applicantName]
         : findColumnValue(row, [
@@ -115,15 +161,35 @@ export async function POST(req: Request) {
             "Ad",
           ]);
 
-      const applicantName = nameRaw !== undefined && nameRaw !== null ? String(nameRaw).trim() : "";
-      const isNameEmpty =
-        !applicantName ||
-        applicantName === "" ||
-        applicantName.toLowerCase() === "boş" ||
-        applicantName.toLowerCase() === "bos" ||
-        applicantName.toLowerCase() === "boş dosya";
+      const nameStr = nameRaw !== undefined && nameRaw !== null ? String(nameRaw).trim() : "";
+      const { tc: tcFromName, cleanText: cleanedApplicantName } = extractAndCleanTC(nameStr);
 
-      // 3. Resolve TC No
+      const isNameEmpty =
+        !cleanedApplicantName ||
+        cleanedApplicantName === "" ||
+        cleanedApplicantName.toLowerCase() === "boş" ||
+        cleanedApplicantName.toLowerCase() === "bos" ||
+        cleanedApplicantName.toLowerCase() === "boş dosya";
+
+      // 3. EŞİNİN ADI SOYADI & T.C. AYIKLAMA
+      let spouseRaw = customMapping?.spouseName
+        ? row[customMapping.spouseName]
+        : findColumnValue(row, [
+            "Eşinin Adı Soyadı",
+            "Eşinin Adı",
+            "Eş Adı Soyadı",
+            "Eş Adı",
+            "Es Adı Soyadı",
+            "Es Adi Soyadi",
+            "Eş",
+            "Es",
+            "Eş Bilgisi",
+          ]);
+
+      const spouseStr = spouseRaw !== undefined && spouseRaw !== null ? String(spouseRaw).trim() : "";
+      const { tc: tcFromSpouse, cleanText: cleanedSpouseName } = extractAndCleanTC(spouseStr);
+
+      // 4. T.C. KİMLİK NUMARASI
       let tcRaw = customMapping?.tcNo
         ? row[customMapping.tcNo]
         : findColumnValue(row, [
@@ -137,118 +203,141 @@ export async function POST(req: Request) {
             "TcNo",
           ]);
 
-      let tcNo = tcRaw !== undefined && tcRaw !== null ? String(tcRaw).trim() : "";
-      if (!tcNo && applicantName) {
-        const foundTc = extractTC(applicantName);
-        if (foundTc) tcNo = foundTc;
+      let finalTc = tcRaw !== undefined && tcRaw !== null ? String(tcRaw).replace(/\D/g, "").slice(0, 11) : "";
+      if (!finalTc && tcFromName) {
+        finalTc = tcFromName;
       }
-      tcNo = tcNo.replace(/\D/g, "").slice(0, 11);
 
-      // 4. Resolve Phone
+      // 5. YARDIM TÜRÜ VEYA BAŞVURU TARİHİ & TARİH AYIKLAMA
+      // Kullanıcı kuralı: "kayıt tarihi alanı yok ise veya yardım türü sütununda tarih var ise kayıt tarihi o olacak. herhangi bir tarih yok ise tarih alanı boş olsun."
+      let dateColRaw = customMapping?.applicationDate
+        ? row[customMapping.applicationDate]
+        : findColumnValue(row, [
+            "Başvuru Tarihi",
+            "Kayıt Tarihi",
+            "Basvuru Tarihi",
+            "Kayit Tarihi",
+            "Tarih",
+          ]);
+
+      let helpTypeColRaw = customMapping?.helpType
+        ? row[customMapping.helpType]
+        : findColumnValue(row, [
+            "Yardım Türü veya Başvuru Tarihi",
+            "Yardım Türü / Başvuru Tarihi",
+            "Yardım Türü",
+            "Yardim Turu",
+            "Yardım",
+            "Yardim",
+          ]);
+
+      let applicationDate: Date | null = null;
+      let helpType = "";
+
+      // Önce doğrudan tarih sütunu var mı kontrol et
+      if (dateColRaw !== undefined && dateColRaw !== null && dateColRaw !== "") {
+        const parsed = parseDateOrExtractDate(dateColRaw);
+        if (parsed.date) {
+          applicationDate = parsed.date;
+        }
+      }
+
+      // Yardım Türü veya Başvuru Tarihi sütununu analiz et
+      if (helpTypeColRaw !== undefined && helpTypeColRaw !== null && helpTypeColRaw !== "") {
+        const parsed = parseDateOrExtractDate(helpTypeColRaw);
+        if (parsed.date && !applicationDate) {
+          applicationDate = parsed.date;
+        }
+        helpType = parsed.remainingText || "";
+        if (!helpType && !parsed.date) {
+          helpType = String(helpTypeColRaw).trim();
+        }
+      }
+
+      // 6. MAHALLE / KÖY
+      let neighborhoodRaw = customMapping?.neighborhood
+        ? row[customMapping.neighborhood]
+        : findColumnValue(row, [
+            "Mahalle/Köy",
+            "Mahalle / Köy",
+            "Mahalle",
+            "Köy",
+            "Mahalle/Koy",
+            "Mahalle / Koy",
+            "Yerleşim Yeri",
+            "Köyü",
+            "Mahallesi",
+          ]);
+      const neighborhood =
+        neighborhoodRaw !== undefined && neighborhoodRaw !== null ? String(neighborhoodRaw).trim() : "";
+
+      // 7. TELEFON & ADRES
       let phoneRaw = customMapping?.phone
         ? row[customMapping.phone]
-        : findColumnValue(row, [
-            "Telefon",
-            "Cep Telefonu",
-            "GSM",
-            "Tel",
-            "İletişim",
-            "Iletisim",
-            "Cep Tel",
-            "Telefon No",
-          ]);
+        : findColumnValue(row, ["Telefon", "Cep Telefonu", "GSM", "Tel", "İletişim"]);
       const phone = phoneRaw !== undefined && phoneRaw !== null ? String(phoneRaw).trim() : "";
 
-      // 5. Resolve Address
       let addrRaw = customMapping?.address
         ? row[customMapping.address]
-        : findColumnValue(row, [
-            "Adres",
-            "İkametgah",
-            "Ikametgah",
-            "Mahalle",
-            "Cadde",
-            "Sokak",
-            "Adres Bilgisi",
-            "Yerleşim Yeri",
-          ]);
-      const address = addrRaw !== undefined && addrRaw !== null ? String(addrRaw).trim() : "";
+        : findColumnValue(row, ["Adres", "İkametgah", "Açık Adres"]);
+      const address = addrRaw !== undefined && addrRaw !== null ? String(addrRaw).trim() : neighborhood;
 
-      // 6. Resolve Status
-      let statusRaw = customMapping?.fileStatus
-        ? row[customMapping.fileStatus]
-        : findColumnValue(row, ["Durum", "Dosya Durumu", "Statü", "Statu"]);
-      let fileStatus = statusRaw !== undefined && statusRaw !== null ? String(statusRaw).trim() : "";
-      if (!fileStatus) {
-        fileStatus = isNameEmpty ? "Boş Dosya" : "Aktif";
-      }
+      // 8. DURUM
+      const fileStatus = isNameEmpty ? "Boş Dosya" : "Aktif";
+      if (isNameEmpty) emptyFilesCount++;
 
-      // 7. Store Extra Columns from the Excel Row
+      // 9. DİĞER EK SÜTUNLAR (Kaybı önlemek için)
       const extraData: Record<string, any> = {};
-      const knownKeys = new Set(
-        [
-          customMapping?.applicationNo,
-          customMapping?.applicantName,
-          customMapping?.tcNo,
-          customMapping?.phone,
-          customMapping?.address,
-          customMapping?.fileStatus,
-        ].filter(Boolean)
-      );
-
       for (const [k, v] of Object.entries(row)) {
-        if (!knownKeys.has(k)) {
-          extraData[k] = v;
-        }
+        extraData[k] = v;
       }
 
-      if (isNameEmpty) {
-        emptyFilesCount++;
-      }
+      // bulkWrite updateOne (upsert)
+      bulkOps.push({
+        updateOne: {
+          filter: { applicationNo },
+          update: {
+            $set: {
+              applicationNo,
+              applicationNoSeq: numericSeq,
+              applicantName: isNameEmpty ? "" : cleanedApplicantName,
+              spouseName: cleanedSpouseName || "",
+              tcNo: finalTc || "",
+              spouseTcNo: tcFromSpouse || "",
+              helpType: helpType || "",
+              applicationDate: applicationDate, // null ise null olarak kalır!
+              neighborhood: neighborhood || "",
+              address: address || "",
+              phone: phone || "",
+              fileStatus: fileStatus,
+              importBatchId: batchId,
+              importBatchName: batchName,
+              extraData: extraData,
+              columnHeaders: Object.keys(row),
+              updatedBy: session.user.id,
+            },
+            $setOnInsert: {
+              createdBy: session.user.id,
+            },
+          },
+          upsert: true,
+        },
+      });
+    }
 
-      // 8. Upsert by Primary Key (applicationNo)
-      const existing = await ApplicationFile.findOne({ applicationNo });
-
-      if (existing) {
-        if (updateExisting) {
-          existing.applicationNoSeq = numericSeq;
-          existing.applicantName = isNameEmpty ? "" : applicantName;
-          existing.tcNo = tcNo || existing.tcNo;
-          existing.phone = phone || existing.phone;
-          existing.address = address || existing.address;
-          existing.fileStatus = fileStatus || existing.fileStatus;
-          existing.extraData = { ...existing.extraData, ...extraData };
-          existing.columnHeaders = Object.keys(row);
-          existing.updatedBy = session.user.id;
-          await existing.save();
-          updatedCount++;
-        } else {
-          skippedCount++;
-        }
-      } else {
-        const newRecord = new ApplicationFile({
-          applicationNo,
-          applicationNoSeq: numericSeq,
-          applicantName: isNameEmpty ? "" : applicantName,
-          tcNo,
-          phone,
-          address,
-          fileStatus,
-          extraData,
-          columnHeaders: Object.keys(row),
-          createdBy: session.user.id,
-          updatedBy: session.user.id,
-        });
-        await newRecord.save();
-        insertedCount++;
-      }
+    // Chunklar halinde hızlı ve güvenli bulkWrite çalıştır
+    for (let i = 0; i < bulkOps.length; i += CHUNK_SIZE) {
+      const chunk = bulkOps.slice(i, i + CHUNK_SIZE);
+      const res = await ApplicationFile.bulkWrite(chunk, { ordered: false });
+      insertedCount += res.upsertedCount || 0;
+      updatedCount += res.modifiedCount || 0;
     }
 
     try {
       await Log.create({
         userId: session.user.id,
         action: "Excel Dosyası Yüklendi",
-        details: `Toplam: ${rows.length}, Eklenen: ${insertedCount}, Güncellenen: ${updatedCount}, Boş Dosya: ${emptyFilesCount}, Atlanan: ${skippedCount}`,
+        details: `${batchName} -> Toplam Satır: ${rows.length}, Eklenen: ${insertedCount}, Güncellenen: ${updatedCount}, Boş Dosya: ${emptyFilesCount}, Atlanan: ${skippedCount}`,
       });
     } catch (err) {
       console.error("Log error:", err);
@@ -256,6 +345,8 @@ export async function POST(req: Request) {
 
     return NextResponse.json({
       success: true,
+      batchId,
+      batchName,
       summary: {
         totalProcessed: rows.length,
         insertedCount,
@@ -263,7 +354,7 @@ export async function POST(req: Request) {
         emptyFilesCount,
         skippedCount,
       },
-      errors: errors.slice(0, 10), // return top 10 errors if any
+      errors: errors.slice(0, 10),
     });
   } catch (error: any) {
     console.error("POST /api/application-files/import error:", error);
@@ -274,3 +365,84 @@ export async function POST(req: Request) {
   }
 }
 
+// DELETE: Yüklenen Excel paketini silme veya tüm kayıtları sıfırlama
+export async function DELETE(req: Request) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session) {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
+    }
+
+    // Yüklenen dosyayı silme işlemini süper admin veya yetkili kullanıcı yapabilir
+    const canManage = await checkManagePermission(session);
+    if (!canManage) {
+      return NextResponse.json(
+        { error: "Bu silme işlemi için yetkiniz bulunmamaktadır." },
+        { status: 403 }
+      );
+    }
+
+    await dbConnect();
+    const { searchParams } = new URL(req.url);
+    const batchId = searchParams.get("batchId");
+    const clearAll = searchParams.get("clearAll") === "true";
+
+    if (clearAll) {
+      // Tüm kayıtları sıfırlama (Yalnızca Süper Admin)
+      if (session.user.role !== "superadmin") {
+        return NextResponse.json(
+          { error: "Tüm kayıtları sıfırlama yetkisi yalnızca Süper Admin'e aittir." },
+          { status: 403 }
+        );
+      }
+
+      const count = await ApplicationFile.countDocuments();
+      await ApplicationFile.deleteMany({});
+
+      try {
+        await Log.create({
+          userId: session.user.id,
+          action: "Tüm Başvuru Dosyaları Silindi",
+          details: `Toplam ${count} dosya kaydı sistemden tamamen silindi.`,
+        });
+      } catch (err) {
+        console.error("Log error:", err);
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `Sistemdeki tüm ${count} dosya kaydı başarıyla silindi.`,
+        deletedCount: count,
+      });
+    }
+
+    if (batchId) {
+      // Belirli bir Excel yüklemesini silme
+      const result = await ApplicationFile.deleteMany({ importBatchId: batchId });
+
+      try {
+        await Log.create({
+          userId: session.user.id,
+          action: "Excel Yükleme Paketi Silindi",
+          details: `Paket ID: ${batchId}, Silinen Kayıt Sayısı: ${result.deletedCount}`,
+        });
+      } catch (err) {
+        console.error("Log error:", err);
+      }
+
+      return NextResponse.json({
+        success: true,
+        message: `Yüklenen Excel paketine ait ${result.deletedCount} kayıt silindi.`,
+        deletedCount: result.deletedCount,
+      });
+    }
+
+    return NextResponse.json(
+      { error: "Geçerli bir batchId veya clearAll parametresi belirtiniz." },
+      { status: 400 }
+    );
+  } catch (error: any) {
+    console.error("DELETE /api/application-files/import error:", error);
+    return NextResponse.json({ error: "Sunucu hatası" }, { status: 500 });
+  }
+}

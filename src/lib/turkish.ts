@@ -62,8 +62,90 @@ export function turkishIncludes(source: string, search: string): boolean {
  */
 export function extractTC(text: string): string | null {
   if (!text) return null;
-  const match = text.match(/\b\d{11}\b/);
+  const match = text.match(/\b\d{11}\b/) || text.match(/\d{11}/);
   return match ? match[0] : null;
+}
+
+/**
+ * Metin içindeki 11 haneli T.C. Kimlik Numarasını ayıklar ve metinden temizler
+ * Örn: "12345678901 AHMET YILMAZ" -> { tc: "12345678901", cleanText: "AHMET YILMAZ" }
+ */
+export function extractAndCleanTC(text: string): { tc: string | null; cleanText: string } {
+  if (!text) return { tc: null, cleanText: "" };
+  const str = String(text).trim();
+  const match = str.match(/\b\d{11}\b/) || str.match(/\d{11}/);
+  if (!match) {
+    return { tc: null, cleanText: str };
+  }
+  const tc = match[0];
+  const cleanText = str
+    .replace(tc, "")
+    .replace(/[()\[\]\-–—:]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  return { tc, cleanText };
+}
+
+/**
+ * Excel serial number, tarih stringi veya metin içindeki tarihi ayıklar
+ * Eğer geçerli bir tarih yoksa null döner (varsayılan tarih atanmaz).
+ */
+export function parseDateOrExtractDate(val: any): { date: Date | null; remainingText: string } {
+  if (val === undefined || val === null || val === "") {
+    return { date: null, remainingText: "" };
+  }
+
+  // Zaten JS Date nesnesi
+  if (val instanceof Date && !isNaN(val.getTime())) {
+    return { date: val, remainingText: "" };
+  }
+
+  // Excel serial number (örn: 44927 -> 2023-01-01)
+  if (typeof val === "number" && val > 20000 && val < 70000) {
+    const excelEpoch = new Date(Date.UTC(1899, 11, 30));
+    const date = new Date(excelEpoch.getTime() + val * 86400 * 1000);
+    if (!isNaN(date.getTime())) {
+      return { date, remainingText: "" };
+    }
+  }
+
+  const str = String(val).trim();
+
+  // Desen 1: DD.MM.YYYY, DD/MM/YYYY, DD-MM-YYYY
+  const matchDMY = str.match(/\b(\d{1,2})[./\-](\d{1,2})[./\-](\d{4})\b/);
+  if (matchDMY) {
+    const day = parseInt(matchDMY[1], 10);
+    const month = parseInt(matchDMY[2], 10) - 1;
+    const year = parseInt(matchDMY[3], 10);
+    const date = new Date(year, month, day);
+    if (!isNaN(date.getTime())) {
+      const remainingText = str
+        .replace(matchDMY[0], "")
+        .replace(/[()\[\]\-–—:]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      return { date, remainingText };
+    }
+  }
+
+  // Desen 2: YYYY-MM-DD, YYYY.MM.DD
+  const matchYMD = str.match(/\b(\d{4})[./\-](\d{1,2})[./\-](\d{1,2})\b/);
+  if (matchYMD) {
+    const year = parseInt(matchYMD[1], 10);
+    const month = parseInt(matchYMD[2], 10) - 1;
+    const day = parseInt(matchYMD[3], 10);
+    const date = new Date(year, month, day);
+    if (!isNaN(date.getTime())) {
+      const remainingText = str
+        .replace(matchYMD[0], "")
+        .replace(/[()\[\]\-–—:]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim();
+      return { date, remainingText };
+    }
+  }
+
+  return { date: null, remainingText: str };
 }
 
 /**
@@ -122,10 +204,13 @@ export function exportStyledApplicationExcel(
     "Başvuru / Hane No",
     "T.C. Kimlik No",
     "Adı Soyadı",
+    "Eşinin Adı Soyadı",
+    "Yardım Türü",
+    "Kayıt / Başvuru Tarihi",
+    "Mahalle / Köy",
     "Telefon",
-    "Adres / Mahalle",
+    "Adres",
     "Durum",
-    "Kayıt Tarihi",
     "Açıklama / Notlar",
   ];
 
@@ -155,15 +240,24 @@ export function exportStyledApplicationExcel(
     if (isNameEmpty) emptyCount++;
     else activeCount++;
 
+    const dateStr = r.applicationDate
+      ? new Date(r.applicationDate).toLocaleDateString("tr-TR")
+      : r.createdAt
+      ? new Date(r.createdAt).toLocaleDateString("tr-TR")
+      : "";
+
     const rowData = [
       idx + 1,
       r.applicationNo ? `#${r.applicationNo}` : "-",
       r.tcNo || "-",
       r.applicantName || "(Boş Dosya)",
+      r.spouseName || "-",
+      r.helpType || "-",
+      dateStr || "-",
+      r.neighborhood || "-",
       r.phone || "-",
       r.address || "-",
       r.fileStatus || (isNameEmpty ? "Boş Dosya" : "Aktif"),
-      r.createdAt ? new Date(r.createdAt).toLocaleDateString("tr-TR") : "-",
       r.notes || "-",
     ];
 

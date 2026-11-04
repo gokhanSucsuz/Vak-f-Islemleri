@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
 import * as XLSX from "xlsx";
@@ -34,8 +34,22 @@ import {
   Download,
   RotateCcw,
   Check,
+  ChevronLeft,
+  ChevronRight,
+  ChevronsLeft,
+  ChevronsRight,
+  Database,
+  Users as UsersIcon,
+  Heart,
+  Archive,
+  Clock,
 } from "lucide-react";
-import { turkishIncludes, exportStyledApplicationExcel } from "@/lib/turkish";
+import {
+  turkishIncludes,
+  exportStyledApplicationExcel,
+  extractAndCleanTC,
+  parseDateOrExtractDate,
+} from "@/lib/turkish";
 import ModernConfirmDialog, { DialogType } from "@/components/ModernConfirmDialog";
 
 interface ApplicationFileRecord {
@@ -43,11 +57,18 @@ interface ApplicationFileRecord {
   applicationNo: string;
   applicationNoSeq: number;
   applicantName: string;
+  spouseName?: string;
   tcNo: string;
+  spouseTcNo?: string;
+  helpType?: string;
+  neighborhood?: string;
   phone: string;
   address: string;
   fileStatus: string;
+  applicationDate?: string | null;
   notes?: string;
+  importBatchId?: string;
+  importBatchName?: string;
   extraData?: Record<string, any>;
   columnHeaders?: string[];
   createdBy?: { name: string; email: string };
@@ -64,13 +85,39 @@ interface UserPermission {
   canManageApplications: boolean;
 }
 
+interface ImportBatchInfo {
+  _id: string;
+  name: string;
+  count: number;
+  firstCreatedAt: string;
+  lastCreatedAt: string;
+}
+
 export default function ApplicationsPage() {
   const { data: session } = useSession();
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Önbellek Sistemi (Cache): Hızlı ara-bul için istemci tarafı bellek önbelleği
+  const cacheRef = useRef<
+    Map<
+      string,
+      {
+        records: ApplicationFileRecord[];
+        pagination: { page: number; limit: number; totalRecords: number; totalPages: number };
+        stats: { totalCount: number; emptyCount: number; activeCount: number; nextApplicationNo: number };
+      }
+    >
+  >(new Map());
+
   const [records, setRecords] = useState<ApplicationFileRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [canManage, setCanManage] = useState(false);
+
+  // Sayfalama (Pagination) Durumları
+  const [currentPage, setCurrentPage] = useState(1);
+  const [pageSize, setPageSize] = useState(50);
+  const [totalPages, setTotalPages] = useState(1);
+  const [totalRecords, setTotalRecords] = useState(0);
 
   // Arama & Filtreleme Durumları
   const [searchTerm, setSearchTerm] = useState("");
@@ -80,9 +127,10 @@ export default function ApplicationsPage() {
   const [dateEnd, setDateEnd] = useState("");
   const [minNo, setMinNo] = useState("");
   const [maxNo, setMaxNo] = useState("");
+  // Varsayılan sıralama: Son kayıttan ilk kayıta doğru (no_desc)
   const [sortBy, setSortBy] = useState<
-    "no_asc" | "no_desc" | "date_desc" | "date_asc" | "name_asc" | "name_desc"
-  >("no_asc");
+    "no_desc" | "no_asc" | "date_desc" | "date_asc" | "name_asc" | "name_desc"
+  >("no_desc");
   const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
 
   const [stats, setStats] = useState({
@@ -122,9 +170,14 @@ export default function ApplicationsPage() {
   const [formData, setFormData] = useState({
     applicationNo: "",
     applicantName: "",
+    spouseName: "",
     tcNo: "",
+    spouseTcNo: "",
+    helpType: "",
+    neighborhood: "",
     phone: "",
     address: "",
+    applicationDate: "",
     fileStatus: "Aktif",
     notes: "",
   });
@@ -138,14 +191,23 @@ export default function ApplicationsPage() {
   const [customMapping, setCustomMapping] = useState({
     applicationNo: "",
     applicantName: "",
+    spouseName: "",
+    helpType: "",
+    applicationDate: "",
+    neighborhood: "",
     tcNo: "",
     phone: "",
     address: "",
   });
 
+  // Excel Dosyalarını Yönet / Sil Modalı
+  const [isBatchManageModalOpen, setIsBatchManageModalOpen] = useState(false);
+  const [importBatches, setImportBatches] = useState<ImportBatchInfo[]>([]);
+  const [loadingBatches, setLoadingBatches] = useState(false);
+
   // Modern Excel Dışa Aktarma Modalı (Tüm Kullanıcılar İçin)
   const [isExportModalOpen, setIsExportModalOpen] = useState(false);
-  const [exportScope, setExportScope] = useState<"filtered" | "all" | "active" | "empty">("filtered");
+  const [exportScope, setExportScope] = useState<"page" | "filtered" | "all" | "active" | "empty">("filtered");
   const [exportInstitutionName, setExportInstitutionName] = useState(
     "T.C. SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI"
   );
@@ -160,18 +222,61 @@ export default function ApplicationsPage() {
 
   const isSuperAdmin = session?.user?.role === "superadmin";
 
-  // Load Records
-  const fetchRecords = async () => {
+  // Önbellek Sıfırlama
+  const invalidateCache = useCallback(() => {
+    cacheRef.current.clear();
+  }, []);
+
+  // Kayıtları Sunucudan veya Önbellekten Çekme
+  const fetchRecords = useCallback(async (ignoreCache = false) => {
+    const cacheKey = `${currentPage}_${pageSize}_${filterTab}_${statusFilter}_${searchTerm.trim()}_${dateStart}_${dateEnd}_${minNo}_${maxNo}_${sortBy}`;
+
+    // Önbellek kontrolü (Hemen Ara-Bul)
+    if (!ignoreCache && cacheRef.current.has(cacheKey)) {
+      const cached = cacheRef.current.get(cacheKey)!;
+      setRecords(cached.records);
+      setTotalPages(cached.pagination.totalPages);
+      setTotalRecords(cached.pagination.totalRecords);
+      setStats(cached.stats);
+      setLoading(false);
+      return;
+    }
+
     setLoading(true);
     try {
-      const res = await fetch("/api/application-files");
+      const params = new URLSearchParams();
+      params.append("page", String(currentPage));
+      params.append("limit", String(pageSize));
+      params.append("sortBy", sortBy);
+
+      if (searchTerm.trim()) params.append("search", searchTerm.trim());
+      if (filterTab !== "all") params.append("status", filterTab);
+      else if (statusFilter !== "all") params.append("status", statusFilter);
+
+      if (dateStart) params.append("dateStart", dateStart);
+      if (dateEnd) params.append("dateEnd", dateEnd);
+
+      const res = await fetch(`/api/application-files?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setRecords(data.records || []);
+        const recs = data.records || [];
+        setRecords(recs);
         setCanManage(Boolean(data.canManage));
+
+        if (data.pagination) {
+          setTotalPages(data.pagination.totalPages || 1);
+          setTotalRecords(data.pagination.totalRecords || 0);
+        }
         if (data.stats) {
           setStats(data.stats);
         }
+
+        // Önbelleğe kaydet
+        cacheRef.current.set(cacheKey, {
+          records: recs,
+          pagination: data.pagination || { page: currentPage, limit: pageSize, totalRecords: recs.length, totalPages: 1 },
+          stats: data.stats || stats,
+        });
       } else {
         toast.error("Dosya kayıtları yüklenemedi.");
       }
@@ -181,13 +286,106 @@ export default function ApplicationsPage() {
     } finally {
       setLoading(false);
     }
-  };
+  }, [currentPage, pageSize, filterTab, statusFilter, searchTerm, dateStart, dateEnd, minNo, maxNo, sortBy, stats]);
 
   useEffect(() => {
     if (session) {
       fetchRecords();
     }
-  }, [session]);
+  }, [session, currentPage, pageSize, filterTab, statusFilter, sortBy]);
+
+  // Arama değiştiğinde 1. sayfaya dön
+  const handleSearchChange = (val: string) => {
+    setSearchTerm(val);
+    setCurrentPage(1);
+  };
+
+  // İçe Aktarılan Excel Paketlerini Getir
+  const fetchImportBatches = async () => {
+    setLoadingBatches(true);
+    try {
+      const res = await fetch("/api/application-files/import");
+      if (res.ok) {
+        const data = await res.json();
+        setImportBatches(data.batches || []);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoadingBatches(false);
+    }
+  };
+
+  // Belirli bir Excel Yükleme Paketini Sil
+  const handleDeleteBatch = (batch: ImportBatchInfo) => {
+    setDialogState({
+      isOpen: true,
+      type: "danger",
+      title: "Excel Yükleme Paketini Sil",
+      message: (
+        <span>
+          <strong>{batch.name || "Excel Paketi"}</strong> kapsamında yüklenmiş olan{" "}
+          <strong>{batch.count} adet</strong> dosya kaydını sistemden silmek istediğinize emin misiniz? Bu işlem geri alınamaz.
+        </span>
+      ),
+      confirmText: "Evet, Paketi Sil",
+      cancelText: "Vazgeç",
+      onConfirm: async () => {
+        try {
+          const res = await fetch(`/api/application-files/import?batchId=${batch._id}`, {
+            method: "DELETE",
+          });
+          const data = await res.json();
+          if (res.ok) {
+            toast.success(data.message || "Excel paketi başarıyla silindi.");
+            setDialogState((prev) => ({ ...prev, isOpen: false }));
+            invalidateCache();
+            fetchRecords(true);
+            fetchImportBatches();
+          } else {
+            toast.error(data.error || "Silinemedi.");
+          }
+        } catch (e) {
+          toast.error("Bir hata oluştu.");
+        }
+      },
+    });
+  };
+
+  // Tüm Başvuru Dosyalarını Sıfırla (Süper Admin)
+  const handleClearAllRecords = () => {
+    setDialogState({
+      isOpen: true,
+      type: "danger",
+      title: "DİKKAT: TÜM DOSYA VERİTABANINI SIFIRLA",
+      message: (
+        <span className="text-red-700 font-semibold">
+          Sistemde kayıtlı bulunan tüm başvuru ve hane dosyaları tamamen silinecektir! Bu işlem tüm geçmişi kalıcı olarak siler. Devam etmek istediğinize emin misiniz?
+        </span>
+      ),
+      confirmText: "TÜM KAYITLARI SİL",
+      cancelText: "İptal",
+      onConfirm: async () => {
+        try {
+          const res = await fetch("/api/application-files/import?clearAll=true", {
+            method: "DELETE",
+          });
+          const data = await res.json();
+          if (res.ok) {
+            toast.success(data.message || "Tüm dosya kayıtları silindi.");
+            setDialogState((prev) => ({ ...prev, isOpen: false }));
+            setIsBatchManageModalOpen(false);
+            invalidateCache();
+            fetchRecords(true);
+          } else {
+            toast.error(data.error || "Silinemedi.");
+          }
+        } catch (e) {
+          toast.error("Bir hata oluştu.");
+        }
+      },
+    });
+  };
 
   // Load User Permissions
   const fetchUserPermissions = async () => {
@@ -227,9 +425,7 @@ export default function ApplicationsPage() {
     }
   };
 
-  // ---------------------------------------------------------
-  // GELİŞMİŞ FİLTRE TEMİZLEME
-  // ---------------------------------------------------------
+  // Filtre Sıfırlama
   const handleResetFilters = () => {
     setSearchTerm("");
     setFilterTab("all");
@@ -238,7 +434,8 @@ export default function ApplicationsPage() {
     setDateEnd("");
     setMinNo("");
     setMaxNo("");
-    setSortBy("no_asc");
+    setSortBy("no_desc");
+    setCurrentPage(1);
     toast.success("Filtreler sıfırlandı.");
   };
 
@@ -250,7 +447,7 @@ export default function ApplicationsPage() {
     dateEnd ||
     minNo ||
     maxNo ||
-    sortBy !== "no_asc";
+    sortBy !== "no_desc";
 
   // ---------------------------------------------------------
   // MANUEL KAYIT VE BOŞ DOSYA ÖNCELİK KONTROLÜ
@@ -318,9 +515,14 @@ export default function ApplicationsPage() {
     setFormData({
       applicationNo: assignedNo,
       applicantName: "",
+      spouseName: "",
       tcNo: "",
+      spouseTcNo: "",
+      helpType: "",
+      neighborhood: "",
       phone: "",
       address: "",
+      applicationDate: "",
       fileStatus: "Aktif",
       notes: "",
     });
@@ -333,9 +535,14 @@ export default function ApplicationsPage() {
     setFormData({
       applicationNo: emptyFile.applicationNo,
       applicantName: "",
+      spouseName: emptyFile.spouseName || "",
       tcNo: emptyFile.tcNo || "",
+      spouseTcNo: emptyFile.spouseTcNo || "",
+      helpType: emptyFile.helpType || "",
+      neighborhood: emptyFile.neighborhood || "",
       phone: emptyFile.phone || "",
       address: emptyFile.address || "",
+      applicationDate: emptyFile.applicationDate ? new Date(emptyFile.applicationDate).toISOString().split("T")[0] : "",
       fileStatus: "Aktif",
       notes: emptyFile.notes || "",
     });
@@ -348,16 +555,21 @@ export default function ApplicationsPage() {
     setFormData({
       applicationNo: record.applicationNo,
       applicantName: record.applicantName || "",
+      spouseName: record.spouseName || "",
       tcNo: record.tcNo || "",
+      spouseTcNo: record.spouseTcNo || "",
+      helpType: record.helpType || "",
+      neighborhood: record.neighborhood || "",
       phone: record.phone || "",
       address: record.address || "",
+      applicationDate: record.applicationDate ? new Date(record.applicationDate).toISOString().split("T")[0] : "",
       fileStatus: record.fileStatus || "Aktif",
       notes: record.notes || "",
     });
     setIsFormModalOpen(true);
   };
 
-  // Submit Record Form
+  // Kayıt Formunu Gönder
   const handleSubmitRecord = async (e: React.FormEvent) => {
     e.preventDefault();
 
@@ -397,13 +609,14 @@ export default function ApplicationsPage() {
       }
 
       setIsFormModalOpen(false);
-      fetchRecords();
+      invalidateCache();
+      fetchRecords(true);
     } catch (err: any) {
       toast.error(err.message || "Bir hata oluştu.");
     }
   };
 
-  // Delete Record Confirmation
+  // Tekil Kayıt Silme Onayı
   const handleDeleteRecord = (record: ApplicationFileRecord) => {
     setDialogState({
       isOpen: true,
@@ -422,7 +635,8 @@ export default function ApplicationsPage() {
           if (res.ok) {
             toast.success("Kayıt silindi.");
             setDialogState((prev) => ({ ...prev, isOpen: false }));
-            fetchRecords();
+            invalidateCache();
+            fetchRecords(true);
           } else {
             const data = await res.json();
             toast.error(data.error || "Silinemedi.");
@@ -436,6 +650,7 @@ export default function ApplicationsPage() {
 
   // ---------------------------------------------------------
   // EXCEL DOSYASI OKUMA & İÇE AKTARMA (IMPORT)
+  // Sütunlar: Başvuru no, adı soyadı, eşinin adı soyadı, yardım türü veya başvuru tarihi, mahalle/köy
   // ---------------------------------------------------------
   const handleFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -447,7 +662,7 @@ export default function ApplicationsPage() {
     reader.onload = (evt) => {
       try {
         const bstr = evt.target?.result;
-        const wb = XLSX.read(bstr, { type: "binary" });
+        const wb = XLSX.read(bstr, { type: "binary", cellDates: true });
         const firstSheetName = wb.SheetNames[0];
         const ws = wb.Sheets[firstSheetName];
         const rawJson: any[] = XLSX.utils.sheet_to_json(ws, { defval: "" });
@@ -461,6 +676,7 @@ export default function ApplicationsPage() {
         setDetectedColumns(cols);
         setParsedRows(rawJson);
 
+        // Otomatik sütun eşleştirmesi
         const mapping = {
           applicationNo:
             cols.find((c) =>
@@ -470,9 +686,25 @@ export default function ApplicationsPage() {
             cols.find((c) =>
               /adı\s*soyadı|ad\s*soyad|adi\s*soyadi|adı|adi|müracaatçı|hak\s*sahibi|vatandaş/i.test(c)
             ) || "",
+          spouseName:
+            cols.find((c) =>
+              /eşinin\s*adı|eş\s*adı|es\s*adi|eş\s*soyadı|es\s*soyadi|eş|es/i.test(c)
+            ) || "",
+          helpType:
+            cols.find((c) =>
+              /yardım\s*türü|yardim\s*turu|başvuru\s*tarihi|yardım|yardim/i.test(c)
+            ) || "",
+          applicationDate:
+            cols.find((c) =>
+              /başvuru\s*tarihi|kayıt\s*tarihi|basvuru\s*tarihi|kayit\s*tarihi|tarih/i.test(c)
+            ) || "",
+          neighborhood:
+            cols.find((c) =>
+              /mahalle\s*\/?\s*köy|mahalle|köy|mahalle\s*\/?\s*koy|koy/i.test(c)
+            ) || "",
           tcNo: cols.find((c) => /t\.?c\.?\s*kimlik|tc\s*no|kimlik\s*no/i.test(c)) || "",
           phone: cols.find((c) => /telefon|cep|gsm|tel/i.test(c)) || "",
-          address: cols.find((c) => /adres|ikametgah|mahalle/i.test(c)) || "",
+          address: cols.find((c) => /adres|ikametgah/i.test(c)) || "",
         };
 
         setCustomMapping(mapping);
@@ -498,7 +730,7 @@ export default function ApplicationsPage() {
         body: JSON.stringify({
           rows: parsedRows,
           customMapping,
-          updateExisting: true,
+          fileName: excelFileName,
         }),
       });
 
@@ -508,7 +740,8 @@ export default function ApplicationsPage() {
       }
 
       setIsExcelModalOpen(false);
-      fetchRecords();
+      invalidateCache();
+      fetchRecords(true);
 
       const sum = data.summary;
       setDialogState({
@@ -517,7 +750,9 @@ export default function ApplicationsPage() {
         title: "Excel Verileri Başarıyla Yüklendi!",
         message: (
           <div className="space-y-3">
-            <p>Excel tablosundaki veriler sisteme başarıyla aktarılmıştır.</p>
+            <p>
+              Excel tablosundaki veriler güvenli bir şekilde sisteme aktarılmıştır. T.C. kimlik numaraları ve tarihler kurallara göre otomatik ayrıştırılmıştır.
+            </p>
             <div className="grid grid-cols-2 gap-2 text-xs">
               <div className="p-2.5 bg-blue-50 text-blue-900 rounded-xl font-medium">
                 Toplam Satır: <strong>{sum.totalProcessed}</strong>
@@ -532,6 +767,16 @@ export default function ApplicationsPage() {
                 Boş Dosya: <strong>{sum.emptyFilesCount}</strong>
               </div>
             </div>
+            {data.errors?.length > 0 && (
+              <div className="p-3 bg-red-50 text-red-800 rounded-xl text-xs">
+                <span className="font-semibold block mb-1">Bazı satırlar atlandı:</span>
+                <ul className="list-disc pl-4 space-y-0.5">
+                  {data.errors.map((e: string, i: number) => (
+                    <li key={i}>{e}</li>
+                  ))}
+                </ul>
+              </div>
+            )}
           </div>
         ),
         confirmText: "Tamam",
@@ -545,88 +790,34 @@ export default function ApplicationsPage() {
   };
 
   // ---------------------------------------------------------
-  // GELİŞMİŞ FİLTRELEME & ARAMA MOTORU (CLIENT-SIDE)
-  // ---------------------------------------------------------
-  const filteredRecords = records
-    .filter((r) => {
-      // 1. Genel arama (Ad Soyad, TC, No, Telefon, Adres, Not)
-      if (searchTerm) {
-        const matches =
-          turkishIncludes(r.applicationNo, searchTerm) ||
-          turkishIncludes(r.applicantName, searchTerm) ||
-          turkishIncludes(r.tcNo, searchTerm) ||
-          turkishIncludes(r.phone, searchTerm) ||
-          turkishIncludes(r.address, searchTerm) ||
-          turkishIncludes(r.notes || "", searchTerm);
-        if (!matches) return false;
-      }
-
-      const isNameEmpty = !r.applicantName || r.applicantName.trim() === "";
-
-      // 2. Tab filtresi
-      if (filterTab === "active" && (isNameEmpty || r.fileStatus === "Boş Dosya")) return false;
-      if (filterTab === "empty" && !isNameEmpty && r.fileStatus !== "Boş Dosya") return false;
-
-      // 3. Durum filtresi
-      if (statusFilter !== "all") {
-        if (statusFilter === "Boş Dosya" && !isNameEmpty && r.fileStatus !== "Boş Dosya") return false;
-        if (statusFilter === "Aktif" && (isNameEmpty || r.fileStatus !== "Aktif")) return false;
-        if (statusFilter === "Pasif" && r.fileStatus !== "Pasif") return false;
-        if (statusFilter === "Arşiv" && r.fileStatus !== "Arşiv") return false;
-      }
-
-      // 4. Numara Aralığı
-      const seq = r.applicationNoSeq || parseInt(r.applicationNo.replace(/\D/g, ""), 10) || 0;
-      if (minNo && seq < parseInt(minNo, 10)) return false;
-      if (maxNo && seq > parseInt(maxNo, 10)) return false;
-
-      // 5. Tarih Aralığı
-      if (dateStart || dateEnd) {
-        const d = new Date(r.createdAt);
-        if (dateStart) {
-          const start = new Date(dateStart);
-          start.setHours(0, 0, 0, 0);
-          if (d < start) return false;
-        }
-        if (dateEnd) {
-          const end = new Date(dateEnd);
-          end.setHours(23, 59, 59, 999);
-          if (d > end) return false;
-        }
-      }
-
-      return true;
-    })
-    .sort((a, b) => {
-      if (sortBy === "no_asc") return (a.applicationNoSeq || 0) - (b.applicationNoSeq || 0);
-      if (sortBy === "no_desc") return (b.applicationNoSeq || 0) - (a.applicationNoSeq || 0);
-      if (sortBy === "date_desc")
-        return new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime();
-      if (sortBy === "date_asc")
-        return new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime();
-      if (sortBy === "name_asc")
-        return (a.applicantName || "").localeCompare(b.applicantName || "", "tr");
-      if (sortBy === "name_desc")
-        return (b.applicantName || "").localeCompare(a.applicantName || "", "tr");
-      return 0;
-    });
-
-  // ---------------------------------------------------------
   // GÜZEL MODERN EXCEL ÇIKTISI (TÜM KULLANICILAR İÇİN)
   // ---------------------------------------------------------
-  const executeExportExcel = () => {
-    let datasetToExport = filteredRecords;
+  const executeExportExcel = async () => {
+    let datasetToExport = records;
 
-    if (exportScope === "all") {
+    if (exportScope === "page") {
       datasetToExport = records;
-    } else if (exportScope === "active") {
-      datasetToExport = records.filter(
-        (r) => r.applicantName && r.applicantName.trim() !== "" && r.fileStatus !== "Boş Dosya"
-      );
-    } else if (exportScope === "empty") {
-      datasetToExport = records.filter(
-        (r) => !r.applicantName || r.applicantName.trim() === "" || r.fileStatus === "Boş Dosya"
-      );
+    } else {
+      // Tüm verileri sunucudan çekip aktar
+      try {
+        const params = new URLSearchParams();
+        params.append("all", "true");
+        params.append("sortBy", sortBy);
+        if (searchTerm.trim()) params.append("search", searchTerm.trim());
+
+        if (exportScope === "active") params.append("status", "active");
+        else if (exportScope === "empty") params.append("status", "empty");
+        else if (filterTab !== "all") params.append("status", filterTab);
+        else if (statusFilter !== "all") params.append("status", statusFilter);
+
+        const res = await fetch(`/api/application-files?${params.toString()}`);
+        if (res.ok) {
+          const data = await res.json();
+          datasetToExport = data.records || [];
+        }
+      } catch (e) {
+        console.error(e);
+      }
     }
 
     if (datasetToExport.length === 0) {
@@ -636,7 +827,9 @@ export default function ApplicationsPage() {
 
     const dateStr = new Date().toISOString().split("T")[0];
     const filterInfo =
-      exportScope === "filtered"
+      exportScope === "page"
+        ? `Mevcut Sayfa Listesi (${datasetToExport.length} Kayıt)`
+        : exportScope === "filtered"
         ? `Filtrelenmiş Liste (${datasetToExport.length} Kayıt)`
         : exportScope === "all"
         ? `Tüm Dosyalar (${datasetToExport.length} Kayıt)`
@@ -654,17 +847,17 @@ export default function ApplicationsPage() {
     toast.success("Excel tablosu kurumsal standartlarda başarıyla indirildi.");
   };
 
-  // Hızlı doğrudan Excel indirme (Mevcut filtrelenmiş liste için)
+  // Hızlı doğrudan Excel indirme
   const handleQuickExport = () => {
-    if (filteredRecords.length === 0) {
+    if (records.length === 0) {
       toast.error("İndirilecek kayıt bulunamadı.");
       return;
     }
     const dateStr = new Date().toISOString().split("T")[0];
-    exportStyledApplicationExcel(filteredRecords, `Hane_Basvuru_Dosyalari_${dateStr}`, {
+    exportStyledApplicationExcel(records, `Hane_Basvuru_Dosyalari_${dateStr}`, {
       institutionName: exportInstitutionName,
       reportTitle: exportReportTitle,
-      filterInfo: `Filtrelenmiş Liste (${filteredRecords.length} Kayıt)`,
+      filterInfo: `Mevcut Liste (${records.length} Kayıt)`,
     });
     toast.success("Excel tablosu Türkçe karakter uyumlu ve antetli olarak indirildi.");
   };
@@ -706,21 +899,22 @@ export default function ApplicationsPage() {
                 Hane ve Başvuru Dosyaları
               </h1>
               <p className="text-slate-500 text-sm mt-0.5">
-                Gelişmiş arama ve filtreleme yapın, modern kurumsal Excel raporu alın ve otomatik numara ile kayıt ekleyin.
+                Başvuru ve hane kayıtlarını yönetin, gelişmiş arama ve hızlı sayfalama yapın, kurumsal Excel raporu alın.
               </p>
             </div>
           </div>
         </div>
 
-        {/* Aksiyon Butonları (Excel Çıktısı TÜM KULLANICILAR İÇİN Açık) */}
+        {/* Aksiyon Butonları (Tüm Kullanıcılar İçin Excel İndirme Açık) */}
         <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+          {/* Süper Admin: Yetkilendirme */}
           {isSuperAdmin && (
             <button
               onClick={() => {
                 fetchUserPermissions();
                 setIsPermModalOpen(true);
               }}
-              className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-sm font-semibold transition-all shadow-sm"
+              className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all shadow-sm"
               title="Kullanıcı Yetkilendirme"
             >
               <UserCheck className="w-4 h-4 text-slate-600" />
@@ -728,17 +922,30 @@ export default function ApplicationsPage() {
             </button>
           )}
 
-          {/* GÜZEL MODERN EXCEL ÇIKTISI BUTONU (TÜM KULLANICILAR İÇİN) */}
-          <div className="flex items-center gap-1 flex-1 lg:flex-none">
+          {/* Excel Dosyalarını Yönet / Sil Butonu (Yetkili veya Süper Admin) */}
+          {canManage && (
             <button
-              onClick={() => setIsExportModalOpen(true)}
-              className="flex-1 flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-600/25 active:scale-95"
-              title="Güzel ve Modern Standartlarda Excel Raporu İndir"
+              onClick={() => {
+                fetchImportBatches();
+                setIsBatchManageModalOpen(true);
+              }}
+              className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-3.5 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl text-xs font-semibold transition-all border border-red-200"
+              title="Yüklenen Excel Dosyalarını veya Paketleri Sil"
             >
-              <FileSpreadsheet className="w-4 h-4" />
-              Excel Çıktısı Al
+              <Trash2 className="w-4 h-4 text-red-600" />
+              Excel Dosyası Sil
             </button>
-          </div>
+          )}
+
+          {/* GÜZEL MODERN EXCEL ÇIKTISI BUTONU (TÜM KULLANICILAR İÇİN) */}
+          <button
+            onClick={() => setIsExportModalOpen(true)}
+            className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-600/25 active:scale-95"
+            title="Güzel ve Modern Standartlarda Excel Raporu İndir"
+          >
+            <FileSpreadsheet className="w-4 h-4" />
+            Excel Çıktısı Al
+          </button>
 
           {canManage ? (
             <>
@@ -819,15 +1026,17 @@ export default function ApplicationsPage() {
       </div>
 
       {/* ========================================================= */}
-      {/* GELİŞMİŞ ARAMA VE FİLTRELEME PANELİ                       */}
+      {/* GELİŞMİŞ ARAMA, FİLTRELEME VE ÖNBELLEK ÇUBUĞU              */}
       {/* ========================================================= */}
       <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 space-y-4">
-        {/* Ana Arama Çubuğu & Hızlı Sekmeler */}
         <div className="flex flex-col lg:flex-row justify-between items-center gap-3">
           {/* Hızlı Filtre Sekmeleri */}
           <div className="flex items-center p-1 bg-slate-100 rounded-2xl w-full lg:w-auto">
             <button
-              onClick={() => setFilterTab("all")}
+              onClick={() => {
+                setFilterTab("all");
+                setCurrentPage(1);
+              }}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
                 filterTab === "all"
                   ? "bg-white text-blue-600 shadow-sm"
@@ -837,7 +1046,10 @@ export default function ApplicationsPage() {
               Tüm Dosyalar ({stats.totalCount})
             </button>
             <button
-              onClick={() => setFilterTab("active")}
+              onClick={() => {
+                setFilterTab("active");
+                setCurrentPage(1);
+              }}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all ${
                 filterTab === "active"
                   ? "bg-white text-emerald-600 shadow-sm"
@@ -847,7 +1059,10 @@ export default function ApplicationsPage() {
               Dolu Dosyalar ({stats.activeCount})
             </button>
             <button
-              onClick={() => setFilterTab("empty")}
+              onClick={() => {
+                setFilterTab("empty");
+                setCurrentPage(1);
+              }}
               className={`px-4 py-2 rounded-xl text-xs font-bold transition-all flex items-center gap-1.5 ${
                 filterTab === "empty"
                   ? "bg-white text-amber-600 shadow-sm"
@@ -861,20 +1076,20 @@ export default function ApplicationsPage() {
             </button>
           </div>
 
-          {/* Genel Arama Kutusu ve Detay Butonu */}
+          {/* Anlık Arama ve Gelişmiş Filtre Düğmesi */}
           <div className="flex items-center gap-2 w-full lg:w-auto flex-1 lg:max-w-xl justify-end">
             <div className="relative w-full">
               <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 text-slate-400 w-4 h-4" />
               <input
                 type="text"
-                placeholder="Başvuru no, isim, TC, telefon veya adres ara..."
+                placeholder="Başvuru no, isim, eş, TC, mahalle veya yardım türü..."
                 value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
+                onChange={(e) => handleSearchChange(e.target.value)}
                 className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-2xl text-sm focus:outline-none focus:ring-2 focus:ring-blue-500/20 focus:border-blue-500 transition-all"
               />
               {searchTerm && (
                 <button
-                  onClick={() => setSearchTerm("")}
+                  onClick={() => handleSearchChange("")}
                   className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
                 >
                   <X className="w-3.5 h-3.5" />
@@ -912,7 +1127,7 @@ export default function ApplicationsPage() {
 
         {/* Genişletilmiş Filtre Seçenekleri Paneli */}
         {isAdvancedFilterOpen && (
-          <div className="pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-5 gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
+          <div className="pt-4 border-t border-slate-100 grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 animate-in fade-in slide-in-from-top-2 duration-200">
             {/* Durum Filtresi */}
             <div>
               <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
@@ -920,7 +1135,10 @@ export default function ApplicationsPage() {
               </label>
               <select
                 value={statusFilter}
-                onChange={(e) => setStatusFilter(e.target.value)}
+                onChange={(e) => {
+                  setStatusFilter(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
               >
                 <option value="all">Tüm Durumlar</option>
@@ -931,39 +1149,18 @@ export default function ApplicationsPage() {
               </select>
             </div>
 
-            {/* Başvuru No Min - Max Aralığı */}
-            <div>
-              <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                Başvuru No Aralığı
-              </label>
-              <div className="flex items-center gap-1.5">
-                <input
-                  type="number"
-                  placeholder="Min"
-                  value={minNo}
-                  onChange={(e) => setMinNo(e.target.value)}
-                  className="w-1/2 px-2.5 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:bg-white font-mono"
-                />
-                <span className="text-slate-400 text-xs">-</span>
-                <input
-                  type="number"
-                  placeholder="Max"
-                  value={maxNo}
-                  onChange={(e) => setMaxNo(e.target.value)}
-                  className="w-1/2 px-2.5 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:bg-white font-mono"
-                />
-              </div>
-            </div>
-
             {/* Kayıt Başlangıç Tarihi */}
             <div>
               <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                Kayıt Başlangıç
+                Başlangıç Tarihi
               </label>
               <input
                 type="date"
                 value={dateStart}
-                onChange={(e) => setDateStart(e.target.value)}
+                onChange={(e) => {
+                  setDateStart(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:bg-white"
               />
             </div>
@@ -971,28 +1168,34 @@ export default function ApplicationsPage() {
             {/* Kayıt Bitiş Tarihi */}
             <div>
               <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                Kayıt Bitiş
+                Bitiş Tarihi
               </label>
               <input
                 type="date"
                 value={dateEnd}
-                onChange={(e) => setDateEnd(e.target.value)}
+                onChange={(e) => {
+                  setDateEnd(e.target.value);
+                  setCurrentPage(1);
+                }}
                 className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:bg-white"
               />
             </div>
 
-            {/* Sıralama */}
+            {/* Sıralama (Varsayılan: Son Kayıttan İlk Kayıta) */}
             <div>
               <label className="block text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-1.5">
-                Sıralama Ölçütü
+                Sıralama (Varsayılan: Son Kayıttan İlke)
               </label>
               <select
                 value={sortBy}
-                onChange={(e) => setSortBy(e.target.value as any)}
-                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 font-medium"
+                onChange={(e) => {
+                  setSortBy(e.target.value as any);
+                  setCurrentPage(1);
+                }}
+                className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 font-semibold"
               >
-                <option value="no_asc">Başvuru No: 1 → 9 (Küçükten Büyüğe)</option>
-                <option value="no_desc">Başvuru No: 9 → 1 (Büyükten Küçüğe)</option>
+                <option value="no_desc">Başvuru No: Son Kayıttan İlke (9 → 1)</option>
+                <option value="no_asc">Başvuru No: İlk Kayıttan Sona (1 → 9)</option>
                 <option value="date_desc">Kayıt Tarihi: En Yeniler Önce</option>
                 <option value="date_asc">Kayıt Tarihi: En Eskiler Önce</option>
                 <option value="name_asc">İsim: A → Z</option>
@@ -1002,53 +1205,74 @@ export default function ApplicationsPage() {
           </div>
         )}
 
-        {/* Canlı Sonuç Bildirimi & Filtre Özeti */}
-        <div className="flex flex-wrap items-center justify-between gap-2 pt-2 text-xs text-slate-500 border-t border-slate-50">
+        {/* Canlı Sonuç Bildirimi & Sayfa Başına Kayıt Seçimi */}
+        <div className="flex flex-wrap items-center justify-between gap-3 pt-2 text-xs text-slate-500 border-t border-slate-50">
           <div className="flex items-center gap-2">
             <span>
-              Toplam <strong>{records.length}</strong> dosyadan{" "}
-              <strong className="text-blue-700">{filteredRecords.length}</strong> tanesi listeleniyor.
+              Toplam <strong>{totalRecords}</strong> eşleşen kayıttan{" "}
+              <strong>
+                {totalRecords === 0 ? 0 : (currentPage - 1) * pageSize + 1} -{" "}
+                {Math.min(currentPage * pageSize, totalRecords)}
+              </strong>{" "}
+              arası listeleniyor.
             </span>
             {hasActiveFilters && (
               <span className="px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 text-[10px] font-bold">
-                Filtreler Aktif
+                Filtrelenmiş
               </span>
             )}
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-3">
+            <div className="flex items-center gap-1.5">
+              <span>Sayfa Başına:</span>
+              <select
+                value={pageSize}
+                onChange={(e) => {
+                  setPageSize(parseInt(e.target.value, 10));
+                  setCurrentPage(1);
+                }}
+                className="px-2 py-1 border border-slate-200 rounded-lg text-xs bg-slate-50 font-semibold"
+              >
+                <option value={25}>25</option>
+                <option value={50}>50</option>
+                <option value={100}>100</option>
+                <option value={200}>200</option>
+              </select>
+            </div>
+
             <button
               onClick={handleQuickExport}
-              className="text-emerald-700 hover:text-emerald-900 font-semibold flex items-center gap-1 hover:underline"
+              className="text-emerald-700 hover:text-emerald-900 font-bold flex items-center gap-1 hover:underline"
               title="Bu listeyi hemen Excel olarak indir"
             >
               <Download className="w-3.5 h-3.5" />
-              Bu Listeyi Hızlı İndir (.xlsx)
+              Hızlı Excel İndir (.xlsx)
             </button>
           </div>
         </div>
       </div>
 
-      {/* Kayıt Tablosu */}
+      {/* Kayıt Tablosu (Sütunlar: Başvuru no, adı soyadı, eşinin adı soyadı, yardım türü veya başvuru tarihi, mahalle/köy) */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
         <div className="overflow-x-auto">
           <table className="w-full text-left border-collapse text-sm">
             <thead>
               <tr className="bg-slate-50/70 border-b border-slate-100">
-                <th className="py-4 px-5 font-bold text-slate-700 w-36">
+                <th className="py-4 px-4 font-bold text-slate-700 w-32">
                   <span className="flex items-center gap-1">
                     <Hash className="w-3.5 h-3.5 text-blue-600" />
                     Başvuru No
                   </span>
                 </th>
-                <th className="py-4 px-5 font-bold text-slate-700">Adı Soyadı</th>
-                <th className="py-4 px-5 font-bold text-slate-700 w-40">T.C. Kimlik No</th>
-                <th className="py-4 px-5 font-bold text-slate-700 w-36">Telefon</th>
-                <th className="py-4 px-5 font-bold text-slate-700">Adres / Not</th>
-                <th className="py-4 px-5 font-bold text-slate-700 w-32">Durum</th>
-                <th className="py-4 px-5 font-bold text-slate-700 w-32">Kayıt Tarihi</th>
+                <th className="py-4 px-4 font-bold text-slate-700">Adı Soyadı / TC</th>
+                <th className="py-4 px-4 font-bold text-slate-700">Eşinin Adı Soyadı</th>
+                <th className="py-4 px-4 font-bold text-slate-700">Yardım Türü</th>
+                <th className="py-4 px-4 font-bold text-slate-700 w-36">Kayıt / Başvuru Tarihi</th>
+                <th className="py-4 px-4 font-bold text-slate-700">Mahalle / Köy</th>
+                <th className="py-4 px-4 font-bold text-slate-700 w-28">Durum</th>
                 {canManage && (
-                  <th className="py-4 px-5 font-bold text-slate-700 text-right w-28">İşlemler</th>
+                  <th className="py-4 px-4 font-bold text-slate-700 text-right w-24">İşlemler</th>
                 )}
               </tr>
             </thead>
@@ -1062,15 +1286,21 @@ export default function ApplicationsPage() {
                     </div>
                   </td>
                 </tr>
-              ) : filteredRecords.length === 0 ? (
+              ) : records.length === 0 ? (
                 <tr>
                   <td colSpan={8} className="py-12 text-center text-slate-400">
                     Aranan kriterlere uygun dosya kaydı bulunamadı.
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((record) => {
+                records.map((record) => {
                   const isEmpty = !record.applicantName || record.applicantName.trim() === "";
+
+                  const displayDate = record.applicationDate
+                    ? new Date(record.applicationDate).toLocaleDateString("tr-TR")
+                    : record.createdAt
+                    ? new Date(record.createdAt).toLocaleDateString("tr-TR")
+                    : "";
 
                   return (
                     <tr
@@ -1080,14 +1310,14 @@ export default function ApplicationsPage() {
                       }`}
                     >
                       {/* Başvuru No (Primary Key) */}
-                      <td className="py-4 px-5 font-mono font-bold text-slate-900 whitespace-nowrap">
+                      <td className="py-3.5 px-4 font-mono font-bold text-slate-900 whitespace-nowrap">
                         <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-slate-100 border border-slate-200 text-slate-800 text-xs">
                           #{record.applicationNo}
                         </span>
                       </td>
 
-                      {/* Adı Soyadı */}
-                      <td className="py-4 px-5 font-semibold">
+                      {/* Adı Soyadı & TC */}
+                      <td className="py-3.5 px-4 font-semibold">
                         {isEmpty ? (
                           <div className="flex items-center gap-2">
                             <span className="px-2.5 py-0.5 rounded-full text-xs font-bold bg-amber-100 text-amber-800 border border-amber-200/60">
@@ -1103,42 +1333,73 @@ export default function ApplicationsPage() {
                             )}
                           </div>
                         ) : (
-                          <span className="text-slate-800">{record.applicantName}</span>
+                          <div>
+                            <span className="text-slate-800 text-sm block font-bold">
+                              {record.applicantName}
+                            </span>
+                            {record.tcNo && (
+                              <span className="font-mono text-[11px] text-slate-500 bg-slate-100 px-1.5 py-0.2 rounded border border-slate-200">
+                                TC: {record.tcNo}
+                              </span>
+                            )}
+                          </div>
                         )}
                       </td>
 
-                      {/* TC Kimlik No */}
-                      <td className="py-4 px-5 font-mono text-xs text-slate-600">
-                        {record.tcNo || "-"}
+                      {/* Eşinin Adı Soyadı */}
+                      <td className="py-3.5 px-4 text-xs text-slate-700">
+                        {record.spouseName ? (
+                          <div>
+                            <span className="font-semibold block">{record.spouseName}</span>
+                            {record.spouseTcNo && (
+                              <span className="text-[10px] text-slate-400 font-mono">
+                                TC: {record.spouseTcNo}
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
                       </td>
 
-                      {/* Telefon */}
-                      <td className="py-4 px-5 text-xs text-slate-600 whitespace-nowrap">
-                        {record.phone ? (
-                          <span className="inline-flex items-center gap-1 font-mono">
-                            <Phone className="w-3 h-3 text-slate-400" />
-                            {record.phone}
+                      {/* Yardım Türü */}
+                      <td className="py-3.5 px-4 text-xs font-medium text-slate-700">
+                        {record.helpType ? (
+                          <span className="inline-block px-2 py-0.5 rounded-lg bg-blue-50 text-blue-800 border border-blue-100 font-semibold text-[11px]">
+                            {record.helpType}
                           </span>
                         ) : (
-                          "-"
+                          <span className="text-slate-300">-</span>
                         )}
                       </td>
 
-                      {/* Adres / Not */}
-                      <td className="py-4 px-5 text-xs text-slate-600 max-w-xs truncate">
-                        {record.address && <span>{record.address}</span>}
-                        {record.notes && (
-                          <span className="text-slate-400 block text-[11px] italic truncate">
-                            Not: {record.notes}
-                          </span>
+                      {/* Kayıt / Başvuru Tarihi (Yoksa boş kalır!) */}
+                      <td className="py-3.5 px-4 text-xs text-slate-600 whitespace-nowrap">
+                        {displayDate ? (
+                          <span className="font-mono font-medium">{displayDate}</span>
+                        ) : (
+                          <span className="text-slate-300">-</span>
                         )}
-                        {!record.address && !record.notes && "-"}
+                      </td>
+
+                      {/* Mahalle / Köy */}
+                      <td className="py-3.5 px-4 text-xs text-slate-700">
+                        {record.neighborhood || record.address ? (
+                          <div className="flex items-center gap-1 font-medium">
+                            <MapPin className="w-3 h-3 text-slate-400 flex-shrink-0" />
+                            <span className="truncate max-w-xs">
+                              {record.neighborhood || record.address}
+                            </span>
+                          </div>
+                        ) : (
+                          <span className="text-slate-300">-</span>
+                        )}
                       </td>
 
                       {/* Durum */}
-                      <td className="py-4 px-5">
+                      <td className="py-3.5 px-4">
                         <span
-                          className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                          className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-bold ${
                             isEmpty
                               ? "bg-amber-100 text-amber-800 border border-amber-200"
                               : record.fileStatus === "Pasif"
@@ -1150,15 +1411,10 @@ export default function ApplicationsPage() {
                         </span>
                       </td>
 
-                      {/* Tarih */}
-                      <td className="py-4 px-5 text-xs text-slate-500 whitespace-nowrap">
-                        {new Date(record.createdAt).toLocaleDateString("tr-TR")}
-                      </td>
-
                       {/* İşlemler */}
                       {canManage && (
-                        <td className="py-4 px-5 text-right whitespace-nowrap">
-                          <div className="flex items-center justify-end gap-1.5">
+                        <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                          <div className="flex items-center justify-end gap-1">
                             <button
                               onClick={() => openFormModalForEdit(record)}
                               className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
@@ -1183,7 +1439,196 @@ export default function ApplicationsPage() {
             </tbody>
           </table>
         </div>
+
+        {/* ========================================================= */}
+        {/* SAYFALAMA KONTROLLERİ (PAGINATION)                         */}
+        {/* ========================================================= */}
+        <div className="p-4 border-t border-slate-100 flex flex-col sm:flex-row justify-between items-center gap-3 bg-slate-50/50">
+          <div className="text-xs text-slate-500 font-medium">
+            Sayfa <strong>{currentPage}</strong> / <strong>{totalPages || 1}</strong>{" "}
+            (Toplam {totalRecords} Kayıt)
+          </div>
+
+          <div className="flex items-center gap-1.5">
+            <button
+              onClick={() => setCurrentPage(1)}
+              disabled={currentPage <= 1 || loading}
+              className="p-2 border border-slate-200 rounded-xl bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-700 transition-colors"
+              title="İlk Sayfa"
+            >
+              <ChevronsLeft className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setCurrentPage((p) => Math.max(p - 1, 1))}
+              disabled={currentPage <= 1 || loading}
+              className="px-3 py-1.5 border border-slate-200 rounded-xl bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-700 text-xs font-semibold transition-colors flex items-center gap-1"
+            >
+              <ChevronLeft className="w-3.5 h-3.5" />
+              Önceki
+            </button>
+
+            {/* Sayfa Butonları */}
+            <div className="flex items-center gap-1 px-1">
+              {Array.from({ length: Math.min(5, totalPages) }, (_, i) => {
+                let pageNum = currentPage - 2 + i;
+                if (pageNum < 1) pageNum = i + 1;
+                if (pageNum > totalPages) return null;
+
+                return (
+                  <button
+                    key={pageNum}
+                    onClick={() => setCurrentPage(pageNum)}
+                    className={`w-8 h-8 rounded-xl text-xs font-bold transition-all ${
+                      currentPage === pageNum
+                        ? "bg-blue-600 text-white shadow-md shadow-blue-600/20"
+                        : "bg-white border border-slate-200 text-slate-700 hover:bg-slate-100"
+                    }`}
+                  >
+                    {pageNum}
+                  </button>
+                );
+              })}
+            </div>
+
+            <button
+              onClick={() => setCurrentPage((p) => Math.min(p + 1, totalPages))}
+              disabled={currentPage >= totalPages || loading}
+              className="px-3 py-1.5 border border-slate-200 rounded-xl bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-700 text-xs font-semibold transition-colors flex items-center gap-1"
+            >
+              Sonraki
+              <ChevronRight className="w-3.5 h-3.5" />
+            </button>
+            <button
+              onClick={() => setCurrentPage(totalPages)}
+              disabled={currentPage >= totalPages || loading}
+              className="p-2 border border-slate-200 rounded-xl bg-white hover:bg-slate-100 disabled:opacity-40 disabled:hover:bg-white text-slate-700 transition-colors"
+              title="Son Sayfa"
+            >
+              <ChevronsRight className="w-4 h-4" />
+            </button>
+          </div>
+        </div>
       </div>
+
+      {/* ========================================================= */}
+      {/* YÜKLENEN EXCEL DOSYALARINI YÖNET & SİL MODALI              */}
+      {/* ========================================================= */}
+      {isBatchManageModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
+            onClick={() => setIsBatchManageModalOpen(false)}
+          />
+
+          <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 z-10 animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-2.5">
+                <div className="p-2.5 bg-red-100 text-red-600 rounded-2xl">
+                  <Trash2 className="w-5 h-5" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800">
+                    Yüklenen Excel Dosyalarını Sil & Yönet
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Daha önce yüklenmiş olan Excel paketlerini görüntüleyin veya gerektiğinde geri alıp silin.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsBatchManageModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-4 space-y-3 pr-1">
+              {loadingBatches ? (
+                <div className="py-8 text-center text-slate-500 text-sm">
+                  Excel paketleri yükleniyor...
+                </div>
+              ) : importBatches.length === 0 ? (
+                <div className="p-6 text-center text-slate-400 text-sm bg-slate-50 rounded-2xl border border-slate-200">
+                  Sistemde silinebilecek aktif Excel yükleme paketi kaydı bulunamadı.
+                </div>
+              ) : (
+                <div className="space-y-2.5">
+                  {importBatches.map((batch) => (
+                    <div
+                      key={batch._id}
+                      className="p-4 bg-slate-50 rounded-2xl border border-slate-200 flex items-center justify-between gap-3 hover:bg-slate-100/60 transition-colors"
+                    >
+                      <div>
+                        <div className="flex items-center gap-2">
+                          <FileSpreadsheet className="w-4 h-4 text-emerald-600" />
+                          <p className="font-bold text-slate-800 text-sm">
+                            {batch.name || "Excel Yükleme Paketi"}
+                          </p>
+                        </div>
+                        <div className="flex items-center gap-3 text-xs text-slate-500 mt-1">
+                          <span>
+                            Toplam: <strong className="text-slate-700">{batch.count} Dosya</strong>
+                          </span>
+                          <span>•</span>
+                          <span>
+                            Yüklenme:{" "}
+                            {new Date(batch.firstCreatedAt).toLocaleDateString("tr-TR")}{" "}
+                            {new Date(batch.firstCreatedAt).toLocaleTimeString("tr-TR", {
+                              hour: "2-digit",
+                              minute: "2-digit",
+                            })}
+                          </span>
+                        </div>
+                      </div>
+
+                      <button
+                        type="button"
+                        onClick={() => handleDeleteBatch(batch)}
+                        className="px-3.5 py-2 rounded-xl text-xs font-bold bg-white hover:bg-red-50 text-red-600 border border-red-200 transition-colors shadow-sm flex items-center gap-1.5"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        Bu Paketi Sil
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Süper Admin: Tüm Veritabanını Temizleme Seçeneği */}
+              {isSuperAdmin && (
+                <div className="mt-6 p-4 bg-red-50/70 border border-red-200 rounded-2xl space-y-2">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h4 className="font-bold text-red-900 text-sm">Tüm Dosya Kayıtlarını Sıfırla</h4>
+                      <p className="text-xs text-red-700 mt-0.5">
+                        Sistemdeki tüm ({stats.totalCount}) başvuru dosyasını tek seferde kalıcı olarak siler.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={handleClearAllRecords}
+                      className="px-4 py-2 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold transition-all shadow-sm"
+                    >
+                      Tümünü Temizle
+                    </button>
+                  </div>
+                </div>
+              )}
+            </div>
+
+            <div className="pt-4 border-t border-slate-100 flex justify-end">
+              <button
+                type="button"
+                onClick={() => setIsBatchManageModalOpen(false)}
+                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-semibold transition-colors"
+              >
+                Kapat
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ========================================================= */}
       {/* GÜZEL MODERN EXCEL ÇIKTISI MODALI (TÜM KULLANICILAR İÇİN)  */}
@@ -1239,7 +1684,7 @@ export default function ApplicationsPage() {
                       {exportScope === "filtered" && <Check className="w-3.5 h-3.5 text-emerald-600" />}
                     </div>
                     <span className="text-[11px] text-slate-500 font-normal">
-                      Ekranda görünen {filteredRecords.length} dosya
+                      Arama ve filtrelere uyan {totalRecords} dosya
                     </span>
                   </button>
 
@@ -1257,7 +1702,7 @@ export default function ApplicationsPage() {
                       {exportScope === "all" && <Check className="w-3.5 h-3.5 text-emerald-600" />}
                     </div>
                     <span className="text-[11px] text-slate-500 font-normal">
-                      Sistemdeki tüm {records.length} dosya
+                      Sistemdeki tüm {stats.totalCount} dosya
                     </span>
                   </button>
 
@@ -1332,7 +1777,7 @@ export default function ApplicationsPage() {
               <div className="p-3 bg-emerald-50 border border-emerald-200 rounded-2xl text-xs text-emerald-900 flex items-start gap-2">
                 <Sparkles className="w-4 h-4 text-emerald-600 flex-shrink-0 mt-0.5" />
                 <span>
-                  Excel çıktısında Türkçe karakterler (ğ, Ş, ı, İ, ö, ü, ç) tam uyumludur. Sütun genişlikleri metin uzunluğuna göre otomatik hizalanır ve tablo sonuna özet icmal satırı eklenir.
+                  Excel tablosunda: Başvuru No, T.C. Kimlik No, Adı Soyadı, Eşinin Adı Soyadı, Yardım Türü, Kayıt / Başvuru Tarihi, Mahalle / Köy ve ek bilgiler kurumsal formatta yer alır.
                 </span>
               </div>
 
@@ -1361,6 +1806,8 @@ export default function ApplicationsPage() {
 
       {/* ========================================================= */}
       {/* MANUEL KAYIT / DÜZENLEME MODALI                           */}
+      {/* Sütunlar: başvuru no, adı soyadı, eşinin adı soyadı,      */}
+      {/* yardım türü veya başvuru tarihi, mahalle/köy              */}
       {/* ========================================================= */}
       {isFormModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
@@ -1369,7 +1816,7 @@ export default function ApplicationsPage() {
             onClick={() => setIsFormModalOpen(false)}
           />
 
-          <div className="relative w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 z-10 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
+          <div className="relative w-full max-w-2xl bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 z-10 animate-in zoom-in-95 duration-200 max-h-[90vh] overflow-y-auto">
             <div className="flex justify-between items-center pb-4 border-b border-slate-100">
               <div className="flex items-center gap-2.5">
                 <div className="p-2.5 bg-blue-100 text-blue-600 rounded-2xl">
@@ -1424,27 +1871,26 @@ export default function ApplicationsPage() {
                 </div>
               </div>
 
-              {/* Adı Soyadı */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Adı Soyadı (Boş bırakılırsa "Boş Dosya" olarak kaydedilir)
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                    <UserIcon className="h-4 w-4 text-slate-400" />
-                  </div>
-                  <input
-                    type="text"
-                    value={formData.applicantName}
-                    onChange={(e) => setFormData({ ...formData, applicantName: e.target.value })}
-                    placeholder="Örn: Fatma Demir (veya boş bırakınız)"
-                    className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-              </div>
-
-              {/* TC Kimlik No ve Telefon */}
+              {/* Adı Soyadı & TC Kimlik No */}
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Adı Soyadı (Boşsa "Boş Dosya" olur)
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                      <UserIcon className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <input
+                      type="text"
+                      value={formData.applicantName}
+                      onChange={(e) => setFormData({ ...formData, applicantName: e.target.value })}
+                      placeholder="Örn: Fatma Demir"
+                      className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
+                </div>
+
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                     T.C. Kimlik No
@@ -1459,41 +1905,111 @@ export default function ApplicationsPage() {
                         tcNo: e.target.value.replace(/\D/g, "").slice(0, 11),
                       })
                     }
-                    placeholder="11 haneli TC"
-                    className="block w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm font-mono bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="11 haneli T.C."
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm font-mono bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
                   />
+                </div>
+              </div>
+
+              {/* Eşinin Adı Soyadı & Eş TC */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Eşinin Adı Soyadı
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.spouseName}
+                    onChange={(e) => setFormData({ ...formData, spouseName: e.target.value })}
+                    placeholder="Örn: Mehmet Demir"
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Eşinin T.C. Kimlik No
+                  </label>
+                  <input
+                    type="text"
+                    maxLength={11}
+                    value={formData.spouseTcNo}
+                    onChange={(e) =>
+                      setFormData({
+                        ...formData,
+                        spouseTcNo: e.target.value.replace(/\D/g, "").slice(0, 11),
+                      })
+                    }
+                    placeholder="Eş T.C. (isteğe bağlı)"
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm font-mono bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Yardım Türü ve Kayıt / Başvuru Tarihi */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Yardım Türü
+                  </label>
+                  <input
+                    type="text"
+                    value={formData.helpType}
+                    onChange={(e) => setFormData({ ...formData, helpType: e.target.value })}
+                    placeholder="Örn: Gıda, Nakdi, Kömür..."
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Kayıt / Başvuru Tarihi (Boş bırakılabilir)
+                  </label>
+                  <input
+                    type="date"
+                    value={formData.applicationDate}
+                    onChange={(e) => setFormData({ ...formData, applicationDate: e.target.value })}
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                  />
+                </div>
+              </div>
+
+              {/* Mahalle / Köy ve Telefon */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
+                    Mahalle / Köy
+                  </label>
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                      <MapPin className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <input
+                      type="text"
+                      value={formData.neighborhood}
+                      onChange={(e) => setFormData({ ...formData, neighborhood: e.target.value })}
+                      placeholder="Örn: Fatih Mahallesi"
+                      className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                    />
+                  </div>
                 </div>
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
                     Telefon
                   </label>
-                  <input
-                    type="text"
-                    value={formData.phone}
-                    onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
-                    placeholder="05XX XXX XX XX"
-                    className="block w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
-                </div>
-              </div>
-
-              {/* Adres */}
-              <div>
-                <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                  Adres / Mahalle
-                </label>
-                <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                    <MapPin className="h-4 w-4 text-slate-400" />
+                  <div className="relative">
+                    <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                      <Phone className="h-4 w-4 text-slate-400" />
+                    </div>
+                    <input
+                      type="text"
+                      value={formData.phone}
+                      onChange={(e) => setFormData({ ...formData, phone: e.target.value })}
+                      placeholder="05XX XXX XX XX"
+                      className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
+                    />
                   </div>
-                  <input
-                    type="text"
-                    value={formData.address}
-                    onChange={(e) => setFormData({ ...formData, address: e.target.value })}
-                    placeholder="Mahalle, Sokak, Kapı No"
-                    className="block w-full pl-10 pr-3.5 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                  />
                 </div>
               </div>
 
@@ -1506,7 +2022,7 @@ export default function ApplicationsPage() {
                   <select
                     value={formData.fileStatus}
                     onChange={(e) => setFormData({ ...formData, fileStatus: e.target.value })}
-                    className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    className="block w-full px-3 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
                   >
                     <option value="Aktif">Aktif</option>
                     <option value="Boş Dosya">Boş Dosya</option>
@@ -1523,8 +2039,8 @@ export default function ApplicationsPage() {
                     type="text"
                     value={formData.notes}
                     onChange={(e) => setFormData({ ...formData, notes: e.target.value })}
-                    placeholder="Ek not veya açıklama"
-                    className="block w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                    placeholder="Ek açıklama"
+                    className="block w-full px-3.5 py-2.5 border border-slate-200 rounded-xl text-sm bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500"
                   />
                 </div>
               </div>
@@ -1587,9 +2103,12 @@ export default function ApplicationsPage() {
             </div>
 
             <div className="mt-5 space-y-4">
-              <div className="p-4 bg-indigo-50/70 border border-indigo-200/60 rounded-2xl text-xs text-indigo-900 leading-relaxed">
-                <span className="font-bold block mb-1">Önemli Bilgilendirme:</span>
-                Excel tablonuzdaki <strong>"Başvuru No"</strong> sütunu birincil anahtar (Primary Key) olarak işlenecektir. Sistemde adı soyadı boş olan kayıtlar otomatik olarak <strong>"Boş Dosya"</strong> olarak işaretlenecek ve manuel ekleme sırasında öncelikli olarak doldurulmak üzere önerilecektir.
+              <div className="p-4 bg-indigo-50/70 border border-indigo-200/60 rounded-2xl text-xs text-indigo-900 leading-relaxed space-y-1">
+                <span className="font-bold block">Otomatik Dönüştürme Kuralları:</span>
+                <p>• <strong>Başvuru No:</strong> Birincil anahtar (Primary Key) olarak kaydedilir.</p>
+                <p>• <strong>Ad Soyad T.C. Kontrolü:</strong> Adı soyadı içinde T.C. kimlik numarası varsa otomatik ayıklanır ve isim temizlenir.</p>
+                <p>• <strong>Tarih & Yardım Türü:</strong> Tarih alanı yok ise veya yardım türü sütununda tarih var ise kayıt tarihi o yapılır. Herhangi bir tarih yok ise tarih alanı boş bırakılır.</p>
+                <p>• <strong>Boş Dosyalar:</strong> Adı soyadı boş olan kayıtlar otomatik olarak "Boş Dosya" olarak işaretlenir.</p>
               </div>
 
               {/* Sütun Eşleştirme Seçenekleri */}
@@ -1636,32 +2155,12 @@ export default function ApplicationsPage() {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 mb-1">
-                    T.C. Kimlik No Sütunu
+                    Eşinin Adı Soyadı Sütunu
                   </label>
                   <select
-                    value={customMapping.tcNo}
+                    value={customMapping.spouseName}
                     onChange={(e) =>
-                      setCustomMapping({ ...customMapping, tcNo: e.target.value })
-                    }
-                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white"
-                  >
-                    <option value="">(Otomatik veya yoksa atla)</option>
-                    {detectedColumns.map((col) => (
-                      <option key={col} value={col}>
-                        {col}
-                      </option>
-                    ))}
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1">
-                    Telefon Sütunu
-                  </label>
-                  <select
-                    value={customMapping.phone}
-                    onChange={(e) =>
-                      setCustomMapping({ ...customMapping, phone: e.target.value })
+                      setCustomMapping({ ...customMapping, spouseName: e.target.value })
                     }
                     className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white"
                   >
@@ -1673,9 +2172,69 @@ export default function ApplicationsPage() {
                     ))}
                   </select>
                 </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Yardım Türü veya Başvuru Tarihi
+                  </label>
+                  <select
+                    value={customMapping.helpType}
+                    onChange={(e) =>
+                      setCustomMapping({ ...customMapping, helpType: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white"
+                  >
+                    <option value="">(Yoksa atla)</option>
+                    {detectedColumns.map((col) => (
+                      <option key={col} value={col}>
+                        {col}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Mahalle / Köy Sütunu
+                  </label>
+                  <select
+                    value={customMapping.neighborhood}
+                    onChange={(e) =>
+                      setCustomMapping({ ...customMapping, neighborhood: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white"
+                  >
+                    <option value="">(Yoksa atla)</option>
+                    {detectedColumns.map((col) => (
+                      <option key={col} value={col}>
+                        {col}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+
+                <div>
+                  <label className="block text-xs font-bold text-slate-700 mb-1">
+                    Ayrı T.C. Kimlik No Sütunu
+                  </label>
+                  <select
+                    value={customMapping.tcNo}
+                    onChange={(e) =>
+                      setCustomMapping({ ...customMapping, tcNo: e.target.value })
+                    }
+                    className="w-full px-3 py-2 border border-slate-300 rounded-xl text-xs bg-white"
+                  >
+                    <option value="">(İsimden otomatik ayıklanır veya ayrı seçin)</option>
+                    {detectedColumns.map((col) => (
+                      <option key={col} value={col}>
+                        {col}
+                      </option>
+                    ))}
+                  </select>
+                </div>
               </div>
 
-              {/* Önizleme Tablosu (İlk 3 Satır) */}
+              {/* Önizleme Tablosu */}
               <div>
                 <p className="text-xs font-bold text-slate-700 mb-2">
                   Excel Önizlemesi (İlk 3 Satır):
@@ -1684,7 +2243,7 @@ export default function ApplicationsPage() {
                   <table className="w-full text-left text-xs">
                     <thead className="bg-slate-100 text-slate-700">
                       <tr>
-                        {detectedColumns.slice(0, 5).map((col) => (
+                        {detectedColumns.slice(0, 6).map((col) => (
                           <th key={col} className="p-2.5 font-bold">
                             {col}
                           </th>
@@ -1694,7 +2253,7 @@ export default function ApplicationsPage() {
                     <tbody className="divide-y divide-slate-100">
                       {parsedRows.slice(0, 3).map((r, i) => (
                         <tr key={i} className="bg-white">
-                          {detectedColumns.slice(0, 5).map((col) => (
+                          {detectedColumns.slice(0, 6).map((col) => (
                             <td key={col} className="p-2.5 text-slate-600 truncate max-w-xs">
                               {String(r[col] || "-")}
                             </td>
@@ -1730,7 +2289,7 @@ export default function ApplicationsPage() {
                   ) : (
                     <>
                       <UploadCloud className="w-4 h-4" />
-                      {parsedRows.length} Kaydı Sisteme Yükle
+                      {parsedRows.length} Kaydı Güvenli Yükle
                     </>
                   )}
                 </button>
