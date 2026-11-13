@@ -30,6 +30,7 @@ import {
   ResponsiveContainer,
 } from "recharts";
 import { turkishIncludes, extractTC, exportToExcel } from "@/lib/turkish";
+import { toLocalDateInputValue, toLocalDayStartISO, toLocalDayEndISO } from "@/lib/date";
 
 type ReportTab = "transactions" | "babyFood" | "inKindAid";
 
@@ -157,7 +158,9 @@ export default function ReportsPage() {
     }).reverse();
 
     items.forEach((item) => {
-      const itemDate = new Date(item[dateField]);
+      const rawDate = item[dateField] || item.createdAt;
+      if (!rawDate) return;
+      const itemDate = new Date(rawDate);
       const dateStr = format(itemDate, "dd MMM", { locale: tr });
       const found = last7Days.find((d) => d.dateString === dateStr);
       if (found) {
@@ -176,12 +179,8 @@ export default function ReportsPage() {
       if (txFilters.userId) params.append("userId", txFilters.userId);
       if (txFilters.search) params.append("search", txFilters.search);
       if (txFilters.helpType) params.append("helpType", txFilters.helpType);
-      if (txFilters.dateStart) params.append("dateStart", new Date(txFilters.dateStart).toISOString());
-      if (txFilters.dateEnd) {
-        const endDate = new Date(txFilters.dateEnd);
-        endDate.setHours(23, 59, 59, 999);
-        params.append("dateEnd", endDate.toISOString());
-      }
+      if (txFilters.dateStart) params.append("dateStart", toLocalDayStartISO(txFilters.dateStart));
+      if (txFilters.dateEnd) params.append("dateEnd", toLocalDayEndISO(txFilters.dateEnd));
 
       const res = await fetch(`/api/transactions?${params.toString()}`);
       if (res.ok) {
@@ -214,18 +213,14 @@ export default function ReportsPage() {
       const params = new URLSearchParams();
       if (babyFoodFilters.userId) params.append("userId", babyFoodFilters.userId);
       if (babyFoodFilters.brand) params.append("brand", babyFoodFilters.brand);
-      if (babyFoodFilters.dateStart) params.append("dateStart", new Date(babyFoodFilters.dateStart).toISOString());
-      if (babyFoodFilters.dateEnd) {
-        const endDate = new Date(babyFoodFilters.dateEnd);
-        endDate.setHours(23, 59, 59, 999);
-        params.append("dateEnd", endDate.toISOString());
-      }
+      if (babyFoodFilters.dateStart) params.append("dateStart", toLocalDayStartISO(babyFoodFilters.dateStart));
+      if (babyFoodFilters.dateEnd) params.append("dateEnd", toLocalDayEndISO(babyFoodFilters.dateEnd));
 
       const res = await fetch(`/api/baby-food?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setBabyFoodRecords(data || []);
-        setBabyFoodChartData(generate7DayTimeline(data || []));
+        setBabyFoodChartData(generate7DayTimeline(data || [], "deliveryDate"));
 
         const brandCounts: Record<string, number> = {};
         (data || []).forEach((r: any) => {
@@ -253,18 +248,14 @@ export default function ReportsPage() {
       const params = new URLSearchParams();
       if (inKindFilters.userId) params.append("userId", inKindFilters.userId);
       if (inKindFilters.aidType) params.append("aidType", inKindFilters.aidType);
-      if (inKindFilters.dateStart) params.append("dateStart", new Date(inKindFilters.dateStart).toISOString());
-      if (inKindFilters.dateEnd) {
-        const endDate = new Date(inKindFilters.dateEnd);
-        endDate.setHours(23, 59, 59, 999);
-        params.append("dateEnd", endDate.toISOString());
-      }
+      if (inKindFilters.dateStart) params.append("dateStart", toLocalDayStartISO(inKindFilters.dateStart));
+      if (inKindFilters.dateEnd) params.append("dateEnd", toLocalDayEndISO(inKindFilters.dateEnd));
 
       const res = await fetch(`/api/in-kind-aid?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         setInKindRecords(data || []);
-        setInKindChartData(generate7DayTimeline(data || []));
+        setInKindChartData(generate7DayTimeline(data || [], "deliveryDate"));
 
         const typeCounts: Record<string, number> = {};
         (data || []).forEach((r: any) => {
@@ -352,7 +343,7 @@ export default function ReportsPage() {
       "Vatandaş Bilgisi": t.citizenInfo,
       "Yardım Türü": t.helpType?.name || "Belirtilmemiş",
     }));
-    exportToExcel(exportData, `Vakif_Islemleri_Raporu_${new Date().toISOString().split("T")[0]}`, "İşlemler");
+    exportToExcel(exportData, `Vakif_Islemleri_Raporu_${toLocalDateInputValue()}`, "İşlemler");
     toast.success("Vakıf İşlemleri raporu Türkçe karakter uyumlu Excel olarak indirildi.");
   };
 
@@ -366,7 +357,7 @@ export default function ReportsPage() {
 
       return {
         "Sıra": idx + 1,
-        "Tarih": format(new Date(r.createdAt), "dd.MM.yyyy"),
+        "Tarih": format(new Date(r.deliveryDate || r.createdAt), "dd.MM.yyyy"),
         "TC Kimlik No": tc,
         "Anne Bilgisi": r.motherInfo,
         "Teslim Alan": r.receiver || "Kendisi",
@@ -376,7 +367,7 @@ export default function ReportsPage() {
         "Personel": r.createdBy?.name || "Bilinmiyor",
       };
     });
-    exportToExcel(exportData, `Bebek_Mamasi_Raporu_${new Date().toISOString().split("T")[0]}`, "Bebek Maması");
+    exportToExcel(exportData, `Bebek_Mamasi_Raporu_${toLocalDateInputValue()}`, "Bebek Maması");
     toast.success("Bebek Maması raporu Türkçe karakter uyumlu Excel olarak indirildi.");
   };
 
@@ -390,7 +381,7 @@ export default function ReportsPage() {
 
       return {
         "Sıra": idx + 1,
-        "Tarih": format(new Date(r.createdAt), "dd.MM.yyyy"),
+        "Tarih": format(new Date(r.deliveryDate || r.createdAt), "dd.MM.yyyy"),
         "TC Kimlik No": tc,
         "Vatandaş Adı": r.citizenName,
         "Teslim Alan": r.receiver || "Kendisi",
@@ -402,7 +393,7 @@ export default function ReportsPage() {
         "Personel": r.createdBy?.name || "Bilinmiyor",
       };
     });
-    exportToExcel(exportData, `Ayni_Yardim_Raporu_${new Date().toISOString().split("T")[0]}`, "Ayni Yardım");
+    exportToExcel(exportData, `Ayni_Yardim_Raporu_${toLocalDateInputValue()}`, "Ayni Yardım");
     toast.success("Ayni Yardım raporu Türkçe karakter uyumlu Excel olarak indirildi.");
   };
 
@@ -944,7 +935,7 @@ export default function ReportsPage() {
                       return (
                         <tr key={r._id} className="hover:bg-slate-50">
                           <td className="py-3 px-4 text-slate-600 whitespace-nowrap">
-                            {format(new Date(r.createdAt), "dd/MM/yyyy")}
+                            {format(new Date(r.deliveryDate || r.createdAt), "dd/MM/yyyy")}
                           </td>
                           <td className="py-3 px-4 font-semibold text-slate-800">
                             <div>{r.motherInfo}</div>
@@ -1207,7 +1198,7 @@ export default function ReportsPage() {
                       return (
                         <tr key={r._id} className="hover:bg-slate-50">
                           <td className="py-3 px-4 text-slate-600 whitespace-nowrap">
-                            {format(new Date(r.createdAt), "dd/MM/yyyy")}
+                            {format(new Date(r.deliveryDate || r.createdAt), "dd/MM/yyyy")}
                           </td>
                           <td className="py-3 px-4 font-semibold text-slate-800">
                             <div>{r.citizenName}</div>

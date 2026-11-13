@@ -4,6 +4,7 @@ import { useState, useEffect } from "react";
 import { useSession } from "next-auth/react";
 import { Filter, Search, Calendar, User as UserIcon, Activity } from "lucide-react";
 import { format } from "date-fns";
+import { toLocalDateInputValue, toLocalDayStartISO, toLocalDayEndISO } from "@/lib/date";
 import { tr } from "date-fns/locale";
 
 export default function LogsPage() {
@@ -13,7 +14,7 @@ export default function LogsPage() {
   const [loading, setLoading] = useState(false);
 
   // Varsayılan olarak bugünü göster
-  const today = new Date().toISOString().split('T')[0];
+  const today = toLocalDateInputValue();
 
   const [filters, setFilters] = useState({
     userId: "",
@@ -49,13 +50,11 @@ export default function LogsPage() {
       if (filters.search) params.append("search", filters.search);
       
       if (filters.dateStart) {
-        params.append("dateStart", new Date(filters.dateStart).toISOString());
+        params.append("dateStart", toLocalDayStartISO(filters.dateStart));
       }
       
       if (filters.dateEnd) {
-        const endDate = new Date(filters.dateEnd);
-        endDate.setHours(23, 59, 59, 999);
-        params.append("dateEnd", endDate.toISOString());
+        params.append("dateEnd", toLocalDayEndISO(filters.dateEnd));
       }
 
       const res = await fetch(`/api/logs?${params.toString()}`);

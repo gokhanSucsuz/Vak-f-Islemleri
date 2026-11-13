@@ -1,11 +1,13 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
-import { Save, UserCircle, Activity, Clock, Trash2, Edit2, X, Check } from "lucide-react";
+import { Save, UserCircle, Activity, Clock, Trash2, Edit2, X, Check, AlertTriangle } from "lucide-react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
+import { turkishIncludes, extractTC } from "@/lib/turkish";
+import ModernConfirmDialog, { DialogType } from "@/components/ModernConfirmDialog";
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -25,6 +27,22 @@ export default function DashboardPage() {
   const [editFormData, setEditFormData] = useState({
     citizenInfo: "",
     helpType: "",
+  });
+
+  // Tekrar kayıt uyarı diyalogu
+  const [dialogState, setDialogState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: React.ReactNode;
+    type: DialogType;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm?: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: null,
+    type: "warning",
   });
 
   const fetchData = async () => {
@@ -82,10 +100,37 @@ export default function DashboardPage() {
     setEditFormData(prev => ({ ...prev, [name]: value }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-    setLoading(true);
+  const matchingTodayTransactions = useMemo(() => {
+    const raw = formData.citizenInfo.trim();
+    if (raw.length < 3) return [];
 
+    const inputTc = extractTC(raw);
+    const namePart = raw.replace(/\b\d{11}\b/g, "").replace(/[-–—]/g, " ").trim();
+
+    return transactions.filter((t: any) => {
+      const existingInfo = (t.citizenInfo || "").trim();
+      if (!existingInfo) return false;
+
+      if (inputTc) {
+        const existingTc = extractTC(existingInfo);
+        if (existingTc && existingTc === inputTc) return true;
+        if (existingInfo.includes(inputTc)) return true;
+      }
+
+      if (namePart.length >= 3) {
+        if (turkishIncludes(existingInfo, namePart)) return true;
+        const existingNamePart = existingInfo.replace(/\b\d{11}\b/g, "").replace(/[-–—]/g, " ").trim();
+        if (existingNamePart.length >= 3 && turkishIncludes(namePart, existingNamePart)) {
+          return true;
+        }
+      }
+
+      return turkishIncludes(existingInfo, raw);
+    });
+  }, [formData.citizenInfo, transactions]);
+
+  const executeSaveTransaction = async () => {
+    setLoading(true);
     try {
       const res = await fetch("/api/transactions", {
         method: "POST",
@@ -106,6 +151,47 @@ export default function DashboardPage() {
     } finally {
       setLoading(false);
     }
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (matchingTodayTransactions.length > 0) {
+      setDialogState({
+        isOpen: true,
+        type: "warning",
+        title: "DİKKAT: Bugün Bu Kişi İçin Zaten Kayıt Girilmiş!",
+        confirmText: "Yine de Kaydet",
+        cancelText: "Vazgeç",
+        message: (
+          <div className="space-y-3 text-left">
+            <p className="text-sm text-amber-800 font-semibold">
+              Bugünkü kayıtlarınız arasında bu kişiyle eşleşen {matchingTodayTransactions.length} kayıt bulundu:
+            </p>
+            <div className="max-h-40 overflow-y-auto space-y-1.5 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200">
+              {matchingTodayTransactions.map((t: any) => (
+                <div key={t._id} className="text-xs flex items-center justify-between gap-2 bg-white px-2.5 py-1.5 rounded-lg border border-amber-100">
+                  <span className="font-semibold text-slate-800 truncate">{t.citizenInfo}</span>
+                  <span className="text-slate-500 whitespace-nowrap">
+                    {t.helpType?.name || "-"} • {format(new Date(t.createdAt), "HH:mm")}
+                  </span>
+                </div>
+              ))}
+            </div>
+            <p className="text-xs text-slate-600">
+              Mükerrer kayıt girmemek için kontrol ediniz. Yine de yeni kayıt eklemek istiyor musunuz?
+            </p>
+          </div>
+        ),
+        onConfirm: async () => {
+          setDialogState((prev) => ({ ...prev, isOpen: false }));
+          await executeSaveTransaction();
+        },
+      });
+      return;
+    }
+
+    await executeSaveTransaction();
   };
 
   const handleDelete = async (id: string) => {
@@ -198,10 +284,42 @@ export default function DashboardPage() {
                     required
                     value={formData.citizenInfo}
                     onChange={handleChange}
-                    className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                    className={`block w-full pl-10 pr-3 py-3 border rounded-xl transition-all focus:outline-none focus:ring-2 ${
+                      matchingTodayTransactions.length > 0
+                        ? "border-amber-400 bg-amber-50/40 focus:bg-white focus:ring-amber-500/30 focus:border-amber-500"
+                        : "border-slate-200 bg-slate-50 focus:bg-white focus:ring-blue-500 focus:border-blue-500"
+                    }`}
                     placeholder="Örn: Ahmet Yılmaz - 12345678901"
                   />
                 </div>
+                {matchingTodayTransactions.length > 0 && (
+                  <div className="mt-3 p-3.5 bg-amber-50 border border-amber-300 rounded-2xl text-amber-900 space-y-2">
+                    <div className="flex items-center gap-2 text-xs font-bold text-amber-800">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <span>
+                        UYARI: Bugün bu kişi için zaten {matchingTodayTransactions.length} kayıt girilmiş!
+                      </span>
+                    </div>
+                    <div className="space-y-1">
+                      {matchingTodayTransactions.slice(0, 3).map((t: any) => (
+                        <div
+                          key={t._id}
+                          className="text-xs bg-white/90 px-3 py-1.5 rounded-lg border border-amber-200 flex items-center justify-between gap-2"
+                        >
+                          <span className="font-semibold text-slate-800 truncate">{t.citizenInfo}</span>
+                          <span className="text-slate-500 whitespace-nowrap">
+                            {t.helpType?.name || "-"} ({format(new Date(t.createdAt), "HH:mm")})
+                          </span>
+                        </div>
+                      ))}
+                      {matchingTodayTransactions.length > 3 && (
+                        <p className="text-[11px] text-amber-700 font-medium pl-1">
+                          +{matchingTodayTransactions.length - 3} eşleşen kayıt daha...
+                        </p>
+                      )}
+                    </div>
+                  </div>
+                )}
               </div>
 
               <div>
@@ -347,6 +465,17 @@ export default function DashboardPage() {
           </table>
         </div>
       </div>
+
+      <ModernConfirmDialog
+        isOpen={dialogState.isOpen}
+        title={dialogState.title}
+        message={dialogState.message}
+        type={dialogState.type}
+        confirmText={dialogState.confirmText}
+        cancelText={dialogState.cancelText}
+        onConfirm={dialogState.onConfirm}
+        onClose={() => setDialogState((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

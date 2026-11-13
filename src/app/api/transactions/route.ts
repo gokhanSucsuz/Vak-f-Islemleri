@@ -29,12 +29,16 @@ export async function POST(req: Request) {
     await transaction.save();
     
     // Log işlemi
-    const Log = (await import("@/models/Log")).default;
-    await Log.create({
-      userId: session.user.id,
-      action: "Kayıt Eklendi",
-      details: `${citizenInfo} için yeni işlem yapıldı.`
-    });
+    try {
+      const Log = (await import("@/models/Log")).default;
+      await Log.create({
+        userId: session.user.id,
+        action: "Kayıt Eklendi",
+        details: `${citizenInfo} için yeni işlem yapıldı.`
+      });
+    } catch (e) {
+      // Ignore log error
+    }
 
     return NextResponse.json({ message: "İşlem kaydedildi", transaction }, { status: 201 });
   } catch (error) {

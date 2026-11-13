@@ -24,6 +24,7 @@ import {
   MapPin,
 } from "lucide-react";
 import { turkishIncludes, extractTC, exportToExcel } from "@/lib/turkish";
+import { toLocalDateInputValue, toLocalDayStartISO, toLocalDayEndISO } from "@/lib/date";
 
 type InKindAidType = {
   _id: string;
@@ -68,7 +69,7 @@ export default function InKindAidPage() {
     receiver: "",
     phone: "",
     address: "",
-    deliveryDate: new Date().toISOString().split("T")[0],
+    deliveryDate: toLocalDateInputValue(),
     notes: "",
     items: [] as InKindAidItem[],
   });
@@ -97,12 +98,8 @@ export default function InKindAidPage() {
   const fetchRecords = async () => {
     try {
       const params = new URLSearchParams();
-      if (dateStart) params.append("dateStart", new Date(dateStart).toISOString());
-      if (dateEnd) {
-        const endDate = new Date(dateEnd);
-        endDate.setHours(23, 59, 59, 999);
-        params.append("dateEnd", endDate.toISOString());
-      }
+      if (dateStart) params.append("dateStart", toLocalDayStartISO(dateStart));
+      if (dateEnd) params.append("dateEnd", toLocalDayEndISO(dateEnd));
 
       const res = await fetch(`/api/in-kind-aid?${params.toString()}`);
       if (!res.ok) throw new Error("Veriler alınamadı");
@@ -134,7 +131,7 @@ export default function InKindAidPage() {
     }
   }, [session]);
 
-  const checkRecentDelivery = async (tc: string) => {
+  const checkRecentDelivery = async (tc: string, excludeId?: string) => {
     const cleanTc = tc?.trim();
     if (!cleanTc || cleanTc.length !== 11 || !/^\d{11}$/.test(cleanTc)) {
       setRecentWarning(null);
@@ -143,7 +140,10 @@ export default function InKindAidPage() {
 
     setCheckingRecent(true);
     try {
-      const res = await fetch(`/api/in-kind-aid/check-recent?tc=${cleanTc}`);
+      const params = new URLSearchParams({ tc: cleanTc });
+      const effectiveExcludeId = excludeId || editingRecord?._id;
+      if (effectiveExcludeId) params.append("excludeId", effectiveExcludeId);
+      const res = await fetch(`/api/in-kind-aid/check-recent?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         if (data.hasRecentDelivery) {
@@ -316,7 +316,7 @@ export default function InKindAidPage() {
       receiver: "",
       phone: "",
       address: "",
-      deliveryDate: new Date().toISOString().split("T")[0],
+      deliveryDate: toLocalDateInputValue(),
       notes: "",
       items: [],
     });
@@ -328,9 +328,7 @@ export default function InKindAidPage() {
     setEditingRecord(record);
     const tc = record.tcNo || extractTC(record.citizenName) || "";
     const rawDate = record.deliveryDate || record.createdAt;
-    const formattedDate = rawDate
-      ? new Date(rawDate).toISOString().split("T")[0]
-      : new Date().toISOString().split("T")[0];
+    const formattedDate = toLocalDateInputValue(rawDate);
 
     setFormData({
       tcNo: tc,
@@ -345,7 +343,7 @@ export default function InKindAidPage() {
     setRecentWarning(null);
     setIsModalOpen(true);
     if (tc) {
-      checkRecentDelivery(tc);
+      checkRecentDelivery(tc, record._id);
     }
   };
 

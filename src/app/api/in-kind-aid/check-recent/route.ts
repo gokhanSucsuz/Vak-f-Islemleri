@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import InKindAid from "@/models/InKindAid";
 import User from "@/models/User";
+import { getCalendarDaysDiff } from "@/lib/date";
 
 export async function GET(req: Request) {
   try {
@@ -14,6 +15,7 @@ export async function GET(req: Request) {
 
     const { searchParams } = new URL(req.url);
     const tc = searchParams.get("tc")?.trim();
+    const excludeId = searchParams.get("excludeId")?.trim();
 
     if (!tc || tc.length !== 11 || !/^\d{11}$/.test(tc)) {
       return NextResponse.json({ hasRecentDelivery: false, message: "Geçersiz TC" });
@@ -27,22 +29,27 @@ export async function GET(req: Request) {
     thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
     thirtyDaysAgo.setHours(0, 0, 0, 0);
 
-    const recentRecords = await InKindAid.find({
-      $and: [
-        {
-          $or: [
-            { deliveryDate: { $gte: thirtyDaysAgo } },
-            { deliveryDate: { $exists: false }, createdAt: { $gte: thirtyDaysAgo } },
-          ],
-        },
-        {
-          $or: [
-            { tcNo: tc },
-            { citizenName: { $regex: tc, $options: "i" } },
-          ],
-        },
-      ],
-    })
+    const conditions: any[] = [
+      {
+        $or: [
+          { deliveryDate: { $gte: thirtyDaysAgo } },
+          { deliveryDate: { $exists: false }, createdAt: { $gte: thirtyDaysAgo } },
+          { deliveryDate: null, createdAt: { $gte: thirtyDaysAgo } },
+        ],
+      },
+      {
+        $or: [
+          { tcNo: tc },
+          { citizenName: { $regex: tc, $options: "i" } },
+        ],
+      },
+    ];
+
+    if (excludeId) {
+      conditions.push({ _id: { $ne: excludeId } });
+    }
+
+    const recentRecords = await InKindAid.find({ $and: conditions })
       .populate("createdBy", "name")
       .sort({ deliveryDate: -1, createdAt: -1 });
 
@@ -52,8 +59,7 @@ export async function GET(req: Request) {
 
     const latest = recentRecords[0];
     const actualDeliveryDate = latest.deliveryDate || latest.createdAt;
-    const diffTime = Math.abs(Date.now() - new Date(actualDeliveryDate).getTime());
-    const daysAgo = Math.floor(diffTime / (1000 * 60 * 60 * 24));
+    const daysAgo = Math.max(0, getCalendarDaysDiff(actualDeliveryDate));
 
     const formattedRecords = recentRecords.map((r: any) => ({
       _id: r._id,

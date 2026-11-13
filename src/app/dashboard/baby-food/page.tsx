@@ -27,6 +27,7 @@ import {
   Sparkles,
 } from "lucide-react";
 import { turkishIncludes, extractTC, exportToExcel } from "@/lib/turkish";
+import { toLocalDateInputValue, toLocalDayStartISO, toLocalDayEndISO } from "@/lib/date";
 import ModernConfirmDialog, { DialogType } from "@/components/ModernConfirmDialog";
 
 type BabyFoodType = {
@@ -103,7 +104,7 @@ export default function BabyFoodPage() {
     motherInfo: "",
     receiver: "",
     babyName: "",
-    deliveryDate: new Date().toISOString().split("T")[0],
+    deliveryDate: toLocalDateInputValue(),
     items: [] as BabyFoodItem[],
   });
 
@@ -133,15 +134,13 @@ export default function BabyFoodPage() {
     }
   }, [session, officerName]);
 
-  const fetchRecords = async () => {
+  const fetchRecords = async (overrideStart?: string, overrideEnd?: string) => {
     try {
+      const start = overrideStart !== undefined ? overrideStart : dateStart;
+      const end = overrideEnd !== undefined ? overrideEnd : dateEnd;
       const params = new URLSearchParams();
-      if (dateStart) params.append("dateStart", new Date(dateStart).toISOString());
-      if (dateEnd) {
-        const endDate = new Date(dateEnd);
-        endDate.setHours(23, 59, 59, 999);
-        params.append("dateEnd", endDate.toISOString());
-      }
+      if (start) params.append("dateStart", toLocalDayStartISO(start));
+      if (end) params.append("dateEnd", toLocalDayEndISO(end));
 
       const res = await fetch(`/api/baby-food?${params.toString()}`);
       if (!res.ok) throw new Error("Veriler alınamadı");
@@ -173,7 +172,7 @@ export default function BabyFoodPage() {
     }
   }, [session]);
 
-  const checkRecentDelivery = async (tc: string) => {
+  const checkRecentDelivery = async (tc: string, excludeId?: string) => {
     const cleanTc = tc?.trim();
     if (!cleanTc || cleanTc.length !== 11 || !/^\d{11}$/.test(cleanTc)) {
       setRecentWarning(null);
@@ -182,7 +181,10 @@ export default function BabyFoodPage() {
 
     setCheckingRecent(true);
     try {
-      const res = await fetch(`/api/baby-food/check-recent?tc=${cleanTc}`);
+      const params = new URLSearchParams({ tc: cleanTc });
+      const effectiveExcludeId = excludeId || editingRecord?._id;
+      if (effectiveExcludeId) params.append("excludeId", effectiveExcludeId);
+      const res = await fetch(`/api/baby-food/check-recent?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         if (data.hasRecentDelivery) {
@@ -394,7 +396,7 @@ export default function BabyFoodPage() {
       motherInfo: "",
       receiver: "",
       babyName: "",
-      deliveryDate: new Date().toISOString().split("T")[0],
+      deliveryDate: toLocalDateInputValue(),
       items: [],
     });
     setCurrentItem({ typeId: "", foodName: "", quantity: 1 });
@@ -405,9 +407,7 @@ export default function BabyFoodPage() {
     setEditingRecord(record);
     const tc = record.tcNo || extractTC(record.motherInfo) || "";
     const rawDate = record.deliveryDate || record.createdAt;
-    const formattedDate = rawDate
-      ? new Date(rawDate).toISOString().split("T")[0]
-      : new Date().toISOString().split("T")[0];
+    const formattedDate = toLocalDateInputValue(rawDate);
 
     setFormData({
       tcNo: tc,
@@ -420,7 +420,7 @@ export default function BabyFoodPage() {
     setRecentWarning(null);
     setIsModalOpen(true);
     if (tc) {
-      checkRecentDelivery(tc);
+      checkRecentDelivery(tc, record._id);
     }
   };
 
@@ -441,7 +441,7 @@ export default function BabyFoodPage() {
         record.babyName,
         record.createdBy?.name,
         itemsText,
-        record.deliveryDate ? new Date(record.deliveryDate).toLocaleDateString("tr-TR") : "",
+        new Date(record.deliveryDate || record.createdAt).toLocaleDateString("tr-TR"),
       ]
         .filter(Boolean)
         .join(" ");
@@ -490,7 +490,7 @@ export default function BabyFoodPage() {
       };
     });
 
-    const dateStr = new Date().toISOString().split("T")[0];
+    const dateStr = toLocalDateInputValue();
     exportToExcel(exportData, `Bebek_Mamasi_Teslim_Raporu_${dateStr}`, "Bebek Maması");
     toast.success("Excel raporu Türkçe karakter uyumlu olarak indirildi.");
   };
@@ -508,13 +508,11 @@ export default function BabyFoodPage() {
   const officialPdfRecords = records.filter((r) => {
     const itemDate = new Date(r.deliveryDate || r.createdAt);
     if (pdfDateStart) {
-      const start = new Date(pdfDateStart);
-      start.setHours(0, 0, 0, 0);
+      const start = new Date(`${pdfDateStart}T00:00:00`);
       if (itemDate < start) return false;
     }
     if (pdfDateEnd) {
-      const end = new Date(pdfDateEnd);
-      end.setHours(23, 59, 59, 999);
+      const end = new Date(`${pdfDateEnd}T23:59:59.999`);
       if (itemDate > end) return false;
     }
     return true;
@@ -752,7 +750,7 @@ export default function BabyFoodPage() {
                 <tr key={r._id} className="border-b border-black text-slate-900">
                   <td className="border border-black p-1.5 text-center font-mono">{i + 1}</td>
                   <td className="border border-black p-1.5 text-center font-mono">
-                    {new Date(r.createdAt).toLocaleDateString("tr-TR")}
+                    {new Date(r.deliveryDate || r.createdAt).toLocaleDateString("tr-TR")}
                   </td>
                   <td className="border border-black p-1.5 text-center font-mono">{tc}</td>
                   <td className="border border-black p-1.5 font-semibold">{r.motherInfo}</td>
@@ -896,12 +894,25 @@ export default function BabyFoodPage() {
           </div>
 
           <button
-            onClick={fetchRecords}
+            onClick={() => fetchRecords()}
             className="w-full md:w-auto flex items-center justify-center px-6 py-2.5 bg-slate-800 text-white rounded-xl hover:bg-slate-900 transition-colors font-semibold text-sm"
           >
             <Filter className="w-4 h-4 mr-2" />
             Filtrele
           </button>
+          {(dateStart || dateEnd) && (
+            <button
+              onClick={() => {
+                setDateStart("");
+                setDateEnd("");
+                fetchRecords("", "");
+              }}
+              className="w-full md:w-auto flex items-center justify-center px-4 py-2.5 bg-slate-100 text-slate-700 rounded-xl hover:bg-slate-200 transition-colors font-semibold text-sm"
+            >
+              <X className="w-4 h-4 mr-1.5" />
+              Temizle
+            </button>
+          )}
         </div>
 
         {/* Özet Kartları */}
@@ -1202,10 +1213,8 @@ export default function BabyFoodPage() {
                       type="button"
                       onClick={() => {
                         const now = new Date();
-                        const firstDay = new Date(now.getFullYear(), now.getMonth(), 1)
-                          .toISOString()
-                          .split("T")[0];
-                        const today = now.toISOString().split("T")[0];
+                        const firstDay = toLocalDateInputValue(new Date(now.getFullYear(), now.getMonth(), 1));
+                        const today = toLocalDateInputValue(now);
                         setPdfDateStart(firstDay);
                         setPdfDateEnd(today);
                       }}
@@ -1217,10 +1226,8 @@ export default function BabyFoodPage() {
                       type="button"
                       onClick={() => {
                         const now = new Date();
-                        const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
-                          .toISOString()
-                          .split("T")[0];
-                        const today = now.toISOString().split("T")[0];
+                        const thirtyDaysAgo = toLocalDateInputValue(new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000));
+                        const today = toLocalDateInputValue(now);
                         setPdfDateStart(thirtyDaysAgo);
                         setPdfDateEnd(today);
                       }}

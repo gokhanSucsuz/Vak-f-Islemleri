@@ -5,6 +5,8 @@ import dbConnect from "@/lib/db";
 import InKindAid from "@/models/InKindAid";
 import Log from "@/models/Log";
 import User from "@/models/User";
+import { toTurkishRegexPattern } from "@/lib/turkish";
+import { parseDeliveryDate } from "@/lib/date";
 
 export async function GET(req: Request) {
   try {
@@ -23,38 +25,46 @@ export async function GET(req: Request) {
     await dbConnect();
     if (!User) {}
 
-    const query: any = {};
+    const conditions: any[] = [];
+
     if (dateStart || dateEnd) {
       const dateFilter: any = {};
       if (dateStart) dateFilter.$gte = new Date(dateStart);
       if (dateEnd) dateFilter.$lte = new Date(dateEnd);
 
-      query.$or = [
-        { deliveryDate: dateFilter },
-        { deliveryDate: { $exists: false }, createdAt: dateFilter }
-      ];
+      conditions.push({
+        $or: [
+          { deliveryDate: dateFilter },
+          { deliveryDate: { $exists: false }, createdAt: dateFilter },
+          { deliveryDate: null, createdAt: dateFilter },
+        ],
+      });
     }
 
     if (userId) {
-      query.createdBy = userId;
+      conditions.push({ createdBy: userId });
     }
 
     if (aidType) {
-      query["items.aidType"] = aidType;
+      conditions.push({ "items.aidType": aidType });
     }
 
     if (search && search.trim()) {
-      const regex = new RegExp(search.trim(), "i");
-      query.$or = [
-        { citizenName: regex },
-        { tcNo: regex },
-        { receiver: regex },
-        { phone: regex },
-        { address: regex },
-        { "items.aidType": regex },
-        { "items.specification": regex },
-      ];
+      const regex = new RegExp(toTurkishRegexPattern(search.trim()), "i");
+      conditions.push({
+        $or: [
+          { citizenName: regex },
+          { tcNo: regex },
+          { receiver: regex },
+          { phone: regex },
+          { address: regex },
+          { "items.aidType": regex },
+          { "items.specification": regex },
+        ],
+      });
     }
+
+    const query = conditions.length > 0 ? { $and: conditions } : {};
 
     const records = await InKindAid.find(query)
       .populate("createdBy", "name email")
@@ -79,7 +89,7 @@ export async function POST(req: Request) {
     const userAny = session.user as any;
     const userId = userAny.id || userAny._id;
     const tcNo = body.tcNo?.trim() || body.citizenName?.match(/\b\d{11}\b/)?.[0] || "";
-    const deliveryDate = body.deliveryDate ? new Date(body.deliveryDate) : new Date();
+    const deliveryDate = parseDeliveryDate(body.deliveryDate);
 
     const newRecord = await InKindAid.create({
       ...body,
@@ -130,7 +140,9 @@ export async function PUT(req: Request) {
     }
 
     const tcNo = updateData.tcNo?.trim() || updateData.citizenName?.match(/\b\d{11}\b/)?.[0] || record.tcNo || "";
-    const deliveryDate = updateData.deliveryDate ? new Date(updateData.deliveryDate) : record.deliveryDate || record.createdAt;
+    const deliveryDate = updateData.deliveryDate
+      ? parseDeliveryDate(updateData.deliveryDate)
+      : record.deliveryDate || record.createdAt;
     const updatedRecord = await InKindAid.findByIdAndUpdate(
       _id,
       { ...updateData, tcNo, deliveryDate },

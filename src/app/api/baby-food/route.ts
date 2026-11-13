@@ -4,6 +4,9 @@ import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import BabyFood from "@/models/BabyFood";
 import Log from "@/models/Log";
+import User from "@/models/User";
+import { toTurkishRegexPattern } from "@/lib/turkish";
+import { parseDeliveryDate } from "@/lib/date";
 
 export async function GET(req: Request) {
   try {
@@ -20,37 +23,49 @@ export async function GET(req: Request) {
     const search = url.searchParams.get("search");
 
     await dbConnect();
+    if (!User) {
+      // ensure User model is registered for populate
+    }
 
-    const query: any = {};
+    const conditions: any[] = [];
+
     if (dateStart || dateEnd) {
       const dateFilter: any = {};
       if (dateStart) dateFilter.$gte = new Date(dateStart);
       if (dateEnd) dateFilter.$lte = new Date(dateEnd);
 
-      query.$or = [
-        { deliveryDate: dateFilter },
-        { deliveryDate: { $exists: false }, createdAt: dateFilter }
-      ];
+      conditions.push({
+        $or: [
+          { deliveryDate: dateFilter },
+          { deliveryDate: { $exists: false }, createdAt: dateFilter },
+          { deliveryDate: null, createdAt: dateFilter },
+        ],
+      });
     }
 
     if (userId) {
-      query.createdBy = userId;
+      conditions.push({ createdBy: userId });
     }
 
     if (brand) {
-      query["items.brand"] = brand;
+      conditions.push({ "items.brand": brand });
     }
 
     if (search && search.trim()) {
-      const regex = new RegExp(search.trim(), "i");
-      query.$or = [
-        { motherInfo: regex },
-        { tcNo: regex },
-        { receiver: regex },
-        { babyName: regex },
-        { "items.foodName": regex },
-      ];
+      const regex = new RegExp(toTurkishRegexPattern(search.trim()), "i");
+      conditions.push({
+        $or: [
+          { motherInfo: regex },
+          { tcNo: regex },
+          { receiver: regex },
+          { babyName: regex },
+          { "items.foodName": regex },
+          { "items.brand": regex },
+        ],
+      });
     }
+
+    const query = conditions.length > 0 ? { $and: conditions } : {};
 
     const records = await BabyFood.find(query)
       .populate('createdBy', 'name email')
@@ -75,7 +90,7 @@ export async function POST(req: Request) {
     const userAny = session.user as any;
     const userId = userAny.id || userAny._id;
     const tcNo = body.tcNo?.trim() || body.motherInfo?.match(/\b\d{11}\b/)?.[0] || "";
-    const deliveryDate = body.deliveryDate ? new Date(body.deliveryDate) : new Date();
+    const deliveryDate = parseDeliveryDate(body.deliveryDate);
 
     const newRecord = await BabyFood.create({
       ...body,
@@ -126,7 +141,9 @@ export async function PUT(req: Request) {
     }
 
     const tcNo = updateData.tcNo?.trim() || updateData.motherInfo?.match(/\b\d{11}\b/)?.[0] || record.tcNo || "";
-    const deliveryDate = updateData.deliveryDate ? new Date(updateData.deliveryDate) : record.deliveryDate || record.createdAt;
+    const deliveryDate = updateData.deliveryDate
+      ? parseDeliveryDate(updateData.deliveryDate)
+      : record.deliveryDate || record.createdAt;
     const updatedRecord = await BabyFood.findByIdAndUpdate(
       _id,
       { ...updateData, tcNo, deliveryDate },
