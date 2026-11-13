@@ -42,8 +42,12 @@ export default async function middleware(req: NextRequest, event: any) {
           { status: 403 }
         );
       }
-      const panelUrl = process.env.PANEL_URL || "https://www.vakifyonetim.space";
-      return NextResponse.redirect(panelUrl);
+      const proto = req.headers.get("x-forwarded-proto") || "https";
+      const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
+      const baseOrigin =
+        process.env.NEXTAUTH_URL?.replace(/\/+$/, "") ||
+        (host ? `${proto}://${host}` : req.nextUrl.origin);
+      return NextResponse.redirect(`${baseOrigin}/yetkisiz-erisim`);
     }
   }
 
@@ -56,5 +60,5 @@ export default async function middleware(req: NextRequest, event: any) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/sso/callback|api/auth).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/sso/callback|api/auth|yetkisiz-erisim).*)"],
 };
