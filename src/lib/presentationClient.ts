@@ -508,11 +508,11 @@ export async function exportSlidesToPptx(params: {
         [
           {
             text: item.fullName || "",
-            options: { fontSize: 15, bold: true, color: "0F172A", breakLine: true },
+            options: { fontSize: 17, bold: true, color: "020617", breakLine: true },
           },
           {
             text: item.neighborhood || "",
-            options: { fontSize: 13.5, bold: true, color: "1E293B" },
+            options: { fontSize: 15, bold: true, color: "0F172A" },
           },
         ],
         {
@@ -525,11 +525,11 @@ export async function exportSlidesToPptx(params: {
           fontFace: fontFamily,
           shadow: {
             type: "outer",
-            blur: 2,
-            offset: 1,
+            blur: 3,
+            offset: 1.5,
             angle: 45,
-            color: "94A3B8",
-            opacity: 0.4,
+            color: "475569",
+            opacity: 0.5,
           },
         }
       );
@@ -589,7 +589,7 @@ export async function exportSlidesToPptx(params: {
         richLines.forEach((runs, lineIdx) => {
           pptxRuns.push({
             text: "➢  ",
-            options: { fontSize, bold: true, color: "334155" },
+            options: { fontSize, bold: true, color: "0F172A" },
           });
           runs.forEach((r, rIdx) => {
             const isLastRunOfLine = rIdx === runs.length - 1;
@@ -598,10 +598,10 @@ export async function exportSlidesToPptx(params: {
               text: r.text,
               options: {
                 fontSize,
-                bold: r.bold,
+                bold: true,
                 italic: r.italic,
                 underline: r.underline ? { style: "sng" } : undefined,
-                color: r.color || "111827",
+                color: r.color || "020617",
                 breakLine: isLastRunOfLine && !isLastLine,
                 paraSpaceAfter: isLastRunOfLine ? 2 : 0,
               },
@@ -614,7 +614,8 @@ export async function exportSlidesToPptx(params: {
             text: `➢  ${line}`,
             options: {
               fontSize,
-              color: "111827",
+              bold: true,
+              color: "020617",
               breakLine: idx < plainLines.length - 1,
               paraSpaceAfter: 2,
             },

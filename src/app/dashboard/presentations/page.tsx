@@ -216,7 +216,7 @@ function RichDescriptionEditor({
         contentEditable
         suppressContentEditableWarning
         onInput={emit}
-        className="min-h-[140px] max-h-[240px] overflow-y-auto px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none [&_p]:mb-1"
+        className="min-h-[140px] max-h-[240px] overflow-y-auto px-3.5 py-2.5 text-sm font-bold text-slate-950 focus:outline-none [&_p]:mb-1"
       />
     </div>
   );
@@ -591,14 +591,14 @@ function SlidePreviewCard({
           className="absolute bg-gradient-to-b from-white via-slate-50 to-slate-100 border border-slate-300 shadow-[0_4px_12px_rgba(15,23,42,0.18)] flex flex-col items-center justify-center px-2.5 text-center rounded-[2px]"
         >
           <div
-            style={{ textShadow: "0 1px 2px rgba(15, 23, 42, 0.22)" }}
-            className="font-bold text-slate-950 text-xs sm:text-sm md:text-[15px] leading-tight truncate w-full"
+            style={{ textShadow: "0 1.5px 3px rgba(15, 23, 42, 0.36), 0 0 1px rgba(15, 23, 42, 0.2)" }}
+            className="font-extrabold text-slate-950 text-sm sm:text-base md:text-[17px] leading-tight tracking-tight truncate w-full"
           >
             {slide.fullName || "Adı Soyadı"}
           </div>
           <div
-            style={{ textShadow: "0 1px 2px rgba(15, 23, 42, 0.16)" }}
-            className="font-bold text-slate-800 text-[11px] sm:text-xs md:text-[13.5px] leading-tight truncate w-full mt-0.5"
+            style={{ textShadow: "0 1.5px 2.5px rgba(15, 23, 42, 0.28), 0 0 1px rgba(15, 23, 42, 0.14)" }}
+            className="font-extrabold text-slate-900 text-xs sm:text-sm md:text-[15px] leading-tight tracking-tight truncate w-full mt-0.5"
           >
             {slide.neighborhood || "...... Mahallesi"}
           </div>
@@ -621,11 +621,11 @@ function SlidePreviewCard({
             <ul
               ref={descListRef}
               style={{ fontSize: `${fittedPx}px`, lineHeight: 1.28, fontFamily }}
-              className="space-y-0.5 text-slate-900"
+              className="space-y-0.5 font-bold text-slate-950"
             >
               {displayLines.map((line, i) => (
                 <li key={i} className="flex items-start gap-1.5">
-                  <span className="text-slate-700 font-bold shrink-0">➢</span>
+                  <span className="text-slate-900 font-extrabold shrink-0">➢</span>
                   {line.isHtml ? (
                     <span
                       className="break-words"
