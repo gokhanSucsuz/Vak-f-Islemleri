@@ -142,11 +142,11 @@ export async function extractPptxTemplateInfo(buffer: Buffer): Promise<{
   const slide1File = zip.file("ppt/slides/slide1.xml");
   if (slide1File) {
     const slide1Xml = await slide1File.async("string");
-    const shapes = [...slide1Xml.matchAll(/<p:(?:sp|pic)[\s\S]*?<\/p:(?:sp|pic)>/g)];
+    const shapes = [...slide1Xml.matchAll(/<p:(sp|pic)\b[\s\S]*?<\/p:\1>/g)];
 
     for (const m of shapes) {
       const s = m[0];
-      const isPic = s.startsWith("<p:pic");
+      const isPic = m[1] === "pic";
       const spPr = s.match(/<p:spPr>[\s\S]*?<\/p:spPr>/)?.[0] || "";
       const off = spPr.match(/<a:off x="(-?\d+)" y="(-?\d+)"/);
       const ext = spPr.match(/<a:ext cx="(\d+)" cy="(\d+)"/);
@@ -174,37 +174,36 @@ export async function extractPptxTemplateInfo(buffer: Buffer): Promise<{
     }
   }
 
+  // Fotoğraf slotlarını üstten alta, soldan sağa sırala
+  photoSlots.sort((a, b) => {
+    const rowDiff = Math.round(a.yPct / 15) - Math.round(b.yPct / 15);
+    return rowDiff !== 0 ? rowDiff : a.xPct - b.xPct;
+  });
+
   // Şablon modunu ve kutularını otomatik belirle
   let titleBox: ITemplateBox | null = null;
-  let descBox: ITemplateBox = { xPct: 3.2, yPct: 46, wPct: 93.6, hPct: 50.5 };
+  let descBox: ITemplateBox | null = null;
   let mode: ITemplateLayoutConfig["mode"] = "classic";
 
   if (photoSlots.length === 0 && spBoxes.length === 0) {
-    // sablon3: Tamamen boş arka plan (Tam sayfa metin)
+    // sablon2 / sablon3: Açıklama alanı yok; boş bırakılabilir veya fotoğraf alanı olarak kullanılabilir
     mode = "blank_text";
     titleBox = null;
-    descBox = { xPct: 3.2, yPct: 5, wPct: 93.6, hPct: 90 };
+    descBox = null;
   } else if (photoSlots.length === 0 && spBoxes.length === 1) {
-    // sablon2: Fotoğrafsız, üst ortada başlık kutusu + altta tam genişlik açıklama
+    // Üstte başlık kutusu var, açıklama kutusu yok (boş veya fotoğraf alanı)
     mode = "title_only";
     const sp = spBoxes[0];
     titleBox = { xPct: sp.xPct, yPct: sp.yPct, wPct: sp.wPct, hPct: Math.max(sp.hPct, 11) };
-    const topAfterTitle = Math.min(35, titleBox.yPct + titleBox.hPct + 3);
-    descBox = {
-      xPct: 3.2,
-      yPct: topAfterTitle,
-      wPct: 93.6,
-      hPct: Math.max(30, 96.5 - topAfterTitle),
-    };
-  } else if (photoSlots.length === 1 && spBoxes.length >= 2) {
+    descBox = null;
+  } else if (photoSlots.length === 1 && spBoxes.length >= 1) {
     // sablon1 (classic): 1 üst-sol fotoğraf alanı + sağ üst başlık + alt açıklama
     mode = "classic";
     const smallTitle =
       spBoxes.find((b) => /ad[ıi]\s*soyad|mahalle/i.test(b.text)) ||
       spBoxes.find((b) => b.hPct <= 18) ||
-      spBoxes[1];
-    const largeDesc =
-      spBoxes.find((b) => b !== smallTitle && b.hPct > 20) || spBoxes[0];
+      spBoxes[0];
+    const largeDesc = spBoxes.find((b) => b !== smallTitle && b.hPct > 20);
 
     titleBox = smallTitle
       ? {
@@ -218,21 +217,10 @@ export async function extractPptxTemplateInfo(buffer: Buffer): Promise<{
       ? { xPct: largeDesc.xPct, yPct: largeDesc.yPct, wPct: largeDesc.wPct, hPct: largeDesc.hPct }
       : { xPct: 3.2, yPct: 46, wPct: 93.6, hPct: 50.5 };
   } else {
-    // sablon4 (3 foto + 1 metin kutusu) veya sablon5 (sağ büyük foto + sol tam boy metin kutusu)
+    // sablon4 (4'lü fotoğraf) ve sablon5 (2'li fotoğraf): Fotoğraf şablonu (açıklama alanı yok)
     mode = "multi_slot";
     titleBox = null;
-    if (spBoxes.length > 0) {
-      // En büyük metin kutusunu açıklama+başlık alanı olarak al
-      const mainSp = [...spBoxes].sort((a, b) => b.wPct * b.hPct - a.wPct * a.hPct)[0];
-      descBox = {
-        xPct: mainSp.xPct,
-        yPct: mainSp.yPct,
-        wPct: mainSp.wPct,
-        hPct: mainSp.hPct,
-      };
-    } else {
-      descBox = { xPct: 3.2, yPct: 46, wPct: 93.6, hPct: 50.5 };
-    }
+    descBox = null;
   }
 
   return {
@@ -240,6 +228,7 @@ export async function extractPptxTemplateInfo(buffer: Buffer): Promise<{
     slideWidthIn,
     slideHeightIn,
     layoutConfig: {
+      version: 2,
       mode,
       titleBox,
       descBox,

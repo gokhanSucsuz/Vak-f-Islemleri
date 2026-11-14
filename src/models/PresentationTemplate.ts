@@ -9,9 +9,10 @@ export interface ITemplateBox {
 }
 
 export interface ITemplateLayoutConfig {
+  version?: number;
   mode: "classic" | "title_only" | "blank_text" | "multi_slot";
   titleBox: ITemplateBox | null;
-  descBox: ITemplateBox;
+  descBox: ITemplateBox | null;
   photoSlots: ITemplateBox[];
 }
 

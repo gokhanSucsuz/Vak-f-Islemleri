@@ -271,13 +271,17 @@ function splitHtmlToVisualLines(html: string): string[] {
 function SlidePreviewCard({
   slide,
   templates,
+  onReorderPhotos,
 }: {
   slide: SlideItem;
   templates: PresentationTemplateClient[];
+  onReorderPhotos?: (newPhotos: string[]) => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
   const descBoxRef = useRef<HTMLDivElement>(null);
   const descListRef = useRef<HTMLUListElement>(null);
+  const [dragIdx, setDragIdx] = useState<number | null>(null);
+  const [overIdx, setOverIdx] = useState<number | null>(null);
 
   const selectedTpl =
     (slide.templateId && templates.find((t) => t._id === slide.templateId)) ||
@@ -288,11 +292,36 @@ function SlidePreviewCard({
   const fontFamily = slide.fontFamily || "Verdana";
   const allPhotos = (slide.photos || []).filter(Boolean);
   const photos =
-    layout.mode === "classic"
-      ? allPhotos.slice(0, slide.photoCount || 4)
-      : layout.mode === "multi_slot"
-        ? allPhotos.slice(0, layout.photoSlots.length)
+    layout.mode === "multi_slot"
+      ? allPhotos.slice(0, layout.photoSlots.length)
+      : (slide.photoCount || 0) > 0
+        ? allPhotos.slice(0, slide.photoCount)
         : [];
+  const canDragReorder = Boolean(onReorderPhotos) && photos.length > 1;
+
+  const handlePhotoDrop = (targetIdx: number) => {
+    if (
+      !onReorderPhotos ||
+      dragIdx === null ||
+      dragIdx === targetIdx ||
+      dragIdx < 0 ||
+      targetIdx < 0
+    ) {
+      setDragIdx(null);
+      setOverIdx(null);
+      return;
+    }
+    const next = [...allPhotos];
+    if (dragIdx < next.length && targetIdx < next.length) {
+      const temp = next[dragIdx];
+      next[dragIdx] = next[targetIdx];
+      next[targetIdx] = temp;
+      onReorderPhotos(next);
+    }
+    setDragIdx(null);
+    setOverIdx(null);
+  };
+
   const richLinesHtml = slide.descriptionHtml
     ? splitHtmlToVisualLines(slide.descriptionHtml)
     : [];
@@ -321,21 +350,23 @@ function SlidePreviewCard({
   const titleTopPct = layout.titleBox?.yPct ?? 15.3;
   const titleHeightPct = Math.max(11, layout.titleBox?.hPct ?? 12.2);
 
-  const descLeftPct = layout.mode === "classic" ? 3.2 : layout.descBox.xPct;
-  const descWidthPct = layout.mode === "classic" ? 93.6 : layout.descBox.wPct;
+  const hasDescBox = Boolean(layout.descBox);
+  const descLeftPct = layout.mode === "classic" ? 3.2 : layout.descBox?.xPct ?? 3.2;
+  const descWidthPct = layout.mode === "classic" ? 93.6 : layout.descBox?.wPct ?? 93.6;
   const topPct =
     layout.mode === "classic"
-      ? Math.min(65, Math.max(44.5, slide.descTopPct ?? layout.descBox.yPct))
-      : layout.descBox.yPct;
+      ? Math.min(65, Math.max(44.5, slide.descTopPct ?? layout.descBox?.yPct ?? 46))
+      : layout.descBox?.yPct ?? 46;
   const bottomPct =
     layout.mode === "classic"
       ? Math.min(97.5, Math.max(topPct + 18, slide.descBottomPct ?? 96.5))
-      : Math.min(98, layout.descBox.yPct + layout.descBox.hPct);
+      : Math.min(98, (layout.descBox?.yPct ?? 46) + (layout.descBox?.hPct ?? 50.5));
   const heightPct = bottomPct - topPct;
 
   const [fittedPx, setFittedPx] = useState(12);
 
   useLayoutEffect(() => {
+    if (!hasDescBox) return;
     const box = descBoxRef.current;
     const list = descListRef.current;
     const card = cardRef.current;
@@ -362,7 +393,16 @@ function SlidePreviewCard({
       list.style.fontSize = `${size}px`;
     }
     setFittedPx(size);
-  }, [slide.description, slide.descriptionHtml, slide.fontSize, topPct, bottomPct, displayLines.length]);
+  }, [hasDescBox, slide.description, slide.descriptionHtml, slide.fontSize, topPct, bottomPct, displayLines.length]);
+
+  const optionalPhotoArea = layout.titleBox
+    ? {
+        xPct: 3,
+        yPct: Math.min(35, layout.titleBox.yPct + layout.titleBox.hPct + 3),
+        wPct: 94,
+        hPct: Math.max(40, 95 - (layout.titleBox.yPct + layout.titleBox.hPct + 3)),
+      }
+    : { xPct: 3, yPct: 4, wPct: 94, hPct: 92 };
 
   return (
     <div
@@ -380,10 +420,21 @@ function SlidePreviewCard({
       }}
     >
       {/* 1. FOTOĞRAF ALANLARI (Şablon moduna göre) */}
-      {layout.mode === "classic" && (
+      {(layout.mode === "classic" ||
+        ((layout.mode === "blank_text" || layout.mode === "title_only") &&
+          (slide.photoCount || 0) > 0)) && (
         <div
-          style={{ width: `${photoW}%`, height: `${photoH}%` }}
-          className="absolute left-[3.2%] top-[2.4%]"
+          style={
+            layout.mode === "classic"
+              ? { left: "3.2%", top: "2.4%", width: `${photoW}%`, height: `${photoH}%` }
+              : {
+                  left: `${optionalPhotoArea.xPct}%`,
+                  top: `${optionalPhotoArea.yPct}%`,
+                  width: `${optionalPhotoArea.wPct}%`,
+                  height: `${optionalPhotoArea.hPct}%`,
+                }
+          }
+          className="absolute"
         >
           {photos.length > 0 ? (
             <div
@@ -398,12 +449,36 @@ function SlidePreviewCard({
               {photos.map((src, idx) => (
                 <div
                   key={idx}
-                  className="w-full h-full flex items-center justify-center overflow-hidden"
+                  draggable={canDragReorder}
+                  onDragStart={() => setDragIdx(idx)}
+                  onDragOver={(e) => {
+                    if (!canDragReorder) return;
+                    e.preventDefault();
+                    setOverIdx(idx);
+                  }}
+                  onDragLeave={() => {
+                    if (overIdx === idx) setOverIdx(null);
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    handlePhotoDrop(idx);
+                  }}
+                  onDragEnd={() => {
+                    setDragIdx(null);
+                    setOverIdx(null);
+                  }}
+                  title={canDragReorder ? "Sürükleyerek yerini değiştirin" : undefined}
+                  className={`w-full h-full flex items-center justify-center overflow-hidden rounded-lg transition-all ${
+                    canDragReorder ? "cursor-grab active:cursor-grabbing" : ""
+                  } ${overIdx === idx && dragIdx !== idx ? "ring-2 ring-blue-500 bg-blue-50/40 scale-[0.98]" : ""} ${
+                    dragIdx === idx ? "opacity-50" : ""
+                  }`}
                 >
                   <img
                     src={src}
                     alt={`Slayt fotoğrafı ${idx + 1}`}
-                    className={`w-full h-full drop-shadow-md ${
+                    draggable={false}
+                    className={`w-full h-full drop-shadow-md pointer-events-none ${
                       fitMode === "fill"
                         ? "object-fill"
                         : fitMode === "cover"
@@ -428,22 +503,49 @@ function SlidePreviewCard({
       {layout.mode === "multi_slot" &&
         layout.photoSlots.map((slot, idx) => {
           const src = photos[idx];
+          const canDragThis = canDragReorder && Boolean(src);
           return (
             <div
               key={idx}
+              draggable={canDragThis}
+              onDragStart={() => {
+                if (canDragThis) setDragIdx(idx);
+              }}
+              onDragOver={(e) => {
+                if (!canDragReorder || !src) return;
+                e.preventDefault();
+                setOverIdx(idx);
+              }}
+              onDragLeave={() => {
+                if (overIdx === idx) setOverIdx(null);
+              }}
+              onDrop={(e) => {
+                e.preventDefault();
+                if (src) handlePhotoDrop(idx);
+              }}
+              onDragEnd={() => {
+                setDragIdx(null);
+                setOverIdx(null);
+              }}
+              title={canDragThis ? "Sürükleyerek yerini değiştirin" : undefined}
               style={{
                 left: `${slot.xPct}%`,
                 top: `${slot.yPct}%`,
                 width: `${slot.wPct}%`,
                 height: `${slot.hPct}%`,
               }}
-              className="absolute flex items-center justify-center overflow-hidden"
+              className={`absolute flex items-center justify-center overflow-hidden rounded-lg transition-all ${
+                canDragThis ? "cursor-grab active:cursor-grabbing" : ""
+              } ${overIdx === idx && dragIdx !== idx ? "ring-2 ring-blue-500 bg-blue-50/40 scale-[0.98]" : ""} ${
+                dragIdx === idx ? "opacity-50" : ""
+              }`}
             >
               {src ? (
                 <img
                   src={src}
                   alt={`Slot ${idx + 1}`}
-                  className={`w-full h-full drop-shadow-md ${
+                  draggable={false}
+                  className={`w-full h-full drop-shadow-md pointer-events-none ${
                     fitMode === "fill"
                       ? "object-fill"
                       : fitMode === "cover"
@@ -489,52 +591,45 @@ function SlidePreviewCard({
         </div>
       )}
 
-      {/* 3. AÇIKLAMA ALANI */}
-      <div
-        ref={descBoxRef}
-        style={{
-          left: `${descLeftPct}%`,
-          top: `${topPct}%`,
-          width: `${descWidthPct}%`,
-          height: `${heightPct}%`,
-        }}
-        className="absolute bg-white border border-slate-200 shadow-sm px-3 py-2 overflow-hidden"
-      >
-        {layout.mode === "multi_slot" && slide.fullName && (
-          <div
-            style={{ textShadow: "0 1px 2px rgba(15, 23, 42, 0.14)" }}
-            className="font-bold text-slate-950 text-xs sm:text-sm mb-1.5 border-b border-slate-200 pb-1 truncate"
-          >
-            {slide.fullName}
-            {slide.neighborhood ? ` — ${slide.neighborhood}` : ""}
-          </div>
-        )}
-        {displayLines.length > 0 ? (
-          <ul
-            ref={descListRef}
-            style={{ fontSize: `${fittedPx}px`, lineHeight: 1.28, fontFamily }}
-            className="space-y-0.5 text-slate-900"
-          >
-            {displayLines.map((line, i) => (
-              <li key={i} className="flex items-start gap-1.5">
-                <span className="text-slate-700 font-bold shrink-0">➢</span>
-                {line.isHtml ? (
-                  <span
-                    className="break-words"
-                    dangerouslySetInnerHTML={{ __html: line.content }}
-                  />
-                ) : (
-                  <span className="break-words">{line.content}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <div className="text-slate-400 text-xs space-y-1">
-            <p>➢ Açıklama maddeleri burada görünecek...</p>
-          </div>
-        )}
-      </div>
+      {/* 3. AÇIKLAMA ALANI (Sadece şablonda descBox varsa) */}
+      {hasDescBox && (
+        <div
+          ref={descBoxRef}
+          style={{
+            left: `${descLeftPct}%`,
+            top: `${topPct}%`,
+            width: `${descWidthPct}%`,
+            height: `${heightPct}%`,
+          }}
+          className="absolute bg-white border border-slate-200 shadow-sm px-3 py-2 overflow-hidden"
+        >
+          {displayLines.length > 0 ? (
+            <ul
+              ref={descListRef}
+              style={{ fontSize: `${fittedPx}px`, lineHeight: 1.28, fontFamily }}
+              className="space-y-0.5 text-slate-900"
+            >
+              {displayLines.map((line, i) => (
+                <li key={i} className="flex items-start gap-1.5">
+                  <span className="text-slate-700 font-bold shrink-0">➢</span>
+                  {line.isHtml ? (
+                    <span
+                      className="break-words"
+                      dangerouslySetInnerHTML={{ __html: line.content }}
+                    />
+                  ) : (
+                    <span className="break-words">{line.content}</span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <div className="text-slate-400 text-xs space-y-1">
+              <p>➢ Açıklama maddeleri burada görünecek...</p>
+            </div>
+          )}
+        </div>
+      )}
     </div>
   );
 }
@@ -1159,7 +1254,9 @@ export default function PresentationsPage() {
     const activeLayout = activeTpl?.layoutConfig || DEFAULT_TEMPLATE_LAYOUT;
     const isClassic = activeLayout.mode === "classic";
     const isMultiSlot = activeLayout.mode === "multi_slot";
-    const hasPhotoFeature = isClassic || isMultiSlot;
+    const hasDescBox = Boolean(activeLayout.descBox);
+    const canChoosePhotoCount = !isMultiSlot;
+    const hasPhotoFeature = isMultiSlot || activeSlide.photoCount > 0;
 
     const currentTop = activeSlide.descTopPct ?? 46;
     const currentBottom = activeSlide.descBottomPct ?? 96.5;
@@ -1362,15 +1459,15 @@ export default function PresentationsPage() {
             {/* Şablona Özgü Aktif Düzen Bilgisi */}
             <div className="text-[11px] font-medium px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-100">
               {activeLayout.mode === "title_only"
-                ? "Düzen: Fotoğrafsız Üst Başlık + Tam Genişlik Açıklama"
+                ? "Düzen: Üst Başlık (Açıklama Alanı Yok — Boş veya Fotoğraf Alanı)"
                 : activeLayout.mode === "blank_text"
-                  ? "Düzen: Fotoğrafsız Tam Sayfa Serbest Metin"
+                  ? "Düzen: Serbest Slayt (Açıklama Alanı Yok — Boş veya Fotoğraf Alanı)"
                   : activeLayout.mode === "multi_slot"
-                    ? `Düzen: ${activeLayout.photoSlots.length} Fotoğraf Slotu + Özel Konumlu Metin Kutusu`
+                    ? `Düzen: ${activeLayout.photoSlots.length}'lü Fotoğraf Şablonu (Açıklama Alanı Yok)`
                     : "Düzen: Klasik Üst-Sol Fotoğraf + Sağ Üst Başlık + Alt Açıklama"}
             </div>
 
-            {isClassic && (
+            {canChoosePhotoCount && (
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Slayt Fotoğraf Sayısı
@@ -1392,14 +1489,14 @@ export default function PresentationsPage() {
                           : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
                       }`}
                     >
-                      {cnt === 0 ? "Yok (0)" : `${cnt} Foto`}
+                      {cnt === 0 ? "Boş (0)" : `${cnt} Foto`}
                     </button>
                   ))}
                 </div>
               </div>
             )}
 
-            {hasPhotoFeature && (isMultiSlot || activeSlide.photoCount > 0) && (
+            {hasPhotoFeature && (
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold text-slate-700">
@@ -1525,128 +1622,145 @@ export default function PresentationsPage() {
               </div>
             )}
 
-            {/* Punto ve Açıklama Alanı Boyut Ayarları */}
-            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
-                  <Type className="w-3.5 h-3.5 text-blue-600" />
-                  Yazı Puntosu
-                </span>
-                <div className="flex items-center gap-1.5">
-                  <button
-                    type="button"
-                    onClick={() => updateCurrentSlide({ fontSize: "auto" })}
-                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
-                      !activeSlide.fontSize || activeSlide.fontSize === "auto"
-                        ? "bg-blue-600 text-white"
-                        : "bg-white border border-slate-200 text-slate-700"
-                    }`}
-                  >
-                    Otomatik Sığdır
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const base =
-                        activeSlide.fontSize && activeSlide.fontSize !== "auto"
-                          ? Number(activeSlide.fontSize)
-                          : 12;
-                      updateCurrentSlide({ fontSize: Math.max(7, base - 0.5) });
-                    }}
-                    className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100"
-                  >
-                    -
-                  </button>
-                  <span className="text-xs font-semibold w-12 text-center text-slate-700">
-                    {!activeSlide.fontSize || activeSlide.fontSize === "auto"
-                      ? "Oto"
-                      : `${activeSlide.fontSize} pt`}
-                  </span>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const base =
-                        activeSlide.fontSize && activeSlide.fontSize !== "auto"
-                          ? Number(activeSlide.fontSize)
-                          : 12;
-                      updateCurrentSlide({ fontSize: Math.min(20, base + 0.5) });
-                    }}
-                    className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100"
-                  >
-                    +
-                  </button>
-                </div>
-              </div>
-
-              {isClassic && (
-                <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/70">
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-600 flex items-center justify-between mb-1">
-                      <span className="flex items-center gap-1">
-                        <MoveVertical className="w-3 h-3" /> Üst Sınır
+            {/* Punto ve Açıklama Alanı Boyut Ayarları (Sadece açıklama alanı olan şablonlarda) */}
+            {hasDescBox && (
+              <>
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                      <Type className="w-3.5 h-3.5 text-blue-600" />
+                      Yazı Puntosu
+                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => updateCurrentSlide({ fontSize: "auto" })}
+                        className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                          !activeSlide.fontSize || activeSlide.fontSize === "auto"
+                            ? "bg-blue-600 text-white"
+                            : "bg-white border border-slate-200 text-slate-700"
+                        }`}
+                      >
+                        Otomatik Sığdır
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const base =
+                            activeSlide.fontSize && activeSlide.fontSize !== "auto"
+                              ? Number(activeSlide.fontSize)
+                              : 12;
+                          updateCurrentSlide({ fontSize: Math.max(7, base - 0.5) });
+                        }}
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100"
+                      >
+                        -
+                      </button>
+                      <span className="text-xs font-semibold w-12 text-center text-slate-700">
+                        {!activeSlide.fontSize || activeSlide.fontSize === "auto"
+                          ? "Oto"
+                          : `${activeSlide.fontSize} pt`}
                       </span>
-                      <span>%{currentTop.toFixed(1)}</span>
-                    </label>
-                    <input
-                      type="range"
-                      min={44.5}
-                      max={62}
-                      step={0.5}
-                      value={currentTop}
-                      onChange={(e) =>
-                        updateCurrentSlide({ descTopPct: Number(e.target.value) })
-                      }
-                      className="w-full accent-blue-600"
-                    />
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const base =
+                            activeSlide.fontSize && activeSlide.fontSize !== "auto"
+                              ? Number(activeSlide.fontSize)
+                              : 12;
+                          updateCurrentSlide({ fontSize: Math.min(20, base + 0.5) });
+                        }}
+                        className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100"
+                      >
+                        +
+                      </button>
+                    </div>
                   </div>
-                  <div>
-                    <label className="text-[11px] font-semibold text-slate-600 flex items-center justify-between mb-1">
-                      <span className="flex items-center gap-1">
-                        <MoveVertical className="w-3 h-3" /> Alt Sınır
-                      </span>
-                      <span>%{currentBottom.toFixed(1)}</span>
-                    </label>
-                    <input
-                      type="range"
-                      min={72}
-                      max={97.5}
-                      step={0.5}
-                      value={currentBottom}
-                      onChange={(e) =>
-                        updateCurrentSlide({ descBottomPct: Number(e.target.value) })
-                      }
-                      className="w-full accent-blue-600"
-                    />
-                  </div>
-                </div>
-              )}
-            </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Açıklama Alanı (Metin Editörü — Her satır otomatik ➢ işareti alır)
-              </label>
-              <RichDescriptionEditor
-                slideKey={`${editingId || "new"}_${activeSlideIdx}`}
-                initialHtml={activeSlide.descriptionHtml || ""}
-                initialPlain={activeSlide.description || ""}
-                onChange={(html, plain) =>
-                  updateCurrentSlide({ descriptionHtml: html, description: plain })
-                }
-              />
-            </div>
+                  {isClassic && (
+                    <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/70">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-600 flex items-center justify-between mb-1">
+                          <span className="flex items-center gap-1">
+                            <MoveVertical className="w-3 h-3" /> Üst Sınır
+                          </span>
+                          <span>%{currentTop.toFixed(1)}</span>
+                        </label>
+                        <input
+                          type="range"
+                          min={44.5}
+                          max={62}
+                          step={0.5}
+                          value={currentTop}
+                          onChange={(e) =>
+                            updateCurrentSlide({ descTopPct: Number(e.target.value) })
+                          }
+                          className="w-full accent-blue-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-600 flex items-center justify-between mb-1">
+                          <span className="flex items-center gap-1">
+                            <MoveVertical className="w-3 h-3" /> Alt Sınır
+                          </span>
+                          <span>%{currentBottom.toFixed(1)}</span>
+                        </label>
+                        <input
+                          type="range"
+                          min={72}
+                          max={97.5}
+                          step={0.5}
+                          value={currentBottom}
+                          onChange={(e) =>
+                            updateCurrentSlide({ descBottomPct: Number(e.target.value) })
+                          }
+                          className="w-full accent-blue-600"
+                        />
+                      </div>
+                    </div>
+                  )}
+                </div>
+
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Açıklama Alanı (Metin Editörü — Her satır otomatik ➢ işareti alır)
+                  </label>
+                  <RichDescriptionEditor
+                    slideKey={`${editingId || "new"}_${activeSlideIdx}`}
+                    initialHtml={activeSlide.descriptionHtml || ""}
+                    initialPlain={activeSlide.description || ""}
+                    onChange={(html, plain) =>
+                      updateCurrentSlide({ descriptionHtml: html, description: plain })
+                    }
+                  />
+                </div>
+              </>
+            )}
           </div>
 
           <div className="xl:col-span-7 bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Canlı Slayt Önizlemesi — Sayfa {activeSlideIdx + 1} / {slides.length}
               </span>
-              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                Scroll Yok • Sayfaya Otomatik Sığar
-              </span>
+              <div className="flex items-center gap-2">
+                {activeSlide.photos.length > 1 && (
+                  <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                    Fotoğrafları sürükleyerek yerini değiştirebilirsiniz
+                  </span>
+                )}
+                {hasDescBox && (
+                  <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                    Scroll Yok • Sayfaya Otomatik Sığar
+                  </span>
+                )}
+              </div>
             </div>
-            <SlidePreviewCard slide={activeSlide} templates={templates} />
+            <SlidePreviewCard
+              slide={activeSlide}
+              templates={templates}
+              onReorderPhotos={(newPhotos) => updateCurrentSlide({ photos: newPhotos })}
+            />
           </div>
         </div>
       </div>

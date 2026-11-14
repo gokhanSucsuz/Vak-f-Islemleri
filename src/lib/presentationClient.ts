@@ -75,9 +75,10 @@ export interface TemplateBox {
 }
 
 export interface TemplateLayoutConfig {
+  version?: number;
   mode: "classic" | "title_only" | "blank_text" | "multi_slot";
   titleBox: TemplateBox | null;
-  descBox: TemplateBox;
+  descBox: TemplateBox | null;
   photoSlots: TemplateBox[];
 }
 
@@ -302,10 +303,25 @@ export async function exportSlidesToPptx(params: {
     const photos = (item.photos || []).filter(Boolean);
 
     // 1. FOTOĞRAFLAR
-    if (layout.mode === "classic" && layout.photoSlots.length > 0) {
-      const slot = layout.photoSlots[0];
-      const wPct = Math.min(52, Math.max(20, item.photoWidthPct ?? slot.wPct));
-      const hPct = Math.min(44, Math.max(22, item.photoHeightPct ?? slot.hPct));
+    if (
+      (layout.mode === "classic" && layout.photoSlots.length > 0) ||
+      ((layout.mode === "blank_text" || layout.mode === "title_only") &&
+        photos.length > 0 &&
+        (item.photoCount || 0) > 0)
+    ) {
+      const isClassic = layout.mode === "classic";
+      const slot = isClassic
+        ? layout.photoSlots[0]
+        : layout.titleBox
+        ? {
+            xPct: 3,
+            yPct: Math.min(35, layout.titleBox.yPct + layout.titleBox.hPct + 3),
+            wPct: 94,
+            hPct: Math.max(40, 95 - (layout.titleBox.yPct + layout.titleBox.hPct + 3)),
+          }
+        : { xPct: 3, yPct: 4, wPct: 94, hPct: 92 };
+      const wPct = isClassic ? Math.min(52, Math.max(20, item.photoWidthPct ?? slot.wPct)) : slot.wPct;
+      const hPct = isClassic ? Math.min(44, Math.max(22, item.photoHeightPct ?? slot.hPct)) : slot.hPct;
       const areaX = (slot.xPct / 100) * slideW;
       const areaY = (slot.yPct / 100) * slideH;
       const areaW = (wPct / 100) * slideW;
@@ -469,108 +485,94 @@ export async function exportSlidesToPptx(params: {
       );
     }
 
-    // 3. AÇIKLAMA KUTUSU
-    let descX = (layout.descBox.xPct / 100) * slideW;
-    let descY = (layout.descBox.yPct / 100) * slideH;
-    let descW = (layout.descBox.wPct / 100) * slideW;
-    let descH = (layout.descBox.hPct / 100) * slideH;
+    // 3. AÇIKLAMA KUTUSU (Sadece şablonda descBox varsa çizilir)
+    if (layout.descBox) {
+      let descX = (layout.descBox.xPct / 100) * slideW;
+      let descY = (layout.descBox.yPct / 100) * slideH;
+      let descW = (layout.descBox.wPct / 100) * slideW;
+      let descH = (layout.descBox.hPct / 100) * slideH;
 
-    if (layout.mode === "classic") {
-      const topPct = Math.min(65, Math.max(44.5, item.descTopPct ?? layout.descBox.yPct));
-      const bottomPct = Math.min(97.5, Math.max(topPct + 18, item.descBottomPct ?? 96.5));
-      descY = (topPct / 100) * slideH;
-      descH = ((bottomPct - topPct) / 100) * slideH;
-    }
+      if (layout.mode === "classic") {
+        const topPct = Math.min(65, Math.max(44.5, item.descTopPct ?? layout.descBox.yPct));
+        const bottomPct = Math.min(97.5, Math.max(topPct + 18, item.descBottomPct ?? 96.5));
+        descY = (topPct / 100) * slideH;
+        descH = ((bottomPct - topPct) / 100) * slideH;
+      }
 
-    slide.addShape(pptx.ShapeType.rect, {
-      x: descX,
-      y: descY,
-      w: descW,
-      h: descH,
-      fill: { color: "FFFFFF" },
-      line: { color: "E2E8F0", width: 0.75 },
-    });
-
-    const richLines = item.descriptionHtml ? htmlToLinesOfRuns(item.descriptionHtml) : [];
-    const plainLines = (item.description || "")
-      .split(/\r?\n/)
-      .map((l) => l.trim())
-      .filter(Boolean);
-
-    const textLinesForSizing =
-      richLines.length > 0
-        ? richLines.map((runs) => runs.map((r) => r.text).join(""))
-        : plainLines;
-
-    const fontSize =
-      item.fontSize && item.fontSize !== "auto"
-        ? Number(item.fontSize)
-        : computeAutoFontSizePt(textLinesForSizing, descW, descH);
-
-    const pptxRuns: PptxGenJS.TextProps[] = [];
-
-    // multi_slot modunda (sablon4/5) Adı Soyadı + Mahalle metin kutusunun üstüne eklenir
-    if (layout.mode === "multi_slot" && item.fullName) {
-      pptxRuns.push({
-        text: item.neighborhood
-          ? `${item.fullName} — ${item.neighborhood}`
-          : item.fullName,
-        options: {
-          fontSize: Math.min(15, fontSize + 1.5),
-          bold: true,
-          color: "0F172A",
-          breakLine: textLinesForSizing.length > 0,
-          paraSpaceAfter: 4,
-        },
+      slide.addShape(pptx.ShapeType.rect, {
+        x: descX,
+        y: descY,
+        w: descW,
+        h: descH,
+        fill: { color: "FFFFFF" },
+        line: { color: "E2E8F0", width: 0.75 },
       });
-    }
 
-    if (richLines.length > 0) {
-      richLines.forEach((runs, lineIdx) => {
-        pptxRuns.push({
-          text: "➢  ",
-          options: { fontSize, bold: true, color: "334155" },
-        });
-        runs.forEach((r, rIdx) => {
-          const isLastRunOfLine = rIdx === runs.length - 1;
-          const isLastLine = lineIdx === richLines.length - 1;
+      const richLines = item.descriptionHtml ? htmlToLinesOfRuns(item.descriptionHtml) : [];
+      const plainLines = (item.description || "")
+        .split(/\r?\n/)
+        .map((l) => l.trim())
+        .filter(Boolean);
+
+      const textLinesForSizing =
+        richLines.length > 0
+          ? richLines.map((runs) => runs.map((r) => r.text).join(""))
+          : plainLines;
+
+      const fontSize =
+        item.fontSize && item.fontSize !== "auto"
+          ? Number(item.fontSize)
+          : computeAutoFontSizePt(textLinesForSizing, descW, descH);
+
+      const pptxRuns: PptxGenJS.TextProps[] = [];
+
+      if (richLines.length > 0) {
+        richLines.forEach((runs, lineIdx) => {
           pptxRuns.push({
-            text: r.text,
+            text: "➢  ",
+            options: { fontSize, bold: true, color: "334155" },
+          });
+          runs.forEach((r, rIdx) => {
+            const isLastRunOfLine = rIdx === runs.length - 1;
+            const isLastLine = lineIdx === richLines.length - 1;
+            pptxRuns.push({
+              text: r.text,
+              options: {
+                fontSize,
+                bold: r.bold,
+                italic: r.italic,
+                underline: r.underline ? { style: "sng" } : undefined,
+                color: r.color || "111827",
+                breakLine: isLastRunOfLine && !isLastLine,
+                paraSpaceAfter: isLastRunOfLine ? 2 : 0,
+              },
+            });
+          });
+        });
+      } else if (plainLines.length > 0) {
+        plainLines.forEach((line, idx) => {
+          pptxRuns.push({
+            text: `➢  ${line}`,
             options: {
               fontSize,
-              bold: r.bold,
-              italic: r.italic,
-              underline: r.underline ? { style: "sng" } : undefined,
-              color: r.color || "111827",
-              breakLine: isLastRunOfLine && !isLastLine,
-              paraSpaceAfter: isLastRunOfLine ? 2 : 0,
+              color: "111827",
+              breakLine: idx < plainLines.length - 1,
+              paraSpaceAfter: 2,
             },
           });
         });
-      });
-    } else if (plainLines.length > 0) {
-      plainLines.forEach((line, idx) => {
-        pptxRuns.push({
-          text: `➢  ${line}`,
-          options: {
-            fontSize,
-            color: "111827",
-            breakLine: idx < plainLines.length - 1,
-            paraSpaceAfter: 2,
-          },
-        });
-      });
-    }
+      }
 
-    if (pptxRuns.length > 0) {
-      slide.addText(pptxRuns, {
-        x: descX + 0.14 * sx,
-        y: descY + 0.1 * sy,
-        w: descW - 0.28 * sx,
-        h: descH - 0.2 * sy,
-        valign: "top",
-        fontFace: fontFamily,
-      });
+      if (pptxRuns.length > 0) {
+        slide.addText(pptxRuns, {
+          x: descX + 0.14 * sx,
+          y: descY + 0.1 * sy,
+          w: descW - 0.28 * sx,
+          h: descH - 0.2 * sy,
+          valign: "top",
+          fontFace: fontFamily,
+        });
+      }
     }
   }
 
