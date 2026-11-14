@@ -1,6 +1,20 @@
 import mongoose, { Schema, Document } from "mongoose";
 import { applyFieldEncryption } from "@/lib/encryption";
 
+export interface ITemplateBox {
+  xPct: number;
+  yPct: number;
+  wPct: number;
+  hPct: number;
+}
+
+export interface ITemplateLayoutConfig {
+  mode: "classic" | "title_only" | "blank_text" | "multi_slot";
+  titleBox: ITemplateBox | null;
+  descBox: ITemplateBox;
+  photoSlots: ITemplateBox[];
+}
+
 export interface IPresentationTemplate extends Document {
   name: string;
   fileName: string;
@@ -8,6 +22,7 @@ export interface IPresentationTemplate extends Document {
   backgroundImageBase64: string;
   slideWidthIn: number;
   slideHeightIn: number;
+  layoutConfig?: ITemplateLayoutConfig;
   pptxCompressed?: Buffer;
   uploadedBy?: mongoose.Types.ObjectId;
   createdAt: Date;
@@ -22,6 +37,7 @@ const PresentationTemplateSchema = new Schema<IPresentationTemplate>(
     backgroundImageBase64: { type: String, default: "" },
     slideWidthIn: { type: Number, default: 10 },
     slideHeightIn: { type: Number, default: 7.5 },
+    layoutConfig: { type: Schema.Types.Mixed },
     pptxCompressed: { type: Buffer },
     uploadedBy: { type: Schema.Types.ObjectId, ref: "User" },
   },

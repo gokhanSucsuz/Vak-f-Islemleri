@@ -4,11 +4,21 @@ import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import zlib from "zlib";
 import { promisify } from "util";
-import PresentationTemplate from "@/models/PresentationTemplate";
+import PresentationTemplate, {
+  ITemplateLayoutConfig,
+} from "@/models/PresentationTemplate";
 import Log from "@/models/Log";
 import { extractPptxTemplateInfo } from "@/lib/presentationUtils";
 
 const gzip = promisify(zlib.gzip);
+const gunzip = promisify(zlib.gunzip);
+
+const DEFAULT_LAYOUT: ITemplateLayoutConfig = {
+  mode: "classic",
+  titleBox: { xPct: 47.5, yPct: 15.3, wPct: 46.2, hPct: 12.2 },
+  descBox: { xPct: 3.2, yPct: 46, wPct: 93.6, hPct: 50.5 },
+  photoSlots: [{ xPct: 3.2, yPct: 2.4, wPct: 41, hPct: 41.6 }],
+};
 
 export async function GET() {
   try {
@@ -22,17 +32,33 @@ export async function GET() {
       .populate("uploadedBy", "name")
       .sort({ createdAt: -1 });
 
-    const templates = docs.map((tpl) => ({
-      _id: String(tpl._id),
-      name: tpl.name || tpl.fileName,
-      fileName: tpl.fileName,
-      fileSize: tpl.fileSize,
-      backgroundImageBase64: tpl.backgroundImageBase64 || "",
-      slideWidthIn: tpl.slideWidthIn || 10,
-      slideHeightIn: tpl.slideHeightIn || 7.5,
-      uploadedBy: tpl.uploadedBy,
-      updatedAt: tpl.updatedAt,
-    }));
+    const templates = await Promise.all(
+      docs.map(async (tpl) => {
+        if (!tpl.layoutConfig && tpl.pptxCompressed) {
+          try {
+            const rawBuf = await gunzip(tpl.pptxCompressed);
+            const info = await extractPptxTemplateInfo(rawBuf);
+            tpl.layoutConfig = info.layoutConfig;
+            tpl.markModified("layoutConfig");
+            await tpl.save();
+          } catch {
+            // fallback
+          }
+        }
+        return {
+          _id: String(tpl._id),
+          name: tpl.name || tpl.fileName,
+          fileName: tpl.fileName,
+          fileSize: tpl.fileSize,
+          backgroundImageBase64: tpl.backgroundImageBase64 || "",
+          slideWidthIn: tpl.slideWidthIn || 10,
+          slideHeightIn: tpl.slideHeightIn || 7.5,
+          layoutConfig: tpl.layoutConfig || DEFAULT_LAYOUT,
+          uploadedBy: tpl.uploadedBy,
+          updatedAt: tpl.updatedAt,
+        };
+      })
+    );
 
     return NextResponse.json({
       templates,
@@ -85,6 +111,7 @@ export async function POST(req: NextRequest) {
     let backgroundImageBase64 = "";
     let slideWidthIn = 10;
     let slideHeightIn = 7.5;
+    let layoutConfig: ITemplateLayoutConfig = DEFAULT_LAYOUT;
     let pptxCompressed: Buffer | undefined;
 
     if (isPptx) {
@@ -92,6 +119,7 @@ export async function POST(req: NextRequest) {
       backgroundImageBase64 = info.backgroundImageBase64;
       slideWidthIn = info.slideWidthIn;
       slideHeightIn = info.slideHeightIn;
+      layoutConfig = info.layoutConfig;
       pptxCompressed = await gzip(buffer, { level: 9 });
     } else {
       const ext = lower.split(".").pop() || "png";
@@ -119,6 +147,7 @@ export async function POST(req: NextRequest) {
       backgroundImageBase64,
       slideWidthIn,
       slideHeightIn,
+      layoutConfig,
       ...(pptxCompressed ? { pptxCompressed } : {}),
       uploadedBy: userId,
     });
@@ -139,6 +168,7 @@ export async function POST(req: NextRequest) {
         backgroundImageBase64: tpl.backgroundImageBase64 || "",
         slideWidthIn: tpl.slideWidthIn,
         slideHeightIn: tpl.slideHeightIn,
+        layoutConfig: tpl.layoutConfig || DEFAULT_LAYOUT,
         updatedAt: tpl.updatedAt,
       },
     });

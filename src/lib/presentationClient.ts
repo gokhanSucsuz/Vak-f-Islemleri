@@ -19,6 +19,20 @@ export interface SlideItem {
   templateId?: string;
 }
 
+export interface TemplateBox {
+  xPct: number;
+  yPct: number;
+  wPct: number;
+  hPct: number;
+}
+
+export interface TemplateLayoutConfig {
+  mode: "classic" | "title_only" | "blank_text" | "multi_slot";
+  titleBox: TemplateBox | null;
+  descBox: TemplateBox;
+  photoSlots: TemplateBox[];
+}
+
 export interface PresentationTemplateClient {
   _id: string;
   name: string;
@@ -26,7 +40,15 @@ export interface PresentationTemplateClient {
   backgroundImageBase64: string;
   slideWidthIn: number;
   slideHeightIn: number;
+  layoutConfig?: TemplateLayoutConfig;
 }
+
+export const DEFAULT_TEMPLATE_LAYOUT: TemplateLayoutConfig = {
+  mode: "classic",
+  titleBox: { xPct: 47.5, yPct: 15.3, wPct: 46.2, hPct: 12.2 },
+  descBox: { xPct: 3.2, yPct: 46, wPct: 93.6, hPct: 50.5 },
+  photoSlots: [{ xPct: 3.2, yPct: 2.4, wPct: 41, hPct: 41.6 }],
+};
 
 export const SLIDE_FONT_OPTIONS = [
   "Verdana",
@@ -219,6 +241,7 @@ export async function exportSlidesToPptx(params: {
     const slideTpl =
       (item.templateId && templates.find((t) => t._id === item.templateId)) ||
       defaultTpl;
+    const layout = slideTpl?.layoutConfig || DEFAULT_TEMPLATE_LAYOUT;
 
     if (slideTpl?.backgroundImageBase64) {
       slide.background = { data: slideTpl.backgroundImageBase64 };
@@ -226,58 +249,96 @@ export async function exportSlidesToPptx(params: {
       slide.background = { color: "E5E7EB" };
     }
 
-    // Sol üst fotoğraf alanı (BEYAZ ARKA PLAN YOK, manuel genişlik/yükseklik destekli)
-    const photos = (item.photos || []).filter(Boolean).slice(0, item.photoCount || 4);
-    const wPct = Math.min(52, Math.max(20, item.photoWidthPct ?? 41));
-    const hPct = Math.min(44, Math.max(22, item.photoHeightPct ?? 41.6));
-    const areaX = 0.32 * sx;
-    const areaY = 0.18 * sy;
-    const areaW = (wPct / 100) * slideW;
-    const areaH = (hPct / 100) * slideH;
     const fitMode = item.photoFitMode || "contain";
+    const photos = (item.photos || []).filter(Boolean);
 
-    if (photos.length > 0) {
-      const boxes: Array<{ x: number; y: number; w: number; h: number }> = [];
-      if (photos.length === 1) {
-        boxes.push({ x: areaX, y: areaY, w: areaW, h: areaH });
-      } else if (photos.length === 2) {
-        const gap = 0.1 * sx;
-        const w = (areaW - gap) / 2;
-        boxes.push({ x: areaX, y: areaY, w, h: areaH });
-        boxes.push({ x: areaX + w + gap, y: areaY, w, h: areaH });
-      } else {
-        const gapX = 0.1 * sx;
-        const gapY = 0.1 * sy;
-        const w = (areaW - gapX) / 2;
-        const h = (areaH - gapY) / 2;
-        boxes.push({ x: areaX, y: areaY, w, h });
-        boxes.push({ x: areaX + w + gapX, y: areaY, w, h });
-        boxes.push({ x: areaX, y: areaY + h + gapY, w, h });
-        boxes.push({ x: areaX + w + gapX, y: areaY + h + gapY, w, h });
+    // 1. FOTOĞRAFLAR
+    if (layout.mode === "classic" && layout.photoSlots.length > 0) {
+      const slot = layout.photoSlots[0];
+      const wPct = Math.min(52, Math.max(20, item.photoWidthPct ?? slot.wPct));
+      const hPct = Math.min(44, Math.max(22, item.photoHeightPct ?? slot.hPct));
+      const areaX = (slot.xPct / 100) * slideW;
+      const areaY = (slot.yPct / 100) * slideH;
+      const areaW = (wPct / 100) * slideW;
+      const areaH = (hPct / 100) * slideH;
+      const usedPhotos = photos.slice(0, item.photoCount || 4);
+
+      if (usedPhotos.length > 0) {
+        const boxes: Array<{ x: number; y: number; w: number; h: number }> = [];
+        if (usedPhotos.length === 1) {
+          boxes.push({ x: areaX, y: areaY, w: areaW, h: areaH });
+        } else if (usedPhotos.length === 2) {
+          const gap = 0.1 * sx;
+          const w = (areaW - gap) / 2;
+          boxes.push({ x: areaX, y: areaY, w, h: areaH });
+          boxes.push({ x: areaX + w + gap, y: areaY, w, h: areaH });
+        } else {
+          const gapX = 0.1 * sx;
+          const gapY = 0.1 * sy;
+          const w = (areaW - gapX) / 2;
+          const h = (areaH - gapY) / 2;
+          boxes.push({ x: areaX, y: areaY, w, h });
+          boxes.push({ x: areaX + w + gapX, y: areaY, w, h });
+          boxes.push({ x: areaX, y: areaY + h + gapY, w, h });
+          boxes.push({ x: areaX + w + gapX, y: areaY + h + gapY, w, h });
+        }
+
+        for (let i = 0; i < usedPhotos.length; i++) {
+          const box = boxes[i];
+          const photoData = usedPhotos[i];
+          let drawX = box.x;
+          let drawY = box.y;
+          let drawW = box.w;
+          let drawH = box.h;
+          if (fitMode !== "fill") {
+            const dims = await getImageDimensions(photoData);
+            const imgRatio = dims.w / dims.h;
+            const boxRatio = box.w / box.h;
+            if (imgRatio > boxRatio) drawH = box.w / imgRatio;
+            else drawW = box.h * imgRatio;
+            drawX = box.x + (box.w - drawW) / 2;
+            drawY = box.y + (box.h - drawH) / 2;
+          }
+          slide.addImage({
+            data: photoData,
+            x: drawX,
+            y: drawY,
+            w: drawW,
+            h: drawH,
+            shadow: {
+              type: "outer",
+              blur: 4,
+              offset: 2,
+              angle: 45,
+              color: "475569",
+              opacity: 0.3,
+            },
+          });
+        }
       }
-
-      for (let i = 0; i < photos.length; i++) {
-        const box = boxes[i];
+    } else if (layout.mode === "multi_slot" && layout.photoSlots.length > 0) {
+      for (let i = 0; i < layout.photoSlots.length; i++) {
         const photoData = photos[i];
+        if (!photoData) continue;
+        const slot = layout.photoSlots[i];
+        const bx = (slot.xPct / 100) * slideW;
+        const by = (slot.yPct / 100) * slideH;
+        const bw = (slot.wPct / 100) * slideW;
+        const bh = (slot.hPct / 100) * slideH;
 
-        let drawX = box.x;
-        let drawY = box.y;
-        let drawW = box.w;
-        let drawH = box.h;
-
+        let drawX = bx;
+        let drawY = by;
+        let drawW = bw;
+        let drawH = bh;
         if (fitMode !== "fill") {
           const dims = await getImageDimensions(photoData);
           const imgRatio = dims.w / dims.h;
-          const boxRatio = box.w / box.h;
-          if (imgRatio > boxRatio) {
-            drawH = box.w / imgRatio;
-          } else {
-            drawW = box.h * imgRatio;
-          }
-          drawX = box.x + (box.w - drawW) / 2;
-          drawY = box.y + (box.h - drawH) / 2;
+          const boxRatio = bw / bh;
+          if (imgRatio > boxRatio) drawH = bw / imgRatio;
+          else drawW = bh * imgRatio;
+          drawX = bx + (bw - drawW) / 2;
+          drawY = by + (bh - drawH) / 2;
         }
-
         slide.addImage({
           data: photoData,
           x: drawX,
@@ -296,73 +357,81 @@ export async function exportSlidesToPptx(params: {
       }
     }
 
-    // Sağ üst Adı Soyadı + Mahalle kutusu (Resmi, kalın puntolu, hafif gölgeli)
-    const boxX = Math.max(4.75 * sx, areaX + areaW + 0.25 * sx);
-    const boxW = Math.min(4.65 * sx, slideW - boxX - 0.32 * sx);
+    // 2. BAŞLIK KUTUSU (classic veya title_only şablonlarında)
+    if (layout.titleBox && (layout.mode === "classic" || layout.mode === "title_only")) {
+      const tb = layout.titleBox;
+      let boxX = (tb.xPct / 100) * slideW;
+      let boxW = (tb.wPct / 100) * slideW;
+      if (layout.mode === "classic") {
+        const wPct = Math.min(52, Math.max(20, item.photoWidthPct ?? 41));
+        const areaX = 0.32 * sx;
+        const areaW = (wPct / 100) * slideW;
+        boxX = Math.max(boxX, areaX + areaW + 0.25 * sx);
+        boxW = Math.min(boxW, slideW - boxX - 0.32 * sx);
+      }
+      const boxY = (tb.yPct / 100) * slideH;
+      const boxH = Math.max(0.85 * sy, (tb.hPct / 100) * slideH);
 
-    slide.addShape(pptx.ShapeType.rect, {
-      x: boxX,
-      y: 1.15 * sy,
-      w: boxW,
-      h: 0.92 * sy,
-      fill: { color: "FFFFFF" },
-      line: { color: "CBD5E1", width: 1 },
-      shadow: {
-        type: "outer",
-        blur: 6,
-        offset: 2,
-        angle: 45,
-        color: "334155",
-        opacity: 0.25,
-      },
-    });
-
-    slide.addText(
-      [
-        {
-          text: item.fullName || "",
-          options: {
-            fontSize: 15,
-            bold: true,
-            color: "0F172A",
-            breakLine: true,
-          },
-        },
-        {
-          text: item.neighborhood || "",
-          options: {
-            fontSize: 13.5,
-            bold: true,
-            color: "1E293B",
-          },
-        },
-      ],
-      {
-        x: boxX + 0.08 * sx,
-        y: 1.18 * sy,
-        w: boxW - 0.16 * sx,
-        h: 0.86 * sy,
-        align: "center",
-        valign: "middle",
-        fontFace: fontFamily,
+      slide.addShape(pptx.ShapeType.rect, {
+        x: boxX,
+        y: boxY,
+        w: boxW,
+        h: boxH,
+        fill: { color: "FFFFFF" },
+        line: { color: "CBD5E1", width: 1 },
         shadow: {
           type: "outer",
-          blur: 2,
-          offset: 1,
+          blur: 6,
+          offset: 2,
           angle: 45,
-          color: "94A3B8",
-          opacity: 0.4,
+          color: "334155",
+          opacity: 0.25,
         },
-      }
-    );
+      });
 
-    // Açıklama kutusu
-    const topPct = Math.min(65, Math.max(44.5, item.descTopPct ?? 46));
-    const bottomPct = Math.min(97.5, Math.max(topPct + 18, item.descBottomPct ?? 96.5));
-    const descX = 0.32 * sx;
-    const descY = (topPct / 100) * slideH;
-    const descW = 9.36 * sx;
-    const descH = ((bottomPct - topPct) / 100) * slideH;
+      slide.addText(
+        [
+          {
+            text: item.fullName || "",
+            options: { fontSize: 15, bold: true, color: "0F172A", breakLine: true },
+          },
+          {
+            text: item.neighborhood || "",
+            options: { fontSize: 13.5, bold: true, color: "1E293B" },
+          },
+        ],
+        {
+          x: boxX + 0.08 * sx,
+          y: boxY + 0.04 * sy,
+          w: boxW - 0.16 * sx,
+          h: boxH - 0.08 * sy,
+          align: "center",
+          valign: "middle",
+          fontFace: fontFamily,
+          shadow: {
+            type: "outer",
+            blur: 2,
+            offset: 1,
+            angle: 45,
+            color: "94A3B8",
+            opacity: 0.4,
+          },
+        }
+      );
+    }
+
+    // 3. AÇIKLAMA KUTUSU
+    let descX = (layout.descBox.xPct / 100) * slideW;
+    let descY = (layout.descBox.yPct / 100) * slideH;
+    let descW = (layout.descBox.wPct / 100) * slideW;
+    let descH = (layout.descBox.hPct / 100) * slideH;
+
+    if (layout.mode === "classic") {
+      const topPct = Math.min(65, Math.max(44.5, item.descTopPct ?? layout.descBox.yPct));
+      const bottomPct = Math.min(97.5, Math.max(topPct + 18, item.descBottomPct ?? 96.5));
+      descY = (topPct / 100) * slideH;
+      descH = ((bottomPct - topPct) / 100) * slideH;
+    }
 
     slide.addShape(pptx.ShapeType.rect, {
       x: descX,
@@ -389,8 +458,25 @@ export async function exportSlidesToPptx(params: {
         ? Number(item.fontSize)
         : computeAutoFontSizePt(textLinesForSizing, descW, descH);
 
+    const pptxRuns: PptxGenJS.TextProps[] = [];
+
+    // multi_slot modunda (sablon4/5) Adı Soyadı + Mahalle metin kutusunun üstüne eklenir
+    if (layout.mode === "multi_slot" && item.fullName) {
+      pptxRuns.push({
+        text: item.neighborhood
+          ? `${item.fullName} — ${item.neighborhood}`
+          : item.fullName,
+        options: {
+          fontSize: Math.min(15, fontSize + 1.5),
+          bold: true,
+          color: "0F172A",
+          breakLine: textLinesForSizing.length > 0,
+          paraSpaceAfter: 4,
+        },
+      });
+    }
+
     if (richLines.length > 0) {
-      const pptxRuns: PptxGenJS.TextProps[] = [];
       richLines.forEach((runs, lineIdx) => {
         pptxRuns.push({
           text: "➢  ",
@@ -413,7 +499,21 @@ export async function exportSlidesToPptx(params: {
           });
         });
       });
+    } else if (plainLines.length > 0) {
+      plainLines.forEach((line, idx) => {
+        pptxRuns.push({
+          text: `➢  ${line}`,
+          options: {
+            fontSize,
+            color: "111827",
+            breakLine: idx < plainLines.length - 1,
+            paraSpaceAfter: 2,
+          },
+        });
+      });
+    }
 
+    if (pptxRuns.length > 0) {
       slide.addText(pptxRuns, {
         x: descX + 0.14 * sx,
         y: descY + 0.1 * sy,
@@ -422,26 +522,6 @@ export async function exportSlidesToPptx(params: {
         valign: "top",
         fontFace: fontFamily,
       });
-    } else if (plainLines.length > 0) {
-      slide.addText(
-        plainLines.map((line, idx) => ({
-          text: `➢  ${line}`,
-          options: {
-            fontSize,
-            color: "111827",
-            breakLine: idx < plainLines.length - 1,
-            paraSpaceAfter: 2,
-          },
-        })),
-        {
-          x: descX + 0.14 * sx,
-          y: descY + 0.1 * sy,
-          w: descW - 0.28 * sx,
-          h: descH - 0.2 * sy,
-          valign: "top",
-          fontFace: fontFamily,
-        }
-      );
     }
   }
 

@@ -37,6 +37,7 @@ import ModernConfirmDialog from "@/components/ModernConfirmDialog";
 import {
   SlideItem,
   PresentationTemplateClient,
+  DEFAULT_TEMPLATE_LAYOUT,
   SLIDE_FONT_OPTIONS,
   compressImageToJpeg,
   exportSlidesToPptx,
@@ -282,8 +283,15 @@ function SlidePreviewCard({
     templates[0] ||
     null;
 
+  const layout = selectedTpl?.layoutConfig || DEFAULT_TEMPLATE_LAYOUT;
   const fontFamily = slide.fontFamily || "Verdana";
-  const photos = (slide.photos || []).filter(Boolean).slice(0, slide.photoCount || 4);
+  const allPhotos = (slide.photos || []).filter(Boolean);
+  const photos =
+    layout.mode === "classic"
+      ? allPhotos.slice(0, slide.photoCount || 4)
+      : layout.mode === "multi_slot"
+        ? allPhotos.slice(0, layout.photoSlots.length)
+        : [];
   const richLinesHtml = slide.descriptionHtml
     ? splitHtmlToVisualLines(slide.descriptionHtml)
     : [];
@@ -301,11 +309,27 @@ function SlidePreviewCard({
   const photoH = Math.min(44, Math.max(22, slide.photoHeightPct ?? 41.6));
   const fitMode = slide.photoFitMode || "contain";
 
-  const titleLeftPct = Math.max(47.5, 3.2 + photoW + 2.5);
-  const titleWidthPct = Math.min(46.5, 96.8 - titleLeftPct);
+  const titleLeftPct =
+    layout.mode === "classic"
+      ? Math.max(layout.titleBox?.xPct ?? 47.5, 3.2 + photoW + 2.5)
+      : layout.titleBox?.xPct ?? 19;
+  const titleWidthPct =
+    layout.mode === "classic"
+      ? Math.min(46.5, 96.8 - titleLeftPct)
+      : layout.titleBox?.wPct ?? 62.6;
+  const titleTopPct = layout.titleBox?.yPct ?? 15.3;
+  const titleHeightPct = Math.max(11, layout.titleBox?.hPct ?? 12.2);
 
-  const topPct = Math.min(65, Math.max(44.5, slide.descTopPct ?? 46));
-  const bottomPct = Math.min(97.5, Math.max(topPct + 18, slide.descBottomPct ?? 96.5));
+  const descLeftPct = layout.mode === "classic" ? 3.2 : layout.descBox.xPct;
+  const descWidthPct = layout.mode === "classic" ? 93.6 : layout.descBox.wPct;
+  const topPct =
+    layout.mode === "classic"
+      ? Math.min(65, Math.max(44.5, slide.descTopPct ?? layout.descBox.yPct))
+      : layout.descBox.yPct;
+  const bottomPct =
+    layout.mode === "classic"
+      ? Math.min(97.5, Math.max(topPct + 18, slide.descBottomPct ?? 96.5))
+      : Math.min(98, layout.descBox.yPct + layout.descBox.hPct);
   const heightPct = bottomPct - topPct;
 
   const [fittedPx, setFittedPx] = useState(12);
@@ -354,29 +378,70 @@ function SlidePreviewCard({
           : {}),
       }}
     >
-      {/* Sol Üst Fotoğraf Alanı (Beyaz arka plan YOK!) */}
-      <div
-        style={{ width: `${photoW}%`, height: `${photoH}%` }}
-        className="absolute left-[3.2%] top-[2.4%]"
-      >
-        {photos.length > 0 ? (
-          <div
-            className={`w-full h-full grid gap-1.5 ${
-              photos.length === 1
-                ? "grid-cols-1 grid-rows-1"
-                : photos.length === 2
-                  ? "grid-cols-2 grid-rows-1"
-                  : "grid-cols-2 grid-rows-2"
-            }`}
-          >
-            {photos.map((src, idx) => (
-              <div
-                key={idx}
-                className="w-full h-full flex items-center justify-center overflow-hidden"
-              >
+      {/* 1. FOTOĞRAF ALANLARI (Şablon moduna göre) */}
+      {layout.mode === "classic" && (
+        <div
+          style={{ width: `${photoW}%`, height: `${photoH}%` }}
+          className="absolute left-[3.2%] top-[2.4%]"
+        >
+          {photos.length > 0 ? (
+            <div
+              className={`w-full h-full grid gap-1.5 ${
+                photos.length === 1
+                  ? "grid-cols-1 grid-rows-1"
+                  : photos.length === 2
+                    ? "grid-cols-2 grid-rows-1"
+                    : "grid-cols-2 grid-rows-2"
+              }`}
+            >
+              {photos.map((src, idx) => (
+                <div
+                  key={idx}
+                  className="w-full h-full flex items-center justify-center overflow-hidden"
+                >
+                  <img
+                    src={src}
+                    alt={`Slayt fotoğrafı ${idx + 1}`}
+                    className={`w-full h-full drop-shadow-md ${
+                      fitMode === "fill"
+                        ? "object-fill"
+                        : fitMode === "cover"
+                          ? "object-cover"
+                          : "object-contain"
+                    }`}
+                  />
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="w-full h-full border-2 border-dashed border-slate-400/50 rounded-lg flex flex-col items-center justify-center text-slate-500/80 bg-white/25">
+              <ImageIcon className="w-6 h-6 mb-1" />
+              <span className="text-[10px] font-medium">
+                {slide.photoCount === 0 ? "Fotoğrafsız Slayt" : "Fotoğraf Alanı"}
+              </span>
+            </div>
+          )}
+        </div>
+      )}
+
+      {layout.mode === "multi_slot" &&
+        layout.photoSlots.map((slot, idx) => {
+          const src = photos[idx];
+          return (
+            <div
+              key={idx}
+              style={{
+                left: `${slot.xPct}%`,
+                top: `${slot.yPct}%`,
+                width: `${slot.wPct}%`,
+                height: `${slot.hPct}%`,
+              }}
+              className="absolute flex items-center justify-center overflow-hidden"
+            >
+              {src ? (
                 <img
                   src={src}
-                  alt={`Slayt fotoğrafı ${idx + 1}`}
+                  alt={`Slot ${idx + 1}`}
                   className={`w-full h-full drop-shadow-md ${
                     fitMode === "fill"
                       ? "object-fill"
@@ -385,47 +450,64 @@ function SlidePreviewCard({
                         : "object-contain"
                   }`}
                 />
-              </div>
-            ))}
-          </div>
-        ) : (
-          <div className="w-full h-full border-2 border-dashed border-slate-400/50 rounded-lg flex flex-col items-center justify-center text-slate-500/80 bg-white/25">
-            <ImageIcon className="w-6 h-6 mb-1" />
-            <span className="text-[10px] font-medium">
-              {slide.photoCount === 0 ? "Fotoğrafsız Slayt" : "Fotoğraf Alanı"}
-            </span>
-          </div>
-        )}
-      </div>
+              ) : (
+                <div className="w-full h-full border-2 border-dashed border-slate-400/50 rounded-lg flex flex-col items-center justify-center text-slate-500/80 bg-white/25">
+                  <ImageIcon className="w-5 h-5 mb-0.5" />
+                  <span className="text-[10px] font-medium">
+                    Fotoğraf {idx + 1}
+                  </span>
+                </div>
+              )}
+            </div>
+          );
+        })}
 
-      {/* Sağ Üst Adı Soyadı ve Mahalle Kutusu (Resmi, kalın puntolu, gölgeli) */}
-      <div
-        style={{ left: `${titleLeftPct}%`, width: `${titleWidthPct}%` }}
-        className="absolute top-[15.3%] h-[12.2%] bg-gradient-to-b from-white via-slate-50 to-slate-100 border border-slate-300 shadow-[0_4px_12px_rgba(15,23,42,0.18)] flex flex-col items-center justify-center px-2.5 text-center rounded-[2px]"
-      >
+      {/* 2. BAŞLIK KUTUSU (classic ve title_only şablonlarında) */}
+      {layout.titleBox && (layout.mode === "classic" || layout.mode === "title_only") && (
         <div
-          style={{ textShadow: "0 1px 2px rgba(15, 23, 42, 0.22)" }}
-          className="font-bold text-slate-950 text-xs sm:text-sm md:text-[15px] leading-tight truncate w-full"
+          style={{
+            left: `${titleLeftPct}%`,
+            top: `${titleTopPct}%`,
+            width: `${titleWidthPct}%`,
+            height: `${titleHeightPct}%`,
+          }}
+          className="absolute bg-gradient-to-b from-white via-slate-50 to-slate-100 border border-slate-300 shadow-[0_4px_12px_rgba(15,23,42,0.18)] flex flex-col items-center justify-center px-2.5 text-center rounded-[2px]"
         >
-          {slide.fullName || "Adı Soyadı"}
+          <div
+            style={{ textShadow: "0 1px 2px rgba(15, 23, 42, 0.22)" }}
+            className="font-bold text-slate-950 text-xs sm:text-sm md:text-[15px] leading-tight truncate w-full"
+          >
+            {slide.fullName || "Adı Soyadı"}
+          </div>
+          <div
+            style={{ textShadow: "0 1px 2px rgba(15, 23, 42, 0.16)" }}
+            className="font-bold text-slate-800 text-[11px] sm:text-xs md:text-[13.5px] leading-tight truncate w-full mt-0.5"
+          >
+            {slide.neighborhood || "...... Mahallesi"}
+          </div>
         </div>
-        <div
-          style={{ textShadow: "0 1px 2px rgba(15, 23, 42, 0.16)" }}
-          className="font-bold text-slate-800 text-[11px] sm:text-xs md:text-[13.5px] leading-tight truncate w-full mt-0.5"
-        >
-          {slide.neighborhood || "...... Mahallesi"}
-        </div>
-      </div>
+      )}
 
-      {/* Açıklama Alanı */}
+      {/* 3. AÇIKLAMA ALANI */}
       <div
         ref={descBoxRef}
         style={{
+          left: `${descLeftPct}%`,
           top: `${topPct}%`,
+          width: `${descWidthPct}%`,
           height: `${heightPct}%`,
         }}
-        className="absolute left-[3.2%] w-[93.6%] bg-white border border-slate-200 shadow-sm px-3 py-2 overflow-hidden"
+        className="absolute bg-white border border-slate-200 shadow-sm px-3 py-2 overflow-hidden"
       >
+        {layout.mode === "multi_slot" && slide.fullName && (
+          <div
+            style={{ textShadow: "0 1px 2px rgba(15, 23, 42, 0.14)" }}
+            className="font-bold text-slate-950 text-xs sm:text-sm mb-1.5 border-b border-slate-200 pb-1 truncate"
+          >
+            {slide.fullName}
+            {slide.neighborhood ? ` — ${slide.neighborhood}` : ""}
+          </div>
+        )}
         {displayLines.length > 0 ? (
           <ul
             ref={descListRef}
@@ -1041,6 +1123,15 @@ export default function PresentationsPage() {
   // EDİTÖR GÖRÜNÜMÜ
   if (editorMode) {
     const activeSlide = slides[activeSlideIdx] || emptySlide(templates[0]?._id);
+    const activeTpl =
+      (activeSlide.templateId && templates.find((t) => t._id === activeSlide.templateId)) ||
+      templates[0] ||
+      null;
+    const activeLayout = activeTpl?.layoutConfig || DEFAULT_TEMPLATE_LAYOUT;
+    const isClassic = activeLayout.mode === "classic";
+    const isMultiSlot = activeLayout.mode === "multi_slot";
+    const hasPhotoFeature = isClassic || isMultiSlot;
+
     const currentTop = activeSlide.descTopPct ?? 46;
     const currentBottom = activeSlide.descBottomPct ?? 96.5;
     const currentPhotoW = activeSlide.photoWidthPct ?? 41;
@@ -1157,7 +1248,29 @@ export default function PresentationsPage() {
                   </label>
                   <select
                     value={activeSlide.templateId || templates[0]?._id || ""}
-                    onChange={(e) => updateCurrentSlide({ templateId: e.target.value })}
+                    onChange={(e) => {
+                      const nextTplId = e.target.value;
+                      const nextTpl = templates.find((t) => t._id === nextTplId);
+                      const nextLayout = nextTpl?.layoutConfig || DEFAULT_TEMPLATE_LAYOUT;
+                      let nextPhotoCount: 0 | 1 | 2 | 4 = activeSlide.photoCount;
+                      if (nextLayout.mode === "title_only" || nextLayout.mode === "blank_text") {
+                        nextPhotoCount = 0;
+                      } else if (nextLayout.mode === "multi_slot") {
+                        nextPhotoCount = (
+                          nextLayout.photoSlots.length >= 3
+                            ? 4
+                            : nextLayout.photoSlots.length === 2
+                              ? 2
+                              : 1
+                        ) as 0 | 1 | 2 | 4;
+                      } else if (nextPhotoCount === 0) {
+                        nextPhotoCount = 1;
+                      }
+                      updateCurrentSlide({
+                        templateId: nextTplId,
+                        photoCount: nextPhotoCount,
+                      });
+                    }}
                     className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
                   >
                     {templates.map((tpl) => (
@@ -1217,38 +1330,53 @@ export default function PresentationsPage() {
               </div>
             </div>
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Slayt Fotoğraf Sayısı
-              </label>
-              <div className="grid grid-cols-4 gap-2">
-                {([0, 1, 2, 4] as const).map((cnt) => (
-                  <button
-                    key={cnt}
-                    type="button"
-                    onClick={() =>
-                      updateCurrentSlide({
-                        photoCount: cnt,
-                        photos: cnt === 0 ? [] : activeSlide.photos.slice(0, cnt),
-                      })
-                    }
-                    className={`py-2 px-2 rounded-xl text-xs font-semibold border transition-all ${
-                      activeSlide.photoCount === cnt
-                        ? "bg-blue-600 text-white border-blue-600 shadow-sm"
-                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    {cnt === 0 ? "Yok (0)" : `${cnt} Foto`}
-                  </button>
-                ))}
-              </div>
+            {/* Şablona Özgü Aktif Düzen Bilgisi */}
+            <div className="text-[11px] font-medium px-3 py-1.5 rounded-xl bg-indigo-50 text-indigo-700 border border-indigo-100">
+              {activeLayout.mode === "title_only"
+                ? "Düzen: Fotoğrafsız Üst Başlık + Tam Genişlik Açıklama"
+                : activeLayout.mode === "blank_text"
+                  ? "Düzen: Fotoğrafsız Tam Sayfa Serbest Metin"
+                  : activeLayout.mode === "multi_slot"
+                    ? `Düzen: ${activeLayout.photoSlots.length} Fotoğraf Slotu + Özel Konumlu Metin Kutusu`
+                    : "Düzen: Klasik Üst-Sol Fotoğraf + Sağ Üst Başlık + Alt Açıklama"}
             </div>
 
-            {activeSlide.photoCount > 0 && (
+            {isClassic && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Slayt Fotoğraf Sayısı
+                </label>
+                <div className="grid grid-cols-4 gap-2">
+                  {([0, 1, 2, 4] as const).map((cnt) => (
+                    <button
+                      key={cnt}
+                      type="button"
+                      onClick={() =>
+                        updateCurrentSlide({
+                          photoCount: cnt,
+                          photos: cnt === 0 ? [] : activeSlide.photos.slice(0, cnt),
+                        })
+                      }
+                      className={`py-2 px-2 rounded-xl text-xs font-semibold border transition-all ${
+                        activeSlide.photoCount === cnt
+                          ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                          : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
+                      }`}
+                    >
+                      {cnt === 0 ? "Yok (0)" : `${cnt} Foto`}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {hasPhotoFeature && (isMultiSlot || activeSlide.photoCount > 0) && (
               <div className="space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="text-xs font-semibold text-slate-700">
-                    Fotoğraflar ({activeSlide.photos.length}/{activeSlide.photoCount})
+                    {isMultiSlot
+                      ? `Şablon Fotoğrafları (${activeSlide.photos.length}/${activeLayout.photoSlots.length} Slot)`
+                      : `Fotoğraflar (${activeSlide.photos.length}/${activeSlide.photoCount})`}
                   </label>
                   <label className="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold transition-colors">
                     <Upload className="w-3.5 h-3.5" />
@@ -1256,7 +1384,11 @@ export default function PresentationsPage() {
                     <input
                       type="file"
                       accept="image/*"
-                      multiple={activeSlide.photoCount > 1}
+                      multiple={
+                        isMultiSlot
+                          ? activeLayout.photoSlots.length > 1
+                          : activeSlide.photoCount > 1
+                      }
                       disabled={compressingPhotos}
                       onChange={handleSlidePhotosUpload}
                       className="hidden"
@@ -1297,7 +1429,7 @@ export default function PresentationsPage() {
                   <div className="flex items-center justify-between">
                     <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
                       <Maximize2 className="w-3.5 h-3.5 text-blue-600" />
-                      Fotoğraf Boyutu & En-Boy Modu
+                      {isClassic ? "Fotoğraf Boyutu & En-Boy Modu" : "En-Boy Modu"}
                     </span>
                     <div className="flex items-center gap-1">
                       {(
@@ -1322,42 +1454,44 @@ export default function PresentationsPage() {
                       ))}
                     </div>
                   </div>
-                  <div className="grid grid-cols-2 gap-3">
-                    <div>
-                      <label className="text-[11px] font-semibold text-slate-600 flex justify-between mb-1">
-                        <span>Genişlik</span>
-                        <span>%{currentPhotoW.toFixed(0)}</span>
-                      </label>
-                      <input
-                        type="range"
-                        min={20}
-                        max={52}
-                        step={1}
-                        value={currentPhotoW}
-                        onChange={(e) =>
-                          updateCurrentSlide({ photoWidthPct: Number(e.target.value) })
-                        }
-                        className="w-full accent-blue-600"
-                      />
+                  {isClassic && (
+                    <div className="grid grid-cols-2 gap-3">
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-600 flex justify-between mb-1">
+                          <span>Genişlik</span>
+                          <span>%{currentPhotoW.toFixed(0)}</span>
+                        </label>
+                        <input
+                          type="range"
+                          min={20}
+                          max={52}
+                          step={1}
+                          value={currentPhotoW}
+                          onChange={(e) =>
+                            updateCurrentSlide({ photoWidthPct: Number(e.target.value) })
+                          }
+                          className="w-full accent-blue-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-600 flex justify-between mb-1">
+                          <span>Yükseklik</span>
+                          <span>%{currentPhotoH.toFixed(0)}</span>
+                        </label>
+                        <input
+                          type="range"
+                          min={22}
+                          max={44}
+                          step={1}
+                          value={currentPhotoH}
+                          onChange={(e) =>
+                            updateCurrentSlide({ photoHeightPct: Number(e.target.value) })
+                          }
+                          className="w-full accent-blue-600"
+                        />
+                      </div>
                     </div>
-                    <div>
-                      <label className="text-[11px] font-semibold text-slate-600 flex justify-between mb-1">
-                        <span>Yükseklik</span>
-                        <span>%{currentPhotoH.toFixed(0)}</span>
-                      </label>
-                      <input
-                        type="range"
-                        min={22}
-                        max={44}
-                        step={1}
-                        value={currentPhotoH}
-                        onChange={(e) =>
-                          updateCurrentSlide({ photoHeightPct: Number(e.target.value) })
-                        }
-                        className="w-full accent-blue-600"
-                      />
-                    </div>
-                  </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1415,46 +1549,48 @@ export default function PresentationsPage() {
                 </div>
               </div>
 
-              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/70">
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-600 flex items-center justify-between mb-1">
-                    <span className="flex items-center gap-1">
-                      <MoveVertical className="w-3 h-3" /> Üst Sınır
-                    </span>
-                    <span>%{currentTop.toFixed(1)}</span>
-                  </label>
-                  <input
-                    type="range"
-                    min={44.5}
-                    max={62}
-                    step={0.5}
-                    value={currentTop}
-                    onChange={(e) =>
-                      updateCurrentSlide({ descTopPct: Number(e.target.value) })
-                    }
-                    className="w-full accent-blue-600"
-                  />
+              {isClassic && (
+                <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/70">
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 flex items-center justify-between mb-1">
+                      <span className="flex items-center gap-1">
+                        <MoveVertical className="w-3 h-3" /> Üst Sınır
+                      </span>
+                      <span>%{currentTop.toFixed(1)}</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={44.5}
+                      max={62}
+                      step={0.5}
+                      value={currentTop}
+                      onChange={(e) =>
+                        updateCurrentSlide({ descTopPct: Number(e.target.value) })
+                      }
+                      className="w-full accent-blue-600"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[11px] font-semibold text-slate-600 flex items-center justify-between mb-1">
+                      <span className="flex items-center gap-1">
+                        <MoveVertical className="w-3 h-3" /> Alt Sınır
+                      </span>
+                      <span>%{currentBottom.toFixed(1)}</span>
+                    </label>
+                    <input
+                      type="range"
+                      min={72}
+                      max={97.5}
+                      step={0.5}
+                      value={currentBottom}
+                      onChange={(e) =>
+                        updateCurrentSlide({ descBottomPct: Number(e.target.value) })
+                      }
+                      className="w-full accent-blue-600"
+                    />
+                  </div>
                 </div>
-                <div>
-                  <label className="text-[11px] font-semibold text-slate-600 flex items-center justify-between mb-1">
-                    <span className="flex items-center gap-1">
-                      <MoveVertical className="w-3 h-3" /> Alt Sınır
-                    </span>
-                    <span>%{currentBottom.toFixed(1)}</span>
-                  </label>
-                  <input
-                    type="range"
-                    min={72}
-                    max={97.5}
-                    step={0.5}
-                    value={currentBottom}
-                    onChange={(e) =>
-                      updateCurrentSlide({ descBottomPct: Number(e.target.value) })
-                    }
-                    className="w-full accent-blue-600"
-                  />
-                </div>
-              </div>
+              )}
             </div>
 
             <div>
