@@ -33,14 +33,59 @@ export async function cleanTemplateWatermark(dataUrl: string): Promise<string> {
 
     ctx.drawImage(img, 0, 0, w, h);
 
-    // Sol alt köşedeki fppt.com yazısı (~x: %1.2..%14, y: %94..%98.5)
-    const x0 = Math.floor(w * 0.012);
-    const regionW = Math.max(1, Math.floor(w * 0.14) - x0);
-    const sampleY = Math.max(0, Math.floor(h * 0.935));
-    const y0 = Math.floor(h * 0.94);
-    const regionH = Math.max(1, Math.floor(h * 0.985) - y0);
+    // Sol alt köşedeki fppt.com yazısını (~x: %0.5..%14, y: %94.2..%99.2)
+    // üstteki ve sağdaki temiz arka plan gradyanını devam ettirerek (yumuşak geçişli) kapat
+    const x0 = Math.max(0, Math.floor(w * 0.004));
+    const x1 = Math.min(w - 1, Math.floor(w * 0.145));
+    const y0 = Math.max(8, Math.floor(h * 0.942));
+    const y1 = Math.min(h - 1, Math.floor(h * 0.992));
 
-    ctx.drawImage(canvas, x0, sampleY, regionW, 1, x0, y0, regionW, regionH);
+    const rowA = Math.max(0, y0 - 8);
+    const rowB = Math.max(0, y0 - 2);
+    const rowDiff = Math.max(1, rowB - rowA);
+    const rightCol = Math.min(w - 1, x1 + 3);
+    const feather = 4;
+
+    const imgData = ctx.getImageData(0, 0, w, h);
+    const data = imgData.data;
+
+    for (let y = y0; y <= y1; y++) {
+      const rIdx = (y * w + rightCol) * 4;
+      const rR = data[rIdx];
+      const rG = data[rIdx + 1];
+      const rB = data[rIdx + 2];
+
+      for (let x = x0; x <= x1; x++) {
+        const idxA = (rowA * w + x) * 4;
+        const idxB = (rowB * w + x) * 4;
+        const t = (y - rowB) / rowDiff;
+
+        // Dikey gradyanı doğal şekilde devam ettir
+        const vR = data[idxB] + (data[idxB] - data[idxA]) * t * 0.7;
+        const vG = data[idxB + 1] + (data[idxB + 1] - data[idxA + 1]) * t * 0.7;
+        const vB = data[idxB + 2] + (data[idxB + 2] - data[idxA + 2]) * t * 0.7;
+
+        // Sağ kenara yaklaştıkça sağdaki temiz piksel ile harmanla
+        const hx = (x - x0) / Math.max(1, x1 - x0);
+        const hWeight = Math.pow(hx, 2.2) * 0.45;
+
+        const targetR = Math.max(0, Math.min(255, vR * (1 - hWeight) + rR * hWeight));
+        const targetG = Math.max(0, Math.min(255, vG * (1 - hWeight) + rG * hWeight));
+        const targetB = Math.max(0, Math.min(255, vB * (1 - hWeight) + rB * hWeight));
+
+        // Üst ve sağ kenarda yumuşak geçiş (feather)
+        const alphaTop = Math.min(1, (y - y0 + 1) / feather);
+        const alphaRight = Math.min(1, (x1 - x + 1) / feather);
+        const alpha = Math.min(alphaTop, alphaRight);
+
+        const curIdx = (y * w + x) * 4;
+        data[curIdx] = Math.round(data[curIdx] * (1 - alpha) + targetR * alpha);
+        data[curIdx + 1] = Math.round(data[curIdx + 1] * (1 - alpha) + targetG * alpha);
+        data[curIdx + 2] = Math.round(data[curIdx + 2] * (1 - alpha) + targetB * alpha);
+      }
+    }
+
+    ctx.putImageData(imgData, 0, 0);
 
     const cleaned = canvas.toDataURL("image/jpeg", 0.92);
     cleanedBgCache.set(dataUrl, cleaned);
