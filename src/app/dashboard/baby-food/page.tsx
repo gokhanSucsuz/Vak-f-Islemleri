@@ -28,6 +28,7 @@ import {
 } from "lucide-react";
 import { turkishIncludes, extractTC, exportToExcel } from "@/lib/turkish";
 import { toLocalDateInputValue, toLocalDayStartISO, toLocalDayEndISO } from "@/lib/date";
+import { registerTurkishFont } from "@/lib/pdfFont";
 import ModernConfirmDialog, { DialogType } from "@/components/ModernConfirmDialog";
 
 type BabyFoodType = {
@@ -526,7 +527,7 @@ export default function BabyFoodPage() {
     officialPdfRecords.map((r) => r.tcNo || extractTC(r.motherInfo) || r.motherInfo)
   ).size;
 
-  // jsPDF ile doğrudan PDF indirme
+  // jsPDF ile Türkçe karakter uyumlu doğrudan PDF indirme
   const handleDownloadDirectPDF = async () => {
     if (officialPdfRecords.length === 0) {
       toast.error("Belirtilen tarih aralığında kayıt bulunamadı.");
@@ -544,21 +545,23 @@ export default function BabyFoodPage() {
         format: "a4",
       });
 
+      const fontName = await registerTurkishFont(doc);
+
       // Resmi Başlık
-      doc.setFont("helvetica", "bold");
+      doc.setFont(fontName, "bold");
       doc.setFontSize(13);
-      doc.text("T.C.", 148, 13, { align: "center" });
+      doc.text("T.C.", 148.5, 13, { align: "center" });
       doc.setFontSize(11);
-      doc.text(institutionName || "SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI", 148, 19, {
+      doc.text(institutionName || "SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI", 148.5, 19, {
         align: "center",
       });
       doc.setFontSize(10);
-      doc.text(documentTitle || "BEBEK MAMASI TESLİM VE DAĞITIM LİSTESİ", 148, 25, {
+      doc.text(documentTitle || "BEBEK MAMASI TESLİM VE DAĞITIM LİSTESİ", 148.5, 25, {
         align: "center",
       });
 
-      // Tarih Aralığı & Bilgiler
-      doc.setFont("helvetica", "normal");
+      // Tarih Aralığı & Düzenleme Bilgisi
+      doc.setFont(fontName, "normal");
       doc.setFontSize(8.5);
       const dateRangeStr =
         pdfDateStart && pdfDateEnd
@@ -572,22 +575,58 @@ export default function BabyFoodPage() {
           "tr-TR",
           { hour: "2-digit", minute: "2-digit" }
         )}`,
-        282,
+        283,
         31,
         { align: "right" }
       );
 
-      // Tablo Satırları
+      // Marka / Ürün Dağılımı İstatistiği Hesapla
+      const brandTotals = new Map<string, number>();
+      for (const r of officialPdfRecords) {
+        for (const it of r.items) {
+          const label = `${it.brand || ""} ${it.foodName || ""}`.trim() || "Diğer";
+          brandTotals.set(label, (brandTotals.get(label) || 0) + (it.quantity || 0));
+        }
+      }
+      const topBrands = Array.from(brandTotals.entries())
+        .sort((a, b) => b[1] - a[1])
+        .slice(0, 4)
+        .map(([name, qty]) => `${name}: ${qty} adet`)
+        .join("  •  ");
+
+      // İlk Sayfada İstatistik Özeti Kutusu
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(14, 34, 269, topBrands ? 19 : 13, 2, 2, "FD");
+
+      doc.setFont(fontName, "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(30, 41, 59);
+      doc.text(
+        `İSTATİSTİK ÖZETİ:   Toplam Teslimat: ${officialPdfRecords.length} İşlem    |    Toplam Dağıtılan Mama: ${pdfTotalFoodCount} Kutu/Adet    |    Faydalanan Aile: ${pdfTotalFamilies} Farklı Hane`,
+        18,
+        40
+      );
+
+      if (topBrands) {
+        doc.setFont(fontName, "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`Ürün Dağılımı: ${topBrands}`, 18, 48);
+      }
+      doc.setTextColor(0, 0, 0);
+
+      // Tablo Satırları (İmza yok -> Teslim Eden ve Teslim Tarihi var)
       const tableData = officialPdfRecords.map((r, i) => {
         const tc = r.tcNo || extractTC(r.motherInfo) || "-";
         const itemsStr = r.items
           .map((it) => `${it.quantity}x ${it.brand} ${it.foodName} (${it.weight})`)
           .join(", ");
         const totalQty = r.items.reduce((sum, it) => sum + it.quantity, 0);
+        const deliveryDateStr = new Date(r.deliveryDate || r.createdAt).toLocaleDateString("tr-TR");
 
         return [
           i + 1,
-          new Date(r.deliveryDate || r.createdAt).toLocaleDateString("tr-TR"),
           tc,
           r.motherInfo,
           r.babyName,
@@ -595,16 +634,15 @@ export default function BabyFoodPage() {
           itemsStr,
           totalQty,
           r.createdBy?.name || "-",
-          "", // Hak Sahibi İmza sütunu
+          deliveryDateStr,
         ];
       });
 
       autoTable(doc, {
-        startY: 34,
+        startY: topBrands ? 56 : 50,
         head: [
           [
             "Sıra",
-            "Tarih",
             "T.C. Kimlik No",
             "Hak Sahibi (Anne)",
             "Bebek Adı",
@@ -612,76 +650,59 @@ export default function BabyFoodPage() {
             "Teslim Edilen Mamalar",
             "Adet",
             "Teslim Eden",
-            "İmza",
+            "Teslim Tarihi",
           ],
         ],
         body: tableData,
         theme: "grid",
-        styles: { fontSize: 8, cellPadding: 2, font: "helvetica" },
+        styles: {
+          fontSize: 8,
+          cellPadding: 2.2,
+          font: fontName,
+          textColor: [15, 23, 42],
+        },
         headStyles: {
           fillColor: [30, 41, 59],
           textColor: [255, 255, 255],
+          font: fontName,
           fontStyle: "bold",
           halign: "center",
         },
         columnStyles: {
           0: { cellWidth: 10, halign: "center" },
-          1: { cellWidth: 18, halign: "center" },
-          2: { cellWidth: 26, halign: "center" },
-          3: { cellWidth: 40 },
-          4: { cellWidth: 26 },
-          5: { cellWidth: 26 },
-          6: { cellWidth: 68 },
-          7: { cellWidth: 12, halign: "center" },
-          8: { cellWidth: 24 },
-          9: { cellWidth: 18 },
+          1: { cellWidth: 26, halign: "center" },
+          2: { cellWidth: 42 },
+          3: { cellWidth: 28 },
+          4: { cellWidth: 28 },
+          5: { cellWidth: 74 },
+          6: { cellWidth: 13, halign: "center" },
+          7: { cellWidth: 26 },
+          8: { cellWidth: 22, halign: "center" },
+        },
+        didDrawPage: (data) => {
+          const pageCount = doc.getNumberOfPages();
+          doc.setFont(fontName, "normal");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text(
+            `Sayfa ${data.pageNumber} / ${pageCount}`,
+            283,
+            203,
+            { align: "right" }
+          );
+          doc.setTextColor(0, 0, 0);
         },
       });
 
-      // İcmal ve İmza Alanı
-      const lastY = (doc as any).lastAutoTable?.finalY || 150;
-      let finalY = lastY + 8;
-      if (finalY > 170) {
-        doc.addPage();
-        finalY = 20;
-      }
-
-      doc.setFont("helvetica", "bold");
-      doc.setFontSize(8.5);
-      doc.text(
-        `İCMAL: Toplam Dağıtım: ${officialPdfRecords.length} Teslimat | Toplam Mama: ${pdfTotalFoodCount} Kutu/Adet | Faydalanan Aile: ${pdfTotalFamilies} Hane`,
-        14,
-        finalY
-      );
-
-      const signY = finalY + 12;
-      doc.setFontSize(8.5);
-      doc.text("Teslim Eden / Düzenleyen", 40, signY, { align: "center" });
-      doc.setFont("helvetica", "normal");
-      doc.text(officerName || session?.user?.name || "Personel", 40, signY + 5, {
-        align: "center",
-      });
-      doc.text("İmza", 40, signY + 16, { align: "center" });
-
-      doc.setFont("helvetica", "bold");
-      doc.text("Onaylayan", 250, signY, { align: "center" });
-      doc.setFont("helvetica", "normal");
-      doc.text(managerName || "Vakıf Müdürü", 250, signY + 5, { align: "center" });
-      doc.text("İmza - Mühür", 250, signY + 16, { align: "center" });
-
       const dateStr = new Date().toISOString().split("T")[0];
-      doc.save(`Resmi_Bebek_Mamasi_Dagitim_Tutanagi_${dateStr}.pdf`);
-      toast.success("Resmi Kurum PDF dosyası başarıyla indirildi.");
+      doc.save(`Bebek_Mamasi_Teslim_Raporu_${dateStr}.pdf`);
+      toast.success("Türkçe karakter uyumlu PDF raporu başarıyla indirildi.");
     } catch (err: any) {
       console.error(err);
       toast.error("PDF oluşturulurken hata oluştu: " + err.message);
     } finally {
       setIsGeneratingPdf(false);
     }
-  };
-
-  const handlePrintOfficialView = () => {
-    window.print();
   };
 
   return (
@@ -1344,22 +1365,19 @@ export default function BabyFoodPage() {
                       <thead className="bg-slate-100 border-b">
                         <tr>
                           <th className="p-1 border text-center">Sıra</th>
-                          <th className="p-1 border">Tarih</th>
                           <th className="p-1 border">TC Kimlik No</th>
                           <th className="p-1 border">Hak Sahibi</th>
                           <th className="p-1 border">Bebek</th>
                           <th className="p-1 border">Mamalar</th>
                           <th className="p-1 border text-center">Adet</th>
-                          <th className="p-1 border text-center">İmza</th>
+                          <th className="p-1 border">Teslim Eden</th>
+                          <th className="p-1 border text-center">Teslim Tarihi</th>
                         </tr>
                       </thead>
                       <tbody>
                         {officialPdfRecords.slice(0, 5).map((r, i) => (
                           <tr key={i} className="border-b">
                             <td className="p-1 border text-center">{i + 1}</td>
-                            <td className="p-1 border">
-                              {new Date(r.deliveryDate || r.createdAt).toLocaleDateString("tr-TR")}
-                            </td>
                             <td className="p-1 border font-mono">
                               {r.tcNo || extractTC(r.motherInfo) || "-"}
                             </td>
@@ -1373,7 +1391,10 @@ export default function BabyFoodPage() {
                             <td className="p-1 border text-center font-bold">
                               {r.items.reduce((sum, it) => sum + it.quantity, 0)}
                             </td>
-                            <td className="p-1 border text-center text-slate-300">İmza</td>
+                            <td className="p-1 border">{r.createdBy?.name || "-"}</td>
+                            <td className="p-1 border text-center">
+                              {new Date(r.deliveryDate || r.createdAt).toLocaleDateString("tr-TR")}
+                            </td>
                           </tr>
                         ))}
                       </tbody>
@@ -1385,20 +1406,6 @@ export default function BabyFoodPage() {
                       ... ve toplam {officialPdfRecords.length} adet kayıt resmi raporda tam liste halinde yer alacaktır.
                     </p>
                   )}
-
-                  {/* İmzalar */}
-                  <div className="grid grid-cols-2 gap-8 text-center pt-2 text-[10px] border-t">
-                    <div>
-                      <p className="font-bold">Teslim Eden / Düzenleyen</p>
-                      <p>{officerName || "Personel"}</p>
-                      <p className="text-slate-400 mt-2">(İmza)</p>
-                    </div>
-                    <div>
-                      <p className="font-bold">Onaylayan</p>
-                      <p>{managerName || "Vakıf Müdürü"}</p>
-                      <p className="text-slate-400 mt-2">(İmza - Mühür)</p>
-                    </div>
-                  </div>
                 </div>
               </div>
             </div>
@@ -1414,15 +1421,6 @@ export default function BabyFoodPage() {
               </button>
 
               <div className="flex items-center gap-2.5">
-                <button
-                  type="button"
-                  onClick={handlePrintOfficialView}
-                  className="px-5 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold transition-all shadow-md flex items-center gap-2"
-                >
-                  <Printer className="w-4 h-4 text-slate-300" />
-                  Resmi Format Yazdır / PDF Kaydet
-                </button>
-
                 <button
                   type="button"
                   disabled={isGeneratingPdf || officialPdfRecords.length === 0}
