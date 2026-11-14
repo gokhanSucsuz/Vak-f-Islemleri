@@ -16,6 +16,7 @@ import {
   Gift,
   FolderOpen,
   ScrollText,
+  Presentation,
 } from "lucide-react";
 import { useState } from "react";
 import clsx from "clsx";
@@ -29,6 +30,7 @@ export default function Sidebar() {
     { name: "Ana Ekran", href: "/dashboard", icon: LayoutDashboard, roles: ["superadmin", "manager", "personnel"] },
     { name: "Başvuru Dosyaları", href: "/dashboard/applications", icon: FolderOpen, roles: ["superadmin", "manager", "personnel"] },
     { name: "Dilekçe İşlemleri", href: "/dashboard/petitions", icon: ScrollText, roles: ["superadmin", "manager", "personnel"] },
+    { name: "Sunular", href: "/dashboard/presentations", icon: Presentation, roles: ["superadmin", "manager", "personnel"] },
     { name: "Personel Yönetimi", href: "/dashboard/users", icon: Users, roles: ["superadmin"] },
     { name: "Sistem Logları", href: "/dashboard/logs", icon: Activity, roles: ["superadmin"] },
     { name: "Raporlar", href: "/dashboard/reports", icon: FileText, roles: ["superadmin", "manager", "personnel"] },

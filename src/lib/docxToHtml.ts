@@ -263,6 +263,20 @@ function renderTable(tblNode: XmlNode): string {
   return html;
 }
 
+function alignEdirneHeader(html: string): string {
+  // "SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞINA" + altındaki "EDİRNE" ifadesini
+  // BAŞKANLIĞINA kelimesinin en sağına hizalar.
+  return html.replace(
+    /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<\/p>\s*<p[^>]*>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
+    (_m, titleText, cityText) =>
+      `<div style="width:fit-content;margin:0 auto 6pt auto;text-align:center;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+  ).replace(
+    /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<br\s*\/?>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
+    (_m, titleText, cityText) =>
+      `<div style="width:fit-content;margin:0 auto 6pt auto;text-align:center;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+  );
+}
+
 export async function convertDocxBufferToStyledHtml(buffer: Buffer): Promise<string> {
   try {
     const zip = await JSZip.loadAsync(buffer);
@@ -282,7 +296,7 @@ export async function convertDocxBufferToStyledHtml(buffer: Buffer): Promise<str
             html += renderTable(ch);
           }
         }
-        if (html.trim()) return html;
+        if (html.trim()) return alignEdirneHeader(html);
       }
     }
   } catch (err) {
@@ -290,5 +304,5 @@ export async function convertDocxBufferToStyledHtml(buffer: Buffer): Promise<str
   }
 
   const fallback = await mammoth.convertToHtml({ buffer });
-  return (fallback.value || "").trim() || "<p></p>";
+  return alignEdirneHeader((fallback.value || "").trim() || "<p></p>");
 }

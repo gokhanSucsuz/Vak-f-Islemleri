@@ -8,6 +8,9 @@ import BabyFood from "@/models/BabyFood";
 import InKindAid from "@/models/InKindAid";
 import Petition from "@/models/Petition";
 import PetitionTemplate from "@/models/PetitionTemplate";
+import Presentation from "@/models/Presentation";
+import PresentationMeeting from "@/models/PresentationMeeting";
+import PresentationTemplate from "@/models/PresentationTemplate";
 import Log from "@/models/Log";
 import User from "@/models/User";
 
@@ -34,6 +37,9 @@ export async function POST() {
       { name: "InKindAid", model: InKindAid },
       { name: "Petition", model: Petition },
       { name: "PetitionTemplate", model: PetitionTemplate },
+      { name: "Presentation", model: Presentation },
+      { name: "PresentationMeeting", model: PresentationMeeting },
+      { name: "PresentationTemplate", model: PresentationTemplate },
       { name: "Log", model: Log },
       { name: "User", model: User },
     ];

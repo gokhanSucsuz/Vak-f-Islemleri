@@ -1,0 +1,168 @@
+import { NextRequest, NextResponse } from "next/server";
+import { getServerSession } from "next-auth/next";
+import { authOptions } from "@/lib/authOptions";
+import dbConnect from "@/lib/db";
+import Presentation, { ISlideData } from "@/models/Presentation";
+import PresentationMeeting from "@/models/PresentationMeeting";
+import Log from "@/models/Log";
+import {
+  compressSlides,
+  decompressSlides,
+  purgeExpiredMeetingPhotos,
+} from "@/lib/presentationUtils";
+
+export async function GET(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    if (!session?.user) {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
+    }
+
+    const { searchParams } = new URL(req.url);
+    const meetingId = searchParams.get("meetingId") || "";
+    const search = (searchParams.get("search") || "").trim().toLowerCase();
+
+    await dbConnect();
+    await purgeExpiredMeetingPhotos();
+
+    const query: any = {};
+    if (meetingId) {
+      query.meetingId = meetingId;
+    }
+
+    const records = await Presentation.find(query)
+      .populate("createdBy", "name")
+      .populate("meetingId", "title status")
+      .sort({ createdAt: -1 })
+      .limit(200);
+
+    const mapped = await Promise.all(
+      records.map(async (r) => {
+        const slides = await decompressSlides(r.slidesCompressed);
+        const totalPhotos = slides.reduce(
+          (sum, s) => sum + (Array.isArray(s.photos) ? s.photos.length : 0),
+          0
+        );
+        return {
+          _id: r._id,
+          meetingId: (r.meetingId as any)?._id || r.meetingId,
+          meetingTitle: (r.meetingId as any)?.title || "",
+          meetingStatus: (r.meetingId as any)?.status || "open",
+          summaryTitle: r.summaryTitle,
+          slideCount: r.slideCount || slides.length,
+          totalPhotos,
+          firstPhoto: slides.find((s) => s.photos?.length > 0)?.photos?.[0] || "",
+          createdBy: r.createdBy,
+          createdAt: r.createdAt,
+          updatedAt: r.updatedAt,
+        };
+      })
+    );
+
+    const filtered = search
+      ? mapped.filter(
+          (m) =>
+            m.summaryTitle.toLowerCase().includes(search) ||
+            ((m.createdBy as any)?.name || "").toLowerCase().includes(search) ||
+            m.meetingTitle.toLowerCase().includes(search)
+        )
+      : mapped;
+
+    return NextResponse.json({ presentations: filtered });
+  } catch (error: any) {
+    console.error("GET /api/presentations error:", error);
+    return NextResponse.json(
+      { error: error.message || "Sunular alınamadı." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function POST(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    const userId = (session?.user as any)?.id;
+    if (!session?.user || !userId) {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
+    }
+
+    const body = await req.json();
+    const { meetingId, slides } = body as {
+      meetingId: string;
+      slides: ISlideData[];
+    };
+
+    if (!meetingId) {
+      return NextResponse.json(
+        { error: "Lütfen aktif bir toplantı seçin." },
+        { status: 400 }
+      );
+    }
+
+    if (!Array.isArray(slides) || slides.length === 0) {
+      return NextResponse.json(
+        { error: "En az bir sunu sayfası eklemelisiniz." },
+        { status: 400 }
+      );
+    }
+
+    const sanitizedSlides: ISlideData[] = slides.map((s) => ({
+      fullName: (s.fullName || "").trim(),
+      neighborhood: (s.neighborhood || "").trim(),
+      photoCount: ([0, 1, 2, 4].includes(Number(s.photoCount))
+        ? Number(s.photoCount)
+        : 0) as 0 | 1 | 2 | 4,
+      photos: Array.isArray(s.photos) ? s.photos.slice(0, 4) : [],
+      description: (s.description || "").trim(),
+    }));
+
+    if (sanitizedSlides.some((s) => !s.fullName)) {
+      return NextResponse.json(
+        { error: "Her slayt sayfasında Adı Soyadı alanı zorunludur." },
+        { status: 400 }
+      );
+    }
+
+    await dbConnect();
+    const meeting = await PresentationMeeting.findById(meetingId);
+    if (!meeting) {
+      return NextResponse.json({ error: "Toplantı bulunamadı." }, { status: 404 });
+    }
+    if (meeting.status === "closed") {
+      return NextResponse.json(
+        { error: "Bu toplantı kapatıldığı için yeni slayt eklenemez." },
+        { status: 400 }
+      );
+    }
+
+    const summaryTitle = sanitizedSlides
+      .map((s) =>
+        s.neighborhood ? `${s.fullName} (${s.neighborhood})` : s.fullName
+      )
+      .join(" | ");
+
+    const slidesCompressed = await compressSlides(sanitizedSlides);
+
+    const created = await Presentation.create({
+      meetingId,
+      summaryTitle,
+      slideCount: sanitizedSlides.length,
+      slidesCompressed,
+      createdBy: userId,
+    });
+
+    await Log.create({
+      userId,
+      action: "SUNU_OLUSTURULDU",
+      details: `${sanitizedSlides.length} sayfalık sunu kaydedildi: ${summaryTitle}`,
+    });
+
+    return NextResponse.json({ success: true, presentation: created }, { status: 201 });
+  } catch (error: any) {
+    console.error("POST /api/presentations error:", error);
+    return NextResponse.json(
+      { error: error.message || "Sunu kaydedilemedi." },
+      { status: 500 }
+    );
+  }
+}

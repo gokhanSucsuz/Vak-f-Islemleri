@@ -262,10 +262,21 @@ export default function PetitionsPage() {
       month: "2-digit",
       year: "numeric",
     });
-    const filledHtml = (tpl.htmlContent || "<p></p>").replace(
+    let filledHtml = (tpl.htmlContent || "<p></p>").replace(
       /\(\s*tar[iİıI]h\s*\)|\[\s*tar[iİıI]h\s*\]|\{\{\s*tar[iİıI]h\s*\}\}/gi,
       todayStr
     );
+    filledHtml = filledHtml
+      .replace(
+        /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<\/p>\s*<p[^>]*>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
+        (_m, titleText, cityText) =>
+          `<div style="width:fit-content;margin:0 auto 6pt auto;text-align:center;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+      )
+      .replace(
+        /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<br\s*\/?>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
+        (_m, titleText, cityText) =>
+          `<div style="width:fit-content;margin:0 auto 6pt auto;text-align:center;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+      );
 
     setEditingId(null);
     setEditorType(type);
@@ -625,9 +636,12 @@ export default function PetitionsPage() {
           </div>
         </div>
 
+        {/* Yazdırmada tarayıcı üst/alt bilgi (tarih, başlık, site linki) gizlenir */}
+        <style>{`@media print { @page { size: A4; margin: 0; } html, body { background: #fff !important; } }`}</style>
+
         {/* A4 Word Kağıt Alanı */}
         <div className="bg-slate-200/70 p-4 sm:p-8 rounded-3xl overflow-x-auto print:bg-white print:p-0">
-          <div className="w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white shadow-xl border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:p-0">
+          <div className="w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white shadow-xl border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:px-[16mm] print:py-[14mm]">
             <div className="flex justify-center mb-3">
               <img
                 src="/logo-vakif.jpg"
@@ -1201,7 +1215,8 @@ export default function PetitionsPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto bg-slate-100 p-4 sm:p-8 rounded-2xl mt-4 print:bg-white print:p-0 print:mt-0 print:overflow-visible">
-              <div className="w-full max-w-[210mm] min-h-[260mm] mx-auto bg-white shadow-md border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:p-0">
+              <style>{`@media print { @page { size: A4; margin: 0; } html, body { background: #fff !important; } }`}</style>
+              <div className="w-full max-w-[210mm] min-h-[260mm] mx-auto bg-white shadow-md border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:px-[16mm] print:py-[14mm]">
                 <div className="flex justify-center mb-3">
                   <img
                     src="/logo-vakif.jpg"
