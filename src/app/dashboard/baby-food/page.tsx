@@ -858,7 +858,7 @@ export default function BabyFoodPage() {
                   ).toLocaleDateString("tr-TR")}`
                 : "Tüm Tarihler"}
             </span>
-            <span>
+            <span suppressHydrationWarning>
               Düzenleme Tarihi: {new Date().toLocaleDateString("tr-TR")}{" "}
               {new Date().toLocaleTimeString("tr-TR", { hour: "2-digit", minute: "2-digit" })}
             </span>
@@ -1475,7 +1475,7 @@ export default function BabyFoodPage() {
                             ).toLocaleDateString("tr-TR")}`
                           : "Tüm Tarihler"}
                       </span>
-                      <span>
+                      <span suppressHydrationWarning>
                         Düzenleme Tarihi: {new Date().toLocaleDateString("tr-TR")}
                       </span>
                     </div>
