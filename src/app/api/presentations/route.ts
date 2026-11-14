@@ -155,8 +155,24 @@ export async function POST(req: NextRequest) {
     }
     if (meeting.status === "closed") {
       return NextResponse.json(
-        { error: "Bu toplantı kapatıldığı için yeni slayt eklenemez." },
+        { error: "Bu toplantı kapatıldığı için salt okunurdur; yeni slayt eklenemez." },
         { status: 400 }
+      );
+    }
+
+    const role = (session?.user as any)?.role;
+    const isManager = role === "superadmin" || role === "manager";
+    const isAuthorizedStaff =
+      Boolean(meeting.authorizedUserId) &&
+      String(meeting.authorizedUserId) === String(userId);
+
+    if (meeting.isLocked && !isManager && !isAuthorizedStaff) {
+      return NextResponse.json(
+        {
+          error:
+            "Toplantı slaytları sıralama/kapatma için kilitlendi. Sadece yönetici ve yetkili personel işlem yapabilir.",
+        },
+        { status: 403 }
       );
     }
 

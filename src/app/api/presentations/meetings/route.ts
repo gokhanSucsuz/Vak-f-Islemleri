@@ -20,6 +20,7 @@ export async function GET() {
     const meetings = await PresentationMeeting.find({})
       .populate("openedBy", "name")
       .populate("closedBy", "name")
+      .populate("authorizedUserId", "name email")
       .sort({ createdAt: -1 })
       .limit(50);
 
@@ -48,6 +49,8 @@ export async function GET() {
         title: m.title,
         meetingDate: m.meetingDate,
         status: m.status,
+        isLocked: Boolean(m.isLocked),
+        authorizedUserId: m.authorizedUserId || null,
         openedBy: m.openedBy,
         closedBy: m.closedBy,
         closedAt: m.closedAt,
@@ -87,6 +90,7 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const title = (body.title || "").trim();
     const meetingDate = body.meetingDate ? new Date(body.meetingDate) : new Date();
+    const authorizedUserId = body.authorizedUserId || undefined;
 
     if (!title) {
       return NextResponse.json({ error: "Toplantı başlığı zorunludur." }, { status: 400 });
@@ -94,10 +98,22 @@ export async function POST(req: NextRequest) {
 
     await dbConnect();
 
+    const existingOpen = await PresentationMeeting.findOne({ status: "open" });
+    if (existingOpen) {
+      return NextResponse.json(
+        {
+          error: `Açık bir toplantı (${existingOpen.title}) varken yeni toplantı açılamaz. Önce mevcut toplantıyı kapatın.`,
+        },
+        { status: 400 }
+      );
+    }
+
     const meeting = await PresentationMeeting.create({
       title,
       meetingDate,
       status: "open",
+      isLocked: false,
+      ...(authorizedUserId ? { authorizedUserId } : {}),
       openedBy: userId,
     });
 

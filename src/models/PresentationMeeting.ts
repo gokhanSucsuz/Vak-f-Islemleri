@@ -5,6 +5,8 @@ export interface IPresentationMeeting extends Document {
   title: string;
   meetingDate: Date;
   status: "open" | "closed";
+  isLocked: boolean;
+  authorizedUserId?: mongoose.Types.ObjectId;
   openedBy: mongoose.Types.ObjectId;
   closedBy?: mongoose.Types.ObjectId;
   closedAt?: Date;
@@ -26,6 +28,14 @@ const PresentationMeetingSchema = new Schema<IPresentationMeeting>(
       enum: ["open", "closed"],
       default: "open",
       index: true,
+    },
+    isLocked: {
+      type: Boolean,
+      default: false,
+    },
+    authorizedUserId: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
     },
     openedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     closedBy: { type: Schema.Types.ObjectId, ref: "User" },

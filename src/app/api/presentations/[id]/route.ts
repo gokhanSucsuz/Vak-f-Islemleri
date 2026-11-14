@@ -87,19 +87,33 @@ export async function PUT(
       return NextResponse.json({ error: "Sunu bulunamadı." }, { status: 404 });
     }
 
-    const isManager = role === "superadmin" || role === "manager";
-    if (!isManager && String(record.createdBy) !== String(userId)) {
+    const meeting = await PresentationMeeting.findById(record.meetingId);
+    if (meeting?.status === "closed") {
       return NextResponse.json(
-        { error: "Sadece kendi oluşturduğunuz sunuları düzenleyebilirsiniz." },
+        { error: "Toplantı kapatıldığı için salt okunurdur; düzenleme yapılamaz." },
+        { status: 400 }
+      );
+    }
+
+    const isManager = role === "superadmin" || role === "manager";
+    const isAuthorizedStaff =
+      Boolean(meeting?.authorizedUserId) &&
+      String(meeting?.authorizedUserId) === String(userId);
+
+    if (meeting?.isLocked && !isManager && !isAuthorizedStaff) {
+      return NextResponse.json(
+        {
+          error:
+            "Toplantı slaytları sıralama/kapatma için kilitlendi. Sadece yönetici ve yetkili personel işlem yapabilir.",
+        },
         { status: 403 }
       );
     }
 
-    const meeting = await PresentationMeeting.findById(record.meetingId);
-    if (meeting?.status === "closed" && !isManager) {
+    if (!isManager && !isAuthorizedStaff && String(record.createdBy) !== String(userId)) {
       return NextResponse.json(
-        { error: "Toplantı kapatıldığı için düzenleme yapılamaz." },
-        { status: 400 }
+        { error: "Sadece kendi oluşturduğunuz sunuları düzenleyebilirsiniz." },
+        { status: 403 }
       );
     }
 
@@ -192,8 +206,30 @@ export async function DELETE(
       return NextResponse.json({ error: "Sunu bulunamadı." }, { status: 404 });
     }
 
+    const meeting = await PresentationMeeting.findById(record.meetingId);
+    if (meeting?.status === "closed") {
+      return NextResponse.json(
+        { error: "Toplantı kapatıldığı için salt okunurdur; silme yapılamaz." },
+        { status: 400 }
+      );
+    }
+
     const isManager = role === "superadmin" || role === "manager";
-    if (!isManager && String(record.createdBy) !== String(userId)) {
+    const isAuthorizedStaff =
+      Boolean(meeting?.authorizedUserId) &&
+      String(meeting?.authorizedUserId) === String(userId);
+
+    if (meeting?.isLocked && !isManager && !isAuthorizedStaff) {
+      return NextResponse.json(
+        {
+          error:
+            "Toplantı slaytları sıralama/kapatma için kilitlendi. Sadece yönetici ve yetkili personel silebilir.",
+        },
+        { status: 403 }
+      );
+    }
+
+    if (!isManager && !isAuthorizedStaff && String(record.createdBy) !== String(userId)) {
       return NextResponse.json(
         { error: "Sadece kendi oluşturduğunuz sunuları silebilirsiniz." },
         { status: 403 }

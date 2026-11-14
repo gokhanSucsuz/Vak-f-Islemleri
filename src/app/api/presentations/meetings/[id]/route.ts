@@ -26,7 +26,8 @@ export async function GET(
 
     const meeting = await PresentationMeeting.findById(id)
       .populate("openedBy", "name")
-      .populate("closedBy", "name");
+      .populate("closedBy", "name")
+      .populate("authorizedUserId", "name email");
 
     if (!meeting) {
       return NextResponse.json({ error: "Toplantı bulunamadı." }, { status: 404 });
@@ -92,6 +93,8 @@ export async function GET(
         title: meeting.title,
         meetingDate: meeting.meetingDate,
         status: meeting.status,
+        isLocked: Boolean(meeting.isLocked),
+        authorizedUserId: meeting.authorizedUserId || null,
         openedBy: meeting.openedBy,
         closedBy: meeting.closedBy,
         closedAt: meeting.closedAt,
@@ -120,16 +123,13 @@ export async function PATCH(
     const role = (session?.user as any)?.role;
     const userId = (session?.user as any)?.id;
 
-    if (!session?.user || (role !== "superadmin" && role !== "manager")) {
-      return NextResponse.json(
-        { error: "Bu işlem sadece yöneticilere aittir." },
-        { status: 403 }
-      );
+    if (!session?.user || !userId) {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 
     const { id } = await context.params;
     const body = await req.json();
-    const { action, presentationOrder } = body;
+    const { action, presentationOrder, authorizedUserId } = body;
 
     await dbConnect();
     const meeting = await PresentationMeeting.findById(id);
@@ -137,36 +137,112 @@ export async function PATCH(
       return NextResponse.json({ error: "Toplantı bulunamadı." }, { status: 404 });
     }
 
+    const isManager = role === "superadmin" || role === "manager";
+    const isAuthorizedStaff =
+      Boolean(meeting.authorizedUserId) &&
+      String(meeting.authorizedUserId) === String(userId);
+
+    // İndirme zamanlayıcısı (kapatılmış toplantı da indirilebilir)
+    if (action === "markDownloaded") {
+      if (!meeting.downloadedAt) {
+        const now = new Date();
+        meeting.downloadedAt = now;
+        meeting.photosExpireAt = new Date(now.getTime() + 12 * 60 * 60 * 1000);
+        meeting.photosPurged = false;
+        await meeting.save();
+        await Log.create({
+          userId,
+          action: "TOPLANTI_SLAYDI_INDIRILDI",
+          details: `Birleştirilmiş toplantı sunusu indirildi (12 saat foto silme zamanlayıcısı başladı): ${meeting.title}`,
+        });
+      }
+      return NextResponse.json({
+        success: true,
+        meeting: {
+          _id: meeting._id,
+          status: meeting.status,
+          isLocked: Boolean(meeting.isLocked),
+          downloadedAt: meeting.downloadedAt,
+          photosExpireAt: meeting.photosExpireAt,
+          photosPurged: meeting.photosPurged,
+        },
+      });
+    }
+
+    // Kapatılmış toplantı sistem üzerinde tamamen salt okunurdur
+    if (meeting.status === "closed") {
+      return NextResponse.json(
+        {
+          error:
+            "Bu toplantı kapatıldığı için sistem üzerinde salt okunurdur. Sadece birleştirilmiş sunu indirilip bilgisayarınızda düzenlenebilir.",
+        },
+        { status: 400 }
+      );
+    }
+
+    // Yetkili personel atama sadece yöneticiye aittir
+    if (action === "setAuthorizedUser") {
+      if (!isManager) {
+        return NextResponse.json(
+          { error: "Yetkili personel belirleme işlemi sadece yöneticilere aittir." },
+          { status: 403 }
+        );
+      }
+      meeting.authorizedUserId = authorizedUserId || undefined;
+      await meeting.save();
+      await Log.create({
+        userId,
+        action: "TOPLANTI_YETKILI_ATANDI",
+        details: `Toplantı (${meeting.title}) için yetkili personel güncellendi.`,
+      });
+      const populated = await PresentationMeeting.findById(id).populate(
+        "authorizedUserId",
+        "name email"
+      );
+      return NextResponse.json({
+        success: true,
+        meeting: {
+          _id: meeting._id,
+          authorizedUserId: populated?.authorizedUserId || null,
+        },
+      });
+    }
+
+    // Sıralama, kilitleme ve kapatma: Yönetici veya yetki verilen personel yapabilir
+    if (!isManager && !isAuthorizedStaff) {
+      return NextResponse.json(
+        { error: "Bu işlem için yönetici veya toplantı yetkili personeli olmalısınız." },
+        { status: 403 }
+      );
+    }
+
     if (Array.isArray(presentationOrder)) {
       meeting.presentationOrder = presentationOrder.map((pid: any) => String(pid));
     }
 
-    if (action === "close") {
+    if (action === "lock") {
+      meeting.isLocked = true;
+      await Log.create({
+        userId,
+        action: "TOPLANTI_KILITLENDI",
+        details: `Toplantı slaytları sıralama/kapatma için kilitlendi: ${meeting.title}`,
+      });
+    } else if (action === "unlock") {
+      meeting.isLocked = false;
+      await Log.create({
+        userId,
+        action: "TOPLANTI_KILIDI_ACILDI",
+        details: `Toplantı slayt kilidi açıldı: ${meeting.title}`,
+      });
+    } else if (action === "close") {
       meeting.status = "closed";
+      meeting.isLocked = true;
       meeting.closedBy = userId;
       meeting.closedAt = new Date();
       await Log.create({
         userId,
         action: "TOPLANTI_KAPATILDI",
-        details: `Toplantı kapatıldı: ${meeting.title}`,
-      });
-    } else if (action === "reopen") {
-      meeting.status = "open";
-      meeting.closedAt = undefined;
-      await Log.create({
-        userId,
-        action: "TOPLANTI_YENIDEN_ACILDI",
-        details: `Toplantı tekrar açıldı: ${meeting.title}`,
-      });
-    } else if (action === "markDownloaded") {
-      const now = new Date();
-      meeting.downloadedAt = now;
-      meeting.photosExpireAt = new Date(now.getTime() + 12 * 60 * 60 * 1000);
-      meeting.photosPurged = false;
-      await Log.create({
-        userId,
-        action: "TOPLANTI_SLAYDI_INDIRILDI",
-        details: `Toplu toplantı sunusu indirildi (12 saat foto silme zamanlayıcısı başladı): ${meeting.title}`,
+        details: `Toplantı kapatıldı ve salt okunur hale getirildi: ${meeting.title}`,
       });
     }
 
@@ -177,6 +253,7 @@ export async function PATCH(
       meeting: {
         _id: meeting._id,
         status: meeting.status,
+        isLocked: Boolean(meeting.isLocked),
         closedAt: meeting.closedAt,
         downloadedAt: meeting.downloadedAt,
         photosExpireAt: meeting.photosExpireAt,
