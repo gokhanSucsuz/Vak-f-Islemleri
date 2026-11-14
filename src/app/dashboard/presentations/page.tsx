@@ -575,7 +575,10 @@ export default function PresentationsPage() {
 
   // Önizleme Modalı (Tekil)
   const [previewRecord, setPreviewRecord] = useState<{
+    item: PresentationListItem;
     title: string;
+    authorName: string;
+    canModify: boolean;
     slides: SlideItem[];
   } | null>(null);
   const [previewSlideIdx, setPreviewSlideIdx] = useState(0);
@@ -785,7 +788,18 @@ export default function PresentationsPage() {
       const loadedSlides: SlideItem[] = data.presentation.slides || [];
 
       if (mode === "preview") {
-        setPreviewRecord({ title: item.summaryTitle, slides: loadedSlides });
+        const canModifyItem =
+          selectedMeeting?.status === "open" &&
+          (canManageSelectedMeeting ||
+            (!selectedMeeting.isLocked &&
+              String(item.createdBy?._id) === String(userId)));
+        setPreviewRecord({
+          item,
+          title: item.summaryTitle,
+          authorName: item.createdBy?.name || "Personel",
+          canModify: Boolean(canModifyItem),
+          slides: loadedSlides,
+        });
         setPreviewSlideIdx(0);
       } else if (mode === "edit") {
         setEditingId(item._id);
@@ -1929,7 +1943,9 @@ export default function PresentationsPage() {
                   return (
                     <div
                       key={item._id}
-                      className="p-4 rounded-2xl border border-slate-200 hover:border-blue-300 bg-white shadow-sm flex flex-col justify-between gap-3 transition-all"
+                      onClick={() => handleOpenRecord(item, "preview")}
+                      title="Önizlemek için tıklayın"
+                      className="p-4 rounded-2xl border border-slate-200 hover:border-blue-400 hover:shadow-md bg-white shadow-sm flex flex-col justify-between gap-3 transition-all cursor-pointer group"
                     >
                       <div className="flex items-start gap-3">
                         {item.firstPhoto ? (
@@ -1944,7 +1960,7 @@ export default function PresentationsPage() {
                           </div>
                         )}
                         <div className="min-w-0 flex-1">
-                          <div className="font-bold text-slate-900 text-sm line-clamp-2">
+                          <div className="font-bold text-slate-900 group-hover:text-blue-700 text-sm line-clamp-2 transition-colors">
                             {item.summaryTitle}
                           </div>
                           <div className="text-xs font-medium text-blue-700 mt-1">
@@ -1966,7 +1982,10 @@ export default function PresentationsPage() {
                           </span>
                         </div>
 
-                        <div className="flex items-center gap-1">
+                        <div
+                          className="flex items-center gap-1"
+                          onClick={(e) => e.stopPropagation()}
+                        >
                           <button
                             onClick={() => handleOpenRecord(item, "preview")}
                             title="Önizle"
@@ -2162,23 +2181,75 @@ export default function PresentationsPage() {
       {/* Slayt Önizleme Modalı */}
       {previewRecord && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full p-6 space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h3 className="text-base font-bold text-slate-900">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full p-6 space-y-4 max-h-[92vh] overflow-y-auto">
+            <div className="flex items-start justify-between gap-3">
+              <div className="min-w-0">
+                <h3 className="text-base font-bold text-slate-900 truncate">
                   {previewRecord.title}
                 </h3>
-                <p className="text-xs text-slate-500">
-                  Sayfa {previewSlideIdx + 1} / {previewRecord.slides.length}
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Hazırlayan:{" "}
+                  <span className="font-semibold text-blue-700">
+                    {previewRecord.authorName}
+                  </span>{" "}
+                  • Sayfa {previewSlideIdx + 1} / {previewRecord.slides.length}
                 </p>
               </div>
-              <button
-                onClick={() => setPreviewRecord(null)}
-                className="p-1.5 rounded-xl hover:bg-slate-100"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                {previewRecord.canModify ? (
+                  <>
+                    <button
+                      onClick={() => {
+                        const target = previewRecord.item;
+                        setPreviewRecord(null);
+                        handleOpenRecord(target, "edit");
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-100 text-blue-700 text-xs font-semibold flex items-center gap-1"
+                    >
+                      <Edit3 className="w-3.5 h-3.5" /> Düzenle
+                    </button>
+                    <button
+                      onClick={() => {
+                        const target = previewRecord.item;
+                        setPreviewRecord(null);
+                        setDeleteTarget(target);
+                      }}
+                      className="px-3 py-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-700 text-xs font-semibold flex items-center gap-1"
+                    >
+                      <Trash2 className="w-3.5 h-3.5" /> Sil
+                    </button>
+                  </>
+                ) : (
+                  <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 text-[11px] font-semibold">
+                    Salt Önizleme
+                  </span>
+                )}
+                <button
+                  onClick={() => setPreviewRecord(null)}
+                  className="p-1.5 rounded-xl hover:bg-slate-100"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </div>
+
+            {previewRecord.slides.length > 1 && (
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1">
+                {previewRecord.slides.map((s, idx) => (
+                  <button
+                    key={idx}
+                    onClick={() => setPreviewSlideIdx(idx)}
+                    className={`px-3 py-1.5 rounded-xl text-xs font-semibold shrink-0 transition-colors ${
+                      idx === previewSlideIdx
+                        ? "bg-blue-600 text-white shadow-xs"
+                        : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                    }`}
+                  >
+                    {idx + 1}. Sayfa{s.fullName ? ` • ${s.fullName}` : ""}
+                  </button>
+                ))}
+              </div>
+            )}
 
             <SlidePreviewCard
               slide={previewRecord.slides[previewSlideIdx] || emptySlide()}
