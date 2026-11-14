@@ -154,6 +154,35 @@ function highlightText(text: string, query: string): React.ReactNode {
   }
 }
 
+/**
+ * ISO tarih stringlerini veya Date nesnelerini GG.AA.YYYY formatına çevirir
+ */
+function formatTurkishDate(val: any): string | null {
+  if (!val) return null;
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return null;
+    return val.toLocaleDateString("tr-TR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+  }
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (/^\d{4}-\d{2}-\d{2}(T|\s|$)/.test(trimmed)) {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) {
+        return d.toLocaleDateString("tr-TR", {
+          day: "2-digit",
+          month: "2-digit",
+          year: "numeric",
+        });
+      }
+    }
+  }
+  return null;
+}
+
 export default function ApplicationsPage() {
   const { data: session } = useSession();
   const fileInputRef = useRef<HTMLInputElement>(null);
@@ -1308,22 +1337,13 @@ export default function ApplicationsPage() {
       return <span className="text-slate-300 font-mono">-</span>;
     }
 
-    if (val instanceof Date) {
+    const formattedDate = formatTurkishDate(val);
+    if (formattedDate) {
       return (
-        <span className="text-slate-600 font-mono text-xs">
-          {val.toLocaleDateString("tr-TR")}
+        <span className="text-slate-700 font-mono text-xs font-semibold">
+          {formattedDate}
         </span>
       );
-    }
-    if (typeof val === "string" && /^\d{4}-\d{2}-\d{2}T/.test(val)) {
-      const d = new Date(val);
-      if (!isNaN(d.getTime())) {
-        return (
-          <span className="text-slate-600 font-mono text-xs">
-            {d.toLocaleDateString("tr-TR")}
-          </span>
-        );
-      }
     }
 
     if (val === "Boş Dosya") {
@@ -1922,6 +1942,12 @@ export default function ApplicationsPage() {
                         <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-blue-50 text-blue-700 text-[11px] font-semibold">
                           <Layers className="w-3 h-3 text-blue-400" />
                           {rec.sheetName}
+                        </span>
+                      )}
+                      {formatTurkishDate(rec.applicationDate) && (
+                        <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-mono font-semibold">
+                          <Calendar className="w-3 h-3 text-slate-400" />
+                          {formatTurkishDate(rec.applicationDate)}
                         </span>
                       )}
                     </div>
