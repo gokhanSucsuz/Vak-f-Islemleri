@@ -6,6 +6,7 @@ import ApplicationFile from "@/models/ApplicationFile";
 import User from "@/models/User";
 import Log from "@/models/Log";
 import { toTurkishRegexPattern, normalizeTurkish } from "@/lib/turkish";
+import { isEncryptionEnabled } from "@/lib/encryption";
 
 function computeSearchRelevance(
   record: any,
@@ -133,8 +134,9 @@ export async function GET(req: Request) {
       }
     }
 
-    // Arama Filtresi (Tüm ana alanlarda çoklu kelime ve Türkçe uyumlu arar)
-    if (search) {
+    // Arama Filtresi (Şifreleme aktifse şifresiz alanlarda sorgulayıp JS'de Türkçe uyumlu filtreler)
+    const encryptedMode = isEncryptionEnabled();
+    if (search && !encryptedMode) {
       const tokens = search.split(/\s+/).filter(Boolean);
       const tokenConditions = tokens.map((token) => {
         const pattern = toTurkishRegexPattern(token);
@@ -184,7 +186,7 @@ export async function GET(req: Request) {
     let totalMatched = 0;
 
     if (search) {
-      const allMatched = await ApplicationFile.find(query)
+      const rawMatched = await ApplicationFile.find(query)
         .populate("createdBy", "name email")
         .populate("updatedBy", "name email")
         .sort(sortOptions)
@@ -192,6 +194,28 @@ export async function GET(req: Request) {
 
       const normSearch = normalizeTurkish(search.replace(/\s+/g, " "));
       const normTokens = normSearch.split(/\s+/).filter(Boolean);
+
+      const allMatched = encryptedMode
+        ? rawMatched.filter((doc: any) => {
+            const haystack = normalizeTurkish(
+              [
+                doc.applicationNo,
+                doc.applicantName,
+                doc.spouseName,
+                doc.tcNo,
+                doc.spouseTcNo,
+                doc.helpType,
+                doc.neighborhood,
+                doc.phone,
+                doc.address,
+                doc.notes,
+              ]
+                .filter(Boolean)
+                .join(" ")
+            );
+            return normTokens.every((t) => haystack.includes(t));
+          })
+        : rawMatched;
 
       const scored = allMatched.map((doc: any) => ({
         doc,

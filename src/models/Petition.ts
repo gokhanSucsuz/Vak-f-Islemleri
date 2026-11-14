@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from "mongoose";
+import { applyFieldEncryption } from "@/lib/encryption";
 
 export interface IPetition extends Document {
   petitionType: "detayli" | "matbu";
@@ -61,6 +62,11 @@ const PetitionSchema = new Schema<IPetition>(
 );
 
 PetitionSchema.index({ createdAt: -1 });
+
+applyFieldEncryption(PetitionSchema, {
+  stringFields: ["citizenName", "tcNo", "subject"],
+  bufferFields: ["contentCompressed"],
+});
 
 export default mongoose.models.Petition ||
   mongoose.model<IPetition>("Petition", PetitionSchema);

@@ -1,4 +1,5 @@
 import mongoose, { Schema, Document } from "mongoose";
+import { applyFieldEncryption } from "@/lib/encryption";
 
 export interface IPetitionTemplate extends Document {
   type: "detayli" | "matbu";
@@ -27,6 +28,11 @@ const PetitionTemplateSchema = new Schema<IPetitionTemplate>(
   },
   { timestamps: true }
 );
+
+applyFieldEncryption(PetitionTemplateSchema, {
+  stringFields: ["htmlContent"],
+  bufferFields: ["docxCompressed"],
+});
 
 export default mongoose.models.PetitionTemplate ||
   mongoose.model<IPetitionTemplate>("PetitionTemplate", PetitionTemplateSchema);

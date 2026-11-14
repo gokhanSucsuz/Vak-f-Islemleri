@@ -5,6 +5,7 @@ import dbConnect from "@/lib/db";
 import Petition from "@/models/Petition";
 import Log from "@/models/Log";
 import { normalizeTurkish, toTurkishRegexPattern } from "@/lib/turkish";
+import { isEncryptionEnabled } from "@/lib/encryption";
 import { gzipSync } from "zlib";
 
 function computePetitionRelevance(
@@ -47,7 +48,8 @@ export async function GET(req: Request) {
       query.petitionType = type;
     }
 
-    if (search) {
+    const encryptedMode = isEncryptionEnabled();
+    if (search && !encryptedMode) {
       const tokens = search.split(/\s+/).filter(Boolean);
       query.$and = tokens.map((token) => {
         const regex = new RegExp(toTurkishRegexPattern(token), "i");
@@ -66,7 +68,7 @@ export async function GET(req: Request) {
     let totalMatched = 0;
 
     if (search) {
-      const allMatched = await Petition.find(query)
+      const rawMatched = await Petition.find(query)
         .select("-contentCompressed")
         .populate("createdBy", "name email")
         .populate("updatedBy", "name email")
@@ -75,6 +77,15 @@ export async function GET(req: Request) {
 
       const normSearch = normalizeTurkish(search.replace(/\s+/g, " "));
       const normTokens = normSearch.split(/\s+/).filter(Boolean);
+
+      const allMatched = encryptedMode
+        ? rawMatched.filter((doc: any) => {
+            const haystack = normalizeTurkish(
+              [doc.citizenName, doc.tcNo, doc.subject].filter(Boolean).join(" ")
+            );
+            return normTokens.every((t) => haystack.includes(t));
+          })
+        : rawMatched;
 
       const scored = allMatched.map((doc: any) => ({
         doc,

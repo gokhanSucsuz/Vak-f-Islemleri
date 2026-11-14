@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { applyFieldEncryption } from '@/lib/encryption';
 
 const UserSchema = new mongoose.Schema(
   {
@@ -27,5 +28,9 @@ const UserSchema = new mongoose.Schema(
   },
   { timestamps: true }
 );
+
+applyFieldEncryption(UserSchema, {
+  stringFields: ['name'],
+});
 
 export default mongoose.models.User || mongoose.model('User', UserSchema);

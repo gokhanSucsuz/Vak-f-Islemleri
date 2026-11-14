@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { applyFieldEncryption } from '@/lib/encryption';
 
 const ApplicationFileSchema = new mongoose.Schema(
   {
@@ -118,6 +119,21 @@ ApplicationFileSchema.pre('save', function () {
   } else if (this.fileStatus === 'Boş Dosya' && this.applicantName.trim() !== '') {
     this.fileStatus = 'Aktif';
   }
+});
+
+applyFieldEncryption(ApplicationFileSchema, {
+  stringFields: [
+    'applicantName',
+    'spouseName',
+    'tcNo',
+    'spouseTcNo',
+    'helpType',
+    'neighborhood',
+    'address',
+    'phone',
+    'notes',
+  ],
+  jsonFields: ['extraData'],
 });
 
 export default mongoose.models.ApplicationFile ||

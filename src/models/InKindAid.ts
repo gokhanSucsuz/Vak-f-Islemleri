@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { applyFieldEncryption } from '@/lib/encryption';
 
 const InKindAidSchema = new mongoose.Schema(
   {
@@ -64,6 +65,10 @@ InKindAidSchema.pre('save', function (this: any) {
   if (!this.deliveryDate) {
     this.deliveryDate = new Date();
   }
+});
+
+applyFieldEncryption(InKindAidSchema, {
+  stringFields: ['tcNo', 'citizenName', 'receiver', 'phone', 'address', 'notes'],
 });
 
 export default mongoose.models.InKindAid || mongoose.model('InKindAid', InKindAidSchema);

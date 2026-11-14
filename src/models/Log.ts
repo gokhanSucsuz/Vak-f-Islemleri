@@ -1,4 +1,5 @@
 import mongoose from "mongoose";
+import { applyFieldEncryption } from "@/lib/encryption";
 
 const LogSchema = new mongoose.Schema({
   userId: {
@@ -17,6 +18,10 @@ const LogSchema = new mongoose.Schema({
     type: Date,
     default: Date.now,
   }
+});
+
+applyFieldEncryption(LogSchema, {
+  stringFields: ["details"],
 });
 
 export default mongoose.models.Log || mongoose.model("Log", LogSchema);

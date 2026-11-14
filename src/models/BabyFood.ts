@@ -1,4 +1,5 @@
 import mongoose from 'mongoose';
+import { applyFieldEncryption } from '@/lib/encryption';
 
 const BabyFoodSchema = new mongoose.Schema(
   {
@@ -52,6 +53,10 @@ BabyFoodSchema.pre('save', function (this: any) {
   if (!this.deliveryDate) {
     this.deliveryDate = new Date();
   }
+});
+
+applyFieldEncryption(BabyFoodSchema, {
+  stringFields: ['tcNo', 'motherInfo', 'babyName', 'receiver', 'notes'],
 });
 
 export default mongoose.models.BabyFood || mongoose.model('BabyFood', BabyFoodSchema);
