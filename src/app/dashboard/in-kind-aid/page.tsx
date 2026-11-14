@@ -22,9 +22,11 @@ import {
   CheckCircle2,
   Phone,
   MapPin,
+  FileText,
 } from "lucide-react";
 import { turkishIncludes, extractTC, exportToExcel } from "@/lib/turkish";
 import { toLocalDateInputValue, toLocalDayStartISO, toLocalDayEndISO } from "@/lib/date";
+import { registerTurkishFont } from "@/lib/pdfFont";
 
 type InKindAidType = {
   _id: string;
@@ -91,6 +93,18 @@ export default function InKindAidPage() {
 
   const [dateStart, setDateStart] = useState("");
   const [dateEnd, setDateEnd] = useState("");
+
+  // Resmi Kurum PDF Raporu Modalı
+  const [isOfficialPdfModalOpen, setIsOfficialPdfModalOpen] = useState(false);
+  const [pdfDateStart, setPdfDateStart] = useState("");
+  const [pdfDateEnd, setPdfDateEnd] = useState("");
+  const [institutionName, setInstitutionName] = useState(
+    "SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI"
+  );
+  const [documentTitle, setDocumentTitle] = useState(
+    "AYNİ YARDIM TESLİM VE DAĞITIM TUTANAĞI"
+  );
+  const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
   const userRole = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
@@ -420,6 +434,212 @@ export default function InKindAidPage() {
     toast.success("Ayni yardım raporu Türkçe karakter uyumlu Excel olarak indirildi.");
   };
 
+  // =========================================================
+  // RESMİ KURUM STANDARTLARINDA TÜRKÇE UYUMLU PDF TUTANAK
+  // =========================================================
+  const openOfficialPdfModal = () => {
+    setPdfDateStart(dateStart || "");
+    setPdfDateEnd(dateEnd || "");
+    setIsOfficialPdfModalOpen(true);
+  };
+
+  const officialPdfRecords = records.filter((r) => {
+    const recDate = new Date(r.deliveryDate || r.createdAt);
+    if (pdfDateStart) {
+      const start = new Date(`${pdfDateStart}T00:00:00`);
+      if (recDate < start) return false;
+    }
+    if (pdfDateEnd) {
+      const end = new Date(`${pdfDateEnd}T23:59:59.999`);
+      if (recDate > end) return false;
+    }
+    return true;
+  });
+
+  const pdfTotalAidCount = officialPdfRecords.reduce(
+    (sum, r) => sum + r.items.reduce((s, it) => s + (it.quantity || 0), 0),
+    0
+  );
+
+  const pdfTotalFamilies = new Set(
+    officialPdfRecords.map((r) => r.tcNo || extractTC(r.citizenName) || r.citizenName)
+  ).size;
+
+  const handleDownloadDirectPDF = async () => {
+    if (officialPdfRecords.length === 0) {
+      toast.error("Belirtilen tarih aralığında kayıt bulunamadı.");
+      return;
+    }
+
+    setIsGeneratingPdf(true);
+    try {
+      const { default: jsPDF } = await import("jspdf");
+      const { default: autoTable } = await import("jspdf-autotable");
+
+      const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const fontName = await registerTurkishFont(doc);
+
+      // Resmi Başlık
+      doc.setFont(fontName, "bold");
+      doc.setFontSize(13);
+      doc.text("T.C.", 148.5, 13, { align: "center" });
+      doc.setFontSize(11);
+      doc.text(institutionName || "SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI", 148.5, 19, {
+        align: "center",
+      });
+      doc.setFontSize(10);
+      doc.text(documentTitle || "AYNİ YARDIM TESLİM VE DAĞITIM TUTANAĞI", 148.5, 25, {
+        align: "center",
+      });
+
+      // Tarih Aralığı & Düzenleme Bilgisi
+      doc.setFont(fontName, "normal");
+      doc.setFontSize(8.5);
+      const dateRangeStr =
+        pdfDateStart && pdfDateEnd
+          ? `${new Date(pdfDateStart).toLocaleDateString("tr-TR")} - ${new Date(
+              pdfDateEnd
+            ).toLocaleDateString("tr-TR")} Tarihleri Arası`
+          : "Tüm Tarihler";
+      doc.text(`Tarih Aralığı: ${dateRangeStr}`, 14, 31);
+      doc.text(
+        `Düzenleme Tarihi: ${new Date().toLocaleDateString("tr-TR")} ${new Date().toLocaleTimeString(
+          "tr-TR",
+          { hour: "2-digit", minute: "2-digit" }
+        )}`,
+        283,
+        31,
+        { align: "right" }
+      );
+
+      // Yardım Türü Dağılımı İstatistiği Hesapla
+      const typeTotals = new Map<string, { qty: number; unit: string }>();
+      for (const r of officialPdfRecords) {
+        for (const it of r.items) {
+          const label = (it.aidType || "Diğer").trim();
+          const prev = typeTotals.get(label) || { qty: 0, unit: it.unit || "Adet" };
+          typeTotals.set(label, { qty: prev.qty + (it.quantity || 0), unit: prev.unit });
+        }
+      }
+      const topTypes = Array.from(typeTotals.entries())
+        .sort((a, b) => b[1].qty - a[1].qty)
+        .slice(0, 4)
+        .map(([name, info]) => `${name}: ${info.qty} ${info.unit}`)
+        .join("  •  ");
+
+      // İlk Sayfada İstatistik Özeti Kutusu
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(14, 34, 269, topTypes ? 19 : 13, 2, 2, "FD");
+
+      doc.setFont(fontName, "bold");
+      doc.setFontSize(8.5);
+      doc.setTextColor(30, 41, 59);
+      doc.text(
+        `İSTATİSTİK ÖZETİ:   Toplam Teslimat: ${officialPdfRecords.length} İşlem    |    Toplam Yardım Miktarı: ${pdfTotalAidCount} Adet/Birim    |    Faydalanan Aile: ${pdfTotalFamilies} Farklı Hane`,
+        18,
+        40
+      );
+
+      if (topTypes) {
+        doc.setFont(fontName, "normal");
+        doc.setFontSize(8);
+        doc.setTextColor(71, 85, 105);
+        doc.text(`Yardım Dağılımı: ${topTypes}`, 18, 48);
+      }
+      doc.setTextColor(0, 0, 0);
+
+      // Tablo Satırları (İmza yok -> Teslim Eden ve Teslim Tarihi var)
+      const tableData = officialPdfRecords.map((r, i) => {
+        const tc = r.tcNo || extractTC(r.citizenName) || "-";
+        const itemsStr = r.items
+          .map(
+            (it) =>
+              `${it.quantity} ${it.unit} ${it.aidType}${
+                it.specification ? ` (${it.specification})` : ""
+              }`
+          )
+          .join(", ");
+        const totalQty = r.items.reduce((sum, it) => sum + (it.quantity || 0), 0);
+        const deliveryDateStr = new Date(r.deliveryDate || r.createdAt).toLocaleDateString("tr-TR");
+
+        return [
+          i + 1,
+          tc,
+          r.citizenName,
+          r.receiver || "Kendisi",
+          itemsStr,
+          totalQty,
+          r.createdBy?.name || "-",
+          deliveryDateStr,
+        ];
+      });
+
+      autoTable(doc, {
+        startY: topTypes ? 56 : 50,
+        head: [
+          [
+            "Sıra",
+            "T.C. Kimlik No",
+            "Hak Sahibi",
+            "Teslim Alan",
+            "Teslim Edilen Yardımlar",
+            "Miktar",
+            "Teslim Eden",
+            "Teslim Tarihi",
+          ],
+        ],
+        body: tableData,
+        theme: "grid",
+        styles: {
+          fontSize: 8,
+          cellPadding: 2.2,
+          font: fontName,
+          textColor: [15, 23, 42],
+        },
+        headStyles: {
+          fillColor: [30, 41, 59],
+          textColor: [255, 255, 255],
+          font: fontName,
+          fontStyle: "bold",
+          halign: "center",
+        },
+        columnStyles: {
+          0: { cellWidth: 10, halign: "center" },
+          1: { cellWidth: 26, halign: "center" },
+          2: { cellWidth: 44 },
+          3: { cellWidth: 34 },
+          4: { cellWidth: 92 },
+          5: { cellWidth: 15, halign: "center" },
+          6: { cellWidth: 26 },
+          7: { cellWidth: 22, halign: "center" },
+        },
+        didDrawPage: (data) => {
+          const pageCount = doc.getNumberOfPages();
+          doc.setFont(fontName, "normal");
+          doc.setFontSize(8);
+          doc.setTextColor(100, 116, 139);
+          doc.text(`Sayfa ${data.pageNumber} / ${pageCount}`, 283, 203, { align: "right" });
+          doc.setTextColor(0, 0, 0);
+        },
+      });
+
+      const dateStr = new Date().toISOString().split("T")[0];
+      doc.save(`Ayni_Yardim_Teslim_Tutanagi_${dateStr}.pdf`);
+      toast.success("Türkçe karakter uyumlu PDF tutanağı başarıyla indirildi.");
+    } catch (err: any) {
+      console.error(err);
+      toast.error("PDF oluşturulurken hata oluştu: " + err.message);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   return (
     <div className="space-y-6 print:space-y-0 print:bg-white">
       {/* Üst Başlık ve Aksiyon Alanı */}
@@ -443,23 +663,23 @@ export default function InKindAidPage() {
             Excel İndir
           </button>
 
+          <button
+            onClick={openOfficialPdfModal}
+            className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl font-medium transition-all shadow-sm"
+            title="Türkçe Karakter Uyumlu Resmi PDF Tutanağı İndir"
+          >
+            <FileText className="w-5 h-5" />
+            Resmi Kurum PDF
+          </button>
+
           {(userRole === "manager" || userRole === "superadmin") && (
-            <>
-              <button
-                onClick={() => window.print()}
-                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-800 hover:bg-slate-900 text-white px-4 py-2.5 rounded-xl font-medium transition-all"
-              >
-                <Download className="w-5 h-5" />
-                Rapor Çıktısı
-              </button>
-              <button
-                onClick={() => setIsSettingsModalOpen(true)}
-                className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-medium transition-all"
-              >
-                <Settings className="w-5 h-5" />
-                Yardım Türleri
-              </button>
-            </>
+            <button
+              onClick={() => setIsSettingsModalOpen(true)}
+              className="flex-1 md:flex-none flex items-center justify-center gap-2 bg-slate-100 hover:bg-slate-200 text-slate-700 px-4 py-2.5 rounded-xl font-medium transition-all"
+            >
+              <Settings className="w-5 h-5" />
+              Yardım Türleri
+            </button>
           )}
 
           <button
@@ -1161,6 +1381,263 @@ export default function InKindAidPage() {
                   )}
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* RESMİ KURUM STANDARTLARINDA PDF TUTANAK MODALI             */}
+      {/* ========================================================= */}
+      {isOfficialPdfModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
+          <div
+            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
+            onClick={() => setIsOfficialPdfModalOpen(false)}
+          />
+
+          <div className="relative w-full max-w-4xl bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 z-10 max-h-[90vh] flex flex-col">
+            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="p-2.5 bg-amber-100 text-amber-700 rounded-2xl">
+                  <FileText className="w-6 h-6" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-800">
+                    Resmi Kurum Standartlarında Ayni Yardım PDF Tutanağı
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    Tarih aralığını belirleyin, antet bilgilerini kontrol edin ve Türkçe karakter uyumlu PDF tutanağını indirin.
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setIsOfficialPdfModalOpen(false)}
+                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto py-4 space-y-5 pr-1">
+              {/* Tarih Aralığı */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                <p className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Calendar className="w-4 h-4 text-amber-600" />
+                  1. Rapor Tarih Aralığını Belirleyin:
+                </p>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3 items-end">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      Başlangıç Tarihi
+                    </label>
+                    <input
+                      type="date"
+                      value={pdfDateStart}
+                      onChange={(e) => setPdfDateStart(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      Bitiş Tarihi
+                    </label>
+                    <input
+                      type="date"
+                      value={pdfDateEnd}
+                      onChange={(e) => setPdfDateEnd(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div className="flex items-center gap-1.5 sm:col-span-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const now = new Date();
+                        const firstDay = toLocalDateInputValue(
+                          new Date(now.getFullYear(), now.getMonth(), 1)
+                        );
+                        const today = toLocalDateInputValue(now);
+                        setPdfDateStart(firstDay);
+                        setPdfDateEnd(today);
+                      }}
+                      className="px-2.5 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-[11px] font-bold text-slate-700 transition-colors"
+                    >
+                      Bu Ay
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        const now = new Date();
+                        const thirtyDaysAgo = toLocalDateInputValue(
+                          new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000)
+                        );
+                        const today = toLocalDateInputValue(now);
+                        setPdfDateStart(thirtyDaysAgo);
+                        setPdfDateEnd(today);
+                      }}
+                      className="px-2.5 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-[11px] font-bold text-slate-700 transition-colors"
+                    >
+                      Son 30 Gün
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setPdfDateStart("");
+                        setPdfDateEnd("");
+                      }}
+                      className="px-2.5 py-2 bg-white hover:bg-slate-100 border border-slate-200 rounded-xl text-[11px] font-bold text-slate-700 transition-colors"
+                    >
+                      Tüm Tarihler
+                    </button>
+                  </div>
+                </div>
+
+                {/* İstatistik Bilgi Kutusu */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-200/60 text-xs">
+                  <span className="text-slate-600">
+                    Seçili aralıkta <strong>{officialPdfRecords.length}</strong> teslimat kaydı,{" "}
+                    <strong>{pdfTotalAidCount}</strong> adet/birim yardım bulundu.
+                  </span>
+                  <span className="px-2.5 py-1 rounded-full bg-amber-100 text-amber-800 font-bold text-[11px]">
+                    {pdfTotalFamilies} Farklı Aile
+                  </span>
+                </div>
+              </div>
+
+              {/* Resmi Antet Bilgileri */}
+              <div className="bg-slate-50 p-4 rounded-2xl border border-slate-200 space-y-3">
+                <p className="text-xs font-bold text-slate-700">
+                  2. Resmi Kurum Antet Bilgileri:
+                </p>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      Kurum Adı
+                    </label>
+                    <input
+                      type="text"
+                      value={institutionName}
+                      onChange={(e) => setInstitutionName(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-[11px] font-semibold text-slate-500 mb-1">
+                      Belge Başlığı
+                    </label>
+                    <input
+                      type="text"
+                      value={documentTitle}
+                      onChange={(e) => setDocumentTitle(e.target.value)}
+                      className="w-full px-3 py-2 border border-slate-200 rounded-xl text-xs bg-white focus:outline-none focus:ring-2 focus:ring-amber-500"
+                    />
+                  </div>
+                </div>
+              </div>
+
+              {/* Canlı Belge Önizlemesi */}
+              <div>
+                <p className="text-xs font-bold text-slate-700 mb-2">
+                  3. Resmi A4 Belge Önizlemesi:
+                </p>
+                <div className="border border-slate-200 rounded-2xl p-5 bg-white shadow-inner font-serif text-[11px] text-slate-900 space-y-3">
+                  <div className="text-center border-b pb-2">
+                    <p className="font-bold text-xs">T.C.</p>
+                    <p className="font-bold uppercase text-xs">{institutionName}</p>
+                    <p className="font-semibold underline mt-0.5">{documentTitle}</p>
+                    <div className="flex justify-between items-center text-[10px] font-sans text-slate-500 mt-2">
+                      <span>
+                        Tarih Aralığı:{" "}
+                        {pdfDateStart && pdfDateEnd
+                          ? `${new Date(pdfDateStart).toLocaleDateString("tr-TR")} - ${new Date(
+                              pdfDateEnd
+                            ).toLocaleDateString("tr-TR")}`
+                          : "Tüm Tarihler"}
+                      </span>
+                      <span>Düzenleme Tarihi: {new Date().toLocaleDateString("tr-TR")}</span>
+                    </div>
+                  </div>
+
+                  <div className="max-h-48 overflow-y-auto border rounded">
+                    <table className="w-full text-left border-collapse text-[10px]">
+                      <thead className="bg-slate-100 border-b">
+                        <tr>
+                          <th className="p-1 border text-center">Sıra</th>
+                          <th className="p-1 border">TC Kimlik No</th>
+                          <th className="p-1 border">Hak Sahibi</th>
+                          <th className="p-1 border">Teslim Alan</th>
+                          <th className="p-1 border">Yardımlar</th>
+                          <th className="p-1 border text-center">Miktar</th>
+                          <th className="p-1 border">Teslim Eden</th>
+                          <th className="p-1 border text-center">Teslim Tarihi</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {officialPdfRecords.slice(0, 5).map((r, i) => (
+                          <tr key={i} className="border-b">
+                            <td className="p-1 border text-center">{i + 1}</td>
+                            <td className="p-1 border font-mono">
+                              {r.tcNo || extractTC(r.citizenName) || "-"}
+                            </td>
+                            <td className="p-1 border">{r.citizenName}</td>
+                            <td className="p-1 border">{r.receiver || "Kendisi"}</td>
+                            <td className="p-1 border">
+                              {r.items
+                                .map((it) => `${it.quantity} ${it.unit} ${it.aidType}`)
+                                .join(", ")}
+                            </td>
+                            <td className="p-1 border text-center font-bold">
+                              {r.items.reduce((sum, it) => sum + (it.quantity || 0), 0)}
+                            </td>
+                            <td className="p-1 border">{r.createdBy?.name || "-"}</td>
+                            <td className="p-1 border text-center">
+                              {new Date(r.deliveryDate || r.createdAt).toLocaleDateString("tr-TR")}
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+
+                  {officialPdfRecords.length > 5 && (
+                    <p className="text-[10px] text-center text-slate-400 font-sans italic">
+                      ... ve toplam {officialPdfRecords.length} adet kayıt resmi raporda tam liste halinde yer alacaktır.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Butonları */}
+            <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2.5">
+              <button
+                type="button"
+                onClick={() => setIsOfficialPdfModalOpen(false)}
+                className="px-4 py-2.5 rounded-xl border border-slate-200 text-slate-700 text-sm font-semibold hover:bg-slate-50 transition-colors"
+              >
+                Kapat
+              </button>
+
+              <button
+                type="button"
+                disabled={isGeneratingPdf || officialPdfRecords.length === 0}
+                onClick={handleDownloadDirectPDF}
+                className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-all shadow-lg shadow-amber-600/30 flex items-center gap-2 disabled:opacity-50"
+              >
+                {isGeneratingPdf ? (
+                  <>
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    PDF Hazırlanıyor...
+                  </>
+                ) : (
+                  <>
+                    <Download className="w-4 h-4" />
+                    Doğrudan PDF İndir (.pdf)
+                  </>
+                )}
+              </button>
             </div>
           </div>
         </div>
