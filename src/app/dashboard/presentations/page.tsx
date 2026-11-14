@@ -39,6 +39,8 @@ import {
   PresentationTemplateClient,
   DEFAULT_TEMPLATE_LAYOUT,
   SLIDE_FONT_OPTIONS,
+  BACKGROUND_PRESETS,
+  getPresetBackgroundDataUrl,
   cleanTemplateWatermark,
   compressImageToJpeg,
   exportSlidesToPptx,
@@ -114,6 +116,7 @@ function emptySlide(defaultTemplateId?: string): SlideItem {
     photoHeightPct: 41.6,
     photoFitMode: "contain",
     templateId: defaultTemplateId || undefined,
+    backgroundPreset: "template",
   };
 }
 
@@ -433,15 +436,21 @@ function SlidePreviewCard({
       }
     : { xPct: 3, yPct: 4, wPct: 94, hPct: 92 };
 
+  const activeBgImage =
+    slide.backgroundPreset && slide.backgroundPreset !== "template"
+      ? getPresetBackgroundDataUrl(slide.backgroundPreset) ||
+        selectedTpl?.backgroundImageBase64
+      : selectedTpl?.backgroundImageBase64;
+
   return (
     <div
       ref={cardRef}
       className="relative w-full aspect-[4/3] rounded-xl overflow-hidden border border-slate-300 shadow-md select-none bg-gradient-to-br from-slate-200 via-slate-100 to-slate-300"
       style={{
         fontFamily,
-        ...(selectedTpl?.backgroundImageBase64
+        ...(activeBgImage
           ? {
-              backgroundImage: `url(${selectedTpl.backgroundImageBase64})`,
+              backgroundImage: `url(${activeBgImage})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
             }
@@ -1505,6 +1514,61 @@ export default function PresentationsPage() {
                     </option>
                   ))}
                 </select>
+              </div>
+            </div>
+
+            {/* Kurumsal Arka Plan Teması (Şablon Düzenini Bozmaz) */}
+            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-xs font-semibold text-slate-700">
+                  Kurumsal Arka Plan (Şablon Düzenini Bozmaz)
+                </span>
+                {slides.length > 1 && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const chosen = activeSlide.backgroundPreset || "template";
+                      setSlides((prev) =>
+                        prev.map((s) => ({ ...s, backgroundPreset: chosen }))
+                      );
+                      toast.success("Arka plan tüm sayfalara uygulandı.");
+                    }}
+                    className="text-[11px] font-semibold text-blue-600 hover:underline"
+                  >
+                    Tüm Sayfalara Uygula
+                  </button>
+                )}
+              </div>
+              <div className="grid grid-cols-4 gap-1.5">
+                {BACKGROUND_PRESETS.map((preset) => {
+                  const isActive = (activeSlide.backgroundPreset || "template") === preset.id;
+                  return (
+                    <button
+                      key={preset.id}
+                      type="button"
+                      onClick={() => updateCurrentSlide({ backgroundPreset: preset.id })}
+                      title={preset.label}
+                      className={`p-1.5 rounded-xl border text-left transition-all ${
+                        isActive
+                          ? "border-blue-600 ring-2 ring-blue-500/30 bg-white shadow-xs"
+                          : "border-slate-200 bg-white hover:border-slate-300"
+                      }`}
+                    >
+                      <div
+                        className="w-full aspect-[4/3] rounded-md border border-slate-200 relative overflow-hidden mb-1"
+                        style={{ background: preset.previewBg }}
+                      >
+                        <div
+                          className="absolute inset-x-0 top-0 h-1.5"
+                          style={{ backgroundColor: preset.accentColor }}
+                        />
+                      </div>
+                      <div className="text-[10px] font-semibold text-slate-700 truncate">
+                        {preset.label}
+                      </div>
+                    </button>
+                  );
+                })}
               </div>
             </div>
 

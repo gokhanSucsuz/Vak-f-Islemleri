@@ -112,6 +112,203 @@ export interface SlideItem {
   photoHeightPct?: number;
   photoFitMode?: "contain" | "cover" | "fill";
   templateId?: string;
+  backgroundPreset?: string;
+}
+
+export interface BackgroundPresetOption {
+  id: string;
+  label: string;
+  previewBg: string;
+  accentColor: string;
+}
+
+export const BACKGROUND_PRESETS: BackgroundPresetOption[] = [
+  {
+    id: "template",
+    label: "Şablon Varsayılanı",
+    previewBg: "linear-gradient(135deg, #e2e8f0 0%, #cbd5e1 100%)",
+    accentColor: "#475569",
+  },
+  {
+    id: "lacivert_kurum",
+    label: "Kurumsal Lacivert",
+    previewBg: "linear-gradient(180deg, #f8fafc 0%, #eef2f7 100%)",
+    accentColor: "#1e3a5f",
+  },
+  {
+    id: "bordo_valilik",
+    label: "Resmi Bordo Şerit",
+    previewBg: "linear-gradient(180deg, #fafaf9 0%, #f5f5f4 100%)",
+    accentColor: "#881337",
+  },
+  {
+    id: "krem_altin",
+    label: "Krem & Altın Çerçeve",
+    previewBg: "linear-gradient(135deg, #fefcf6 0%, #f5efe2 100%)",
+    accentColor: "#b4925a",
+  },
+  {
+    id: "mavi_geometrik",
+    label: "Modern Kurum Mavisi",
+    previewBg: "linear-gradient(135deg, #f8fbff 0%, #e6f0fa 100%)",
+    accentColor: "#1d4ed8",
+  },
+  {
+    id: "zumrut_resmi",
+    label: "Sade Zümrüt Çizgili",
+    previewBg: "linear-gradient(180deg, #f8faf9 0%, #edf4f0 100%)",
+    accentColor: "#065f46",
+  },
+  {
+    id: "resmi_gri",
+    label: "Resmi Açık Gri",
+    previewBg: "radial-gradient(circle at 50% 35%, #f8fafc 0%, #cbd5e1 100%)",
+    accentColor: "#64748b",
+  },
+  {
+    id: "saf_beyaz",
+    label: "Sade Beyaz (Minimal)",
+    previewBg: "linear-gradient(180deg, #ffffff 0%, #f8fafc 100%)",
+    accentColor: "#94a3b8",
+  },
+];
+
+const presetBgCache = new Map<string, string>();
+
+/**
+ * Resmi kurum slaytlarına uygun yüksek çözünürlüklü (4:3) arka plan görseli üretir.
+ * İnternet veya harici URL gerektirmez, tamamen ücretsiz ve önbelleklidir.
+ */
+export function getPresetBackgroundDataUrl(presetId?: string): string {
+  if (!presetId || presetId === "template" || typeof window === "undefined") {
+    return "";
+  }
+  const cached = presetBgCache.get(presetId);
+  if (cached) return cached;
+
+  const w = 1200;
+  const h = 900;
+  const canvas = document.createElement("canvas");
+  canvas.width = w;
+  canvas.height = h;
+  const ctx = canvas.getContext("2d");
+  if (!ctx) return "";
+
+  if (presetId === "lacivert_kurum") {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "#f8fafc");
+    g.addColorStop(1, "#e9eff6");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    // Üst & alt kurumsal lacivert şerit + ince altın çizgi
+    ctx.fillStyle = "#1e3a5f";
+    ctx.fillRect(0, 0, w, 18);
+    ctx.fillRect(0, h - 14, w, 14);
+    ctx.fillStyle = "#c59b52";
+    ctx.fillRect(0, 18, w, 3);
+    ctx.fillRect(0, h - 17, w, 3);
+
+    // Sağ alt köşede çok hafif kurumsal geometrik vurgu
+    ctx.fillStyle = "rgba(30, 58, 95, 0.045)";
+    ctx.beginPath();
+    ctx.moveTo(w, h);
+    ctx.lineTo(w - 260, h);
+    ctx.lineTo(w, h - 180);
+    ctx.closePath();
+    ctx.fill();
+  } else if (presetId === "bordo_valilik") {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(1, "#f4f4f5");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    // Sol dikey ve üst ince bordo kurumsal şerit
+    ctx.fillStyle = "#881337";
+    ctx.fillRect(0, 0, 14, h);
+    ctx.fillRect(0, 0, w, 10);
+    ctx.fillStyle = "rgba(180, 146, 90, 0.7)";
+    ctx.fillRect(14, 0, 3, h);
+    ctx.fillStyle = "rgba(136, 19, 55, 0.04)";
+    ctx.beginPath();
+    ctx.arc(w - 60, h - 60, 220, 0, Math.PI * 2);
+    ctx.fill();
+  } else if (presetId === "krem_altin") {
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, "#fffdf8");
+    g.addColorStop(1, "#f4ede0");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    // Çift resmi çerçeve
+    ctx.strokeStyle = "#b4925a";
+    ctx.lineWidth = 4;
+    ctx.strokeRect(14, 14, w - 28, h - 28);
+    ctx.strokeStyle = "rgba(180, 146, 90, 0.45)";
+    ctx.lineWidth = 1.5;
+    ctx.strokeRect(22, 22, w - 44, h - 44);
+  } else if (presetId === "mavi_geometrik") {
+    const g = ctx.createLinearGradient(0, 0, w, h);
+    g.addColorStop(0, "#ffffff");
+    g.addColorStop(1, "#e6f0fa");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.fillStyle = "rgba(29, 78, 216, 0.06)";
+    ctx.beginPath();
+    ctx.moveTo(0, 0);
+    ctx.lineTo(360, 0);
+    ctx.quadraticCurveTo(180, 110, 0, 180);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "rgba(30, 64, 175, 0.08)";
+    ctx.beginPath();
+    ctx.moveTo(w, h);
+    ctx.lineTo(w - 420, h);
+    ctx.quadraticCurveTo(w - 190, h - 120, w, h - 220);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = "#1d4ed8";
+    ctx.fillRect(0, h - 8, w, 8);
+  } else if (presetId === "zumrut_resmi") {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, "#f9fbfa");
+    g.addColorStop(1, "#ebf3ee");
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.fillStyle = "#065f46";
+    ctx.fillRect(0, 0, w, 12);
+    ctx.fillRect(0, h - 10, w, 10);
+    ctx.fillStyle = "rgba(6, 95, 70, 0.25)";
+    ctx.fillRect(0, 12, w, 2);
+  } else if (presetId === "resmi_gri") {
+    const rg = ctx.createRadialGradient(w * 0.5, h * 0.35, 80, w * 0.5, h * 0.5, w * 0.72);
+    rg.addColorStop(0, "#f8fafc");
+    rg.addColorStop(0.65, "#e2e8f0");
+    rg.addColorStop(1, "#cbd5e1");
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, w, h);
+
+    ctx.strokeStyle = "rgba(100, 116, 139, 0.35)";
+    ctx.lineWidth = 2;
+    ctx.strokeRect(10, 10, w - 20, h - 20);
+  } else if (presetId === "saf_beyaz") {
+    ctx.fillStyle = "#ffffff";
+    ctx.fillRect(0, 0, w, h);
+    ctx.strokeStyle = "#e2e8f0";
+    ctx.lineWidth = 3;
+    ctx.strokeRect(10, 10, w - 20, h - 20);
+  } else {
+    return "";
+  }
+
+  const url = canvas.toDataURL("image/jpeg", 0.9);
+  presetBgCache.set(presetId, url);
+  return url;
 }
 
 export interface TemplateBox {
@@ -368,7 +565,14 @@ export async function exportSlidesToPptx(params: {
       defaultTpl;
     const layout = slideTpl?.layoutConfig || DEFAULT_TEMPLATE_LAYOUT;
 
-    if (slideTpl?.backgroundImageBase64) {
+    const presetBg =
+      item.backgroundPreset && item.backgroundPreset !== "template"
+        ? getPresetBackgroundDataUrl(item.backgroundPreset)
+        : "";
+
+    if (presetBg) {
+      slide.background = { data: presetBg };
+    } else if (slideTpl?.backgroundImageBase64) {
       const cleanedBg = await cleanTemplateWatermark(slideTpl.backgroundImageBase64);
       slide.background = { data: cleanedBg };
     } else {

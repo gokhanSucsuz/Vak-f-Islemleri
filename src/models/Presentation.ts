@@ -18,6 +18,7 @@ export interface ISlideData {
   photoHeightPct?: number; // Fotoğraf alanı yüksekliği % (22..44)
   photoFitMode?: "contain" | "cover" | "fill"; // En-boy oranı modu
   templateId?: string; // Seçilen şablon ID
+  backgroundPreset?: string; // Opsiyonel kurum arka plan teması ("template" veya preset ID)
 }
 
 export interface IPresentation extends Document {

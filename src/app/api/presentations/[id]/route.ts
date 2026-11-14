@@ -150,6 +150,7 @@ export async function PUT(
           ? s.photoFitMode
           : "contain",
       templateId: s.templateId ? String(s.templateId) : undefined,
+      backgroundPreset: s.backgroundPreset ? String(s.backgroundPreset).slice(0, 40) : "template",
     }));
 
     const firstValidName = sanitizedSlides.find((s) => s.fullName)?.fullName || "";
