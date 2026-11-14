@@ -205,6 +205,35 @@ function getImageDimensions(dataUrl: string): Promise<{ w: number; h: number }> 
   });
 }
 
+async function roundImageCorners(dataUrl: string, radiusRatio = 0.04): Promise<string> {
+  if (!dataUrl || typeof window === "undefined") return dataUrl;
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Görsel yüklenemedi"));
+      el.src = dataUrl;
+    });
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (!w || !h) return dataUrl;
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return dataUrl;
+    const r = Math.max(8, Math.round(Math.min(w, h) * radiusRatio));
+    ctx.beginPath();
+    ctx.roundRect(0, 0, w, h, r);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(img, 0, 0, w, h);
+    return canvas.toDataURL("image/png");
+  } catch {
+    return dataUrl;
+  }
+}
+
 export function computeAutoFontSizePt(
   lines: string[],
   boxWidthIn: number,
@@ -411,8 +440,9 @@ export async function exportSlidesToPptx(params: {
             drawX = box.x + (box.w - drawW) / 2;
             drawY = box.y + (box.h - drawH) / 2;
           }
+          const roundedPhoto = await roundImageCorners(photoData);
           slide.addImage({
-            data: photoData,
+            data: roundedPhoto,
             x: drawX,
             y: drawY,
             w: drawW,
@@ -451,8 +481,9 @@ export async function exportSlidesToPptx(params: {
           drawX = bx + (bw - drawW) / 2;
           drawY = by + (bh - drawH) / 2;
         }
+        const roundedPhoto = await roundImageCorners(photoData);
         slide.addImage({
-          data: photoData,
+          data: roundedPhoto,
           x: drawX,
           y: drawY,
           w: drawW,
@@ -487,7 +518,7 @@ export async function exportSlidesToPptx(params: {
         boxW = Math.min(boxW, slideW - boxX - 0.32 * sx);
       }
       const boxY = (tb.yPct / 100) * slideH;
-      const boxH = Math.max(0.85 * sy, (tb.hPct / 100) * slideH);
+      const baseBoxH = Math.max(0.85 * sy, (tb.hPct / 100) * slideH);
       const minTitleFromDesc =
         item.fontSize && item.fontSize !== "auto" ? Number(item.fontSize) + 1 : 14;
       const titlePt = Math.min(
@@ -495,6 +526,25 @@ export async function exportSlidesToPptx(params: {
         Math.max(minTitleFromDesc, Number(item.titleFontSize ?? 20))
       );
       const isTitleBold = item.titleBold !== false;
+
+      const maxChars = Math.max(
+        (item.fullName || "").length,
+        (item.neighborhood || "").length,
+        12
+      );
+      const estCharW = (titlePt / 72) * (isTitleBold ? 0.64 : 0.58);
+      const neededW = maxChars * estCharW + 0.45 * sx;
+      const maxAllowedW =
+        layout.mode === "classic" ? slideW - boxX - 0.32 * sx : slideW - 0.6 * sx;
+      boxW = Math.min(maxAllowedW, Math.max(boxW, neededW));
+      if (layout.mode !== "classic") {
+        boxX = Math.max(0.3 * sx, (slideW - boxW) / 2);
+      }
+      const lineCount =
+        Math.max(1, Math.ceil((item.fullName || "").length / Math.max(10, (boxW - 0.3 * sx) / estCharW))) +
+        Math.max(1, Math.ceil((item.neighborhood || "").length / Math.max(10, (boxW - 0.3 * sx) / estCharW)));
+      const neededH = lineCount * ((titlePt / 72) * 1.25) + 0.24 * sy;
+      const boxH = Math.min(slideH * 0.35, Math.max(baseBoxH, neededH));
 
       slide.addShape(pptx.ShapeType.rect, {
         x: boxX,

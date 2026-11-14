@@ -507,12 +507,12 @@ function SlidePreviewCard({
                     src={src}
                     alt={`Slayt fotoğrafı ${idx + 1}`}
                     draggable={false}
-                    className={`w-full h-full drop-shadow-md pointer-events-none ${
+                    className={`drop-shadow-md pointer-events-none rounded-xl ${
                       fitMode === "fill"
-                        ? "object-fill"
+                        ? "w-full h-full object-fill"
                         : fitMode === "cover"
-                          ? "object-cover"
-                          : "object-contain"
+                          ? "w-full h-full object-cover"
+                          : "max-w-full max-h-full w-auto h-auto object-contain"
                     }`}
                   />
                 </div>
@@ -574,12 +574,12 @@ function SlidePreviewCard({
                   src={src}
                   alt={`Slot ${idx + 1}`}
                   draggable={false}
-                  className={`w-full h-full drop-shadow-md pointer-events-none ${
+                  className={`drop-shadow-md pointer-events-none rounded-xl ${
                     fitMode === "fill"
-                      ? "object-fill"
+                      ? "w-full h-full object-fill"
                       : fitMode === "cover"
-                        ? "object-cover"
-                        : "object-contain"
+                        ? "w-full h-full object-cover"
+                        : "max-w-full max-h-full w-auto h-auto object-contain"
                   }`}
                 />
               ) : (
@@ -594,19 +594,35 @@ function SlidePreviewCard({
           );
         })}
 
-      {/* 2. BAŞLIK KUTUSU (classic, title_only ve title_and_desc şablonlarında) */}
+      {/* 2. BAŞLIK KUTUSU (classic, title_only ve title_and_desc şablonlarında — yazıya göre esnek genişler) */}
       {layout.titleBox &&
         (layout.mode === "classic" ||
           layout.mode === "title_only" ||
           layout.mode === "title_and_desc") && (
         <div
-          style={{
-            left: `${titleLeftPct}%`,
-            top: `${titleTopPct}%`,
-            width: `${titleWidthPct}%`,
-            height: `${titleHeightPct}%`,
-          }}
-          className="absolute bg-gradient-to-b from-white via-slate-50 to-slate-100 border border-slate-300 shadow-[0_4px_12px_rgba(15,23,42,0.18)] flex flex-col items-center justify-center px-2.5 text-center rounded-[2px]"
+          style={
+            layout.mode === "classic"
+              ? {
+                  left: `${titleLeftPct}%`,
+                  top: `${titleTopPct}%`,
+                  minWidth: `${titleWidthPct}%`,
+                  maxWidth: `${Math.max(titleWidthPct, 96.8 - titleLeftPct)}%`,
+                  width: "fit-content",
+                  minHeight: `${titleHeightPct}%`,
+                  height: "auto",
+                }
+              : {
+                  left: "50%",
+                  transform: "translateX(-50%)",
+                  top: `${titleTopPct}%`,
+                  minWidth: `${titleWidthPct}%`,
+                  maxWidth: "94%",
+                  width: "fit-content",
+                  minHeight: `${titleHeightPct}%`,
+                  height: "auto",
+                }
+          }
+          className="absolute bg-gradient-to-b from-white via-slate-50 to-slate-100 border border-slate-300 shadow-[0_4px_12px_rgba(15,23,42,0.18)] flex flex-col items-center justify-center px-3 py-1.5 text-center rounded-[4px]"
         >
           <div
             style={{
@@ -616,7 +632,7 @@ function SlidePreviewCard({
                 ? "0 1.5px 3px rgba(15, 23, 42, 0.36), 0 0 1px rgba(15, 23, 42, 0.2)"
                 : "0 1px 2px rgba(15, 23, 42, 0.2)",
             }}
-            className="text-slate-950 leading-tight tracking-tight truncate w-full"
+            className="text-slate-950 leading-tight tracking-tight break-words max-w-full"
           >
             {slide.fullName || "Adı Soyadı"}
           </div>
@@ -628,7 +644,7 @@ function SlidePreviewCard({
                 ? "0 1.5px 2.5px rgba(15, 23, 42, 0.28), 0 0 1px rgba(15, 23, 42, 0.14)"
                 : "0 1px 2px rgba(15, 23, 42, 0.16)",
             }}
-            className="text-slate-900 leading-tight tracking-tight truncate w-full mt-0.5"
+            className="text-slate-900 leading-tight tracking-tight break-words max-w-full mt-0.5"
           >
             {slide.neighborhood || "...... Mahallesi"}
           </div>
