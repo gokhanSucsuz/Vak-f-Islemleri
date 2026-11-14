@@ -128,20 +128,32 @@ export async function PUT(
       templateId: s.templateId ? String(s.templateId) : undefined,
     }));
 
-    if (sanitizedSlides.some((s) => !s.fullName)) {
+    const firstValidName = sanitizedSlides.find((s) => s.fullName)?.fullName || "";
+    const firstValidNeighborhood =
+      sanitizedSlides.find((s) => s.neighborhood)?.neighborhood || "";
+
+    if (!firstValidName) {
       return NextResponse.json(
-        { error: "Her slayt sayfasında Adı Soyadı alanı zorunludur." },
+        { error: "Adı Soyadı alanı zorunludur." },
         { status: 400 }
       );
     }
 
-    record.slidesCompressed = await compressSlides(sanitizedSlides);
-    record.slideCount = sanitizedSlides.length;
-    record.summaryTitle = sanitizedSlides
-      .map((s) =>
-        s.neighborhood ? `${s.fullName} (${s.neighborhood})` : s.fullName
+    const finalSlides = sanitizedSlides.map((s) => ({
+      ...s,
+      fullName: s.fullName || firstValidName,
+      neighborhood: s.neighborhood || firstValidNeighborhood,
+    }));
+
+    record.slidesCompressed = await compressSlides(finalSlides);
+    record.slideCount = finalSlides.length;
+    record.summaryTitle = Array.from(
+      new Set(
+        finalSlides.map((s) =>
+          s.neighborhood ? `${s.fullName} (${s.neighborhood})` : s.fullName
+        )
       )
-      .join(" | ");
+    ).join(" | ");
     record.updatedBy = userId;
     await record.save();
 

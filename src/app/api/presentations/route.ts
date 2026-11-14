@@ -131,12 +131,22 @@ export async function POST(req: NextRequest) {
       templateId: s.templateId ? String(s.templateId) : undefined,
     }));
 
-    if (sanitizedSlides.some((s) => !s.fullName)) {
+    const firstValidName = sanitizedSlides.find((s) => s.fullName)?.fullName || "";
+    const firstValidNeighborhood =
+      sanitizedSlides.find((s) => s.neighborhood)?.neighborhood || "";
+
+    if (!firstValidName) {
       return NextResponse.json(
-        { error: "Her slayt sayfasında Adı Soyadı alanı zorunludur." },
+        { error: "Adı Soyadı alanı zorunludur." },
         { status: 400 }
       );
     }
+
+    const finalSlides = sanitizedSlides.map((s) => ({
+      ...s,
+      fullName: s.fullName || firstValidName,
+      neighborhood: s.neighborhood || firstValidNeighborhood,
+    }));
 
     await dbConnect();
     const meeting = await PresentationMeeting.findById(meetingId);
@@ -150,13 +160,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const summaryTitle = sanitizedSlides
-      .map((s) =>
-        s.neighborhood ? `${s.fullName} (${s.neighborhood})` : s.fullName
+    const summaryTitle = Array.from(
+      new Set(
+        finalSlides.map((s) =>
+          s.neighborhood ? `${s.fullName} (${s.neighborhood})` : s.fullName
+        )
       )
-      .join(" | ");
+    ).join(" | ");
 
-    const slidesCompressed = await compressSlides(sanitizedSlides);
+    const slidesCompressed = await compressSlides(finalSlides);
 
     const created = await Presentation.create({
       meetingId,

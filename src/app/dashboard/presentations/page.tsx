@@ -81,6 +81,10 @@ interface OrderedPresentationGroup {
   slides: SlideItem[];
 }
 
+function activeSlideNameFallback(slides: SlideItem[]): string {
+  return slides.find((s) => s.fullName.trim())?.fullName || "";
+}
+
 function emptySlide(defaultTemplateId?: string): SlideItem {
   return {
     fullName: "",
@@ -702,11 +706,23 @@ export default function PresentationsPage() {
     );
   };
 
+  const updateAllSlidesPerson = (patch: { fullName?: string; neighborhood?: string }) => {
+    setSlides((prev) => prev.map((s) => ({ ...s, ...patch })));
+  };
+
   const handleSavePresentation = async () => {
-    if (slides.some((s) => !s.fullName.trim())) {
-      toast.error("Lütfen tüm slayt sayfalarında Adı Soyadı alanını doldurun.");
+    const primaryName = (slides[0]?.fullName || activeSlideNameFallback(slides)).trim();
+    if (!primaryName) {
+      toast.error("Lütfen Adı Soyadı alanını doldurun.");
       return;
     }
+
+    const primaryNeighborhood = (slides[0]?.neighborhood || "").trim();
+    const normalizedSlides = slides.map((s) => ({
+      ...s,
+      fullName: s.fullName.trim() || primaryName,
+      neighborhood: s.neighborhood.trim() || primaryNeighborhood,
+    }));
 
     setSaving(true);
     try {
@@ -715,7 +731,7 @@ export default function PresentationsPage() {
       const res = await fetch(url, {
         method,
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ meetingId: editorMeetingId, slides }),
+        body: JSON.stringify({ meetingId: editorMeetingId, slides: normalizedSlides }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Sunu kaydedilemedi");
@@ -932,9 +948,15 @@ export default function PresentationsPage() {
           ))}
           <button
             onClick={() => {
+              const first = slides[0];
               setSlides((prev) => [
                 ...prev,
-                emptySlide(activeSlide.templateId || templates[0]?._id),
+                {
+                  ...emptySlide(activeSlide.templateId || templates[0]?._id),
+                  fullName: first?.fullName || activeSlide.fullName || "",
+                  neighborhood: first?.neighborhood || activeSlide.neighborhood || "",
+                  fontFamily: activeSlide.fontFamily || "Verdana",
+                },
               ]);
               setActiveSlideIdx(slides.length);
             }}
@@ -1001,12 +1023,15 @@ export default function PresentationsPage() {
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Adı Soyadı <span className="text-red-500">*</span>
+                  Adı Soyadı <span className="text-red-500">*</span>{" "}
+                  <span className="text-[10px] font-normal text-slate-400">
+                    (Tüm sayfalara uygulanır)
+                  </span>
                 </label>
                 <input
                   type="text"
                   value={activeSlide.fullName}
-                  onChange={(e) => updateCurrentSlide({ fullName: e.target.value })}
+                  onChange={(e) => updateAllSlidesPerson({ fullName: e.target.value })}
                   placeholder="Örn: Ahmet YILMAZ"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
@@ -1019,7 +1044,7 @@ export default function PresentationsPage() {
                 <input
                   type="text"
                   value={activeSlide.neighborhood}
-                  onChange={(e) => updateCurrentSlide({ neighborhood: e.target.value })}
+                  onChange={(e) => updateAllSlidesPerson({ neighborhood: e.target.value })}
                   placeholder="Örn: Karaağaç Mahallesi"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
