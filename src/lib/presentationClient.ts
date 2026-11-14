@@ -726,7 +726,7 @@ export async function exportSlidesToPptx(params: {
       const minTitleFromDesc =
         item.fontSize && item.fontSize !== "auto" ? Number(item.fontSize) + 1 : 14;
       const titlePt = Math.min(
-        36,
+        26,
         Math.max(minTitleFromDesc, Number(item.titleFontSize ?? 20))
       );
       const isTitleBold = item.titleBold !== false;

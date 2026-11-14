@@ -421,7 +421,7 @@ function SlidePreviewCard({
         ? Math.round(fittedPx / cardScale)
         : 13;
   const effectiveTitlePt = Math.min(
-    36,
+    26,
     Math.max(effectiveDescPt + 1, Number(slide.titleFontSize ?? 20))
   );
   const titleFontPx = Math.max(10, effectiveTitlePt * cardScale);
@@ -1816,7 +1816,7 @@ export default function PresentationsPage() {
                           ? Number(activeSlide.fontSize) + 1
                           : 14;
                       const currentTitlePt = Math.min(
-                        36,
+                        26,
                         Math.max(minTitlePt, Number(activeSlide.titleFontSize ?? 20))
                       );
                       return (
@@ -1839,7 +1839,7 @@ export default function PresentationsPage() {
                             type="button"
                             onClick={() =>
                               updateCurrentSlide({
-                                titleFontSize: Math.min(36, currentTitlePt + 1),
+                                titleFontSize: Math.min(26, currentTitlePt + 1),
                               })
                             }
                             className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100"
@@ -1900,12 +1900,12 @@ export default function PresentationsPage() {
                             activeSlide.fontSize && activeSlide.fontSize !== "auto"
                               ? Number(activeSlide.fontSize)
                               : 12;
-                          const nextDesc = Math.min(20, base + 0.5);
+                          const nextDesc = Math.min(24, base + 0.5);
                           const currentTitle = Number(activeSlide.titleFontSize ?? 20);
                           updateCurrentSlide({
                             fontSize: nextDesc,
                             ...(currentTitle <= nextDesc
-                              ? { titleFontSize: Math.min(36, Math.ceil(nextDesc) + 1) }
+                              ? { titleFontSize: Math.min(26, Math.ceil(nextDesc) + 1) }
                               : {}),
                           });
                         }}

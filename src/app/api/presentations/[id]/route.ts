@@ -130,12 +130,12 @@ export async function PUT(
       fontSize:
         s.fontSize === "auto" || !s.fontSize
           ? "auto"
-          : Math.min(20, Math.max(7, Number(s.fontSize))),
+          : Math.min(24, Math.max(7, Number(s.fontSize))),
       titleFontSize: Math.min(
-        36,
+        26,
         Math.max(
           s.fontSize && s.fontSize !== "auto"
-            ? Math.min(20, Math.max(7, Number(s.fontSize))) + 1
+            ? Math.min(24, Math.max(7, Number(s.fontSize))) + 1
             : 14,
           Number(s.titleFontSize ?? 20)
         )
