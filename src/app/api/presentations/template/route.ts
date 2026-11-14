@@ -30,33 +30,40 @@ export async function GET() {
     await dbConnect();
     const docs = await PresentationTemplate.find({})
       .populate("uploadedBy", "name")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: 1 });
 
-    const templates = await Promise.all(
-      docs.map(async (tpl) => {
-        if ((!tpl.layoutConfig || tpl.layoutConfig.version !== 3) && tpl.pptxCompressed) {
-          try {
-            const rawBuf = await gunzip(tpl.pptxCompressed);
-            const info = await extractPptxTemplateInfo(rawBuf);
-            tpl.layoutConfig = info.layoutConfig;
-            tpl.markModified("layoutConfig");
-            await tpl.save();
-          } catch {
-            // fallback
+    const templates = (
+      await Promise.all(
+        docs.map(async (tpl) => {
+          if ((!tpl.layoutConfig || tpl.layoutConfig.version !== 3) && tpl.pptxCompressed) {
+            try {
+              const rawBuf = await gunzip(tpl.pptxCompressed);
+              const info = await extractPptxTemplateInfo(rawBuf);
+              tpl.layoutConfig = info.layoutConfig;
+              tpl.markModified("layoutConfig");
+              await tpl.save();
+            } catch {
+              // fallback
+            }
           }
-        }
-        return {
-          _id: String(tpl._id),
-          name: tpl.name || tpl.fileName,
-          fileName: tpl.fileName,
-          fileSize: tpl.fileSize,
-          backgroundImageBase64: tpl.backgroundImageBase64 || "",
-          slideWidthIn: tpl.slideWidthIn || 10,
-          slideHeightIn: tpl.slideHeightIn || 7.5,
-          layoutConfig: tpl.layoutConfig || DEFAULT_LAYOUT,
-          uploadedBy: tpl.uploadedBy,
-          updatedAt: tpl.updatedAt,
-        };
+          return {
+            _id: String(tpl._id),
+            name: tpl.name || tpl.fileName,
+            fileName: tpl.fileName,
+            fileSize: tpl.fileSize,
+            backgroundImageBase64: tpl.backgroundImageBase64 || "",
+            slideWidthIn: tpl.slideWidthIn || 10,
+            slideHeightIn: tpl.slideHeightIn || 7.5,
+            layoutConfig: tpl.layoutConfig || DEFAULT_LAYOUT,
+            uploadedBy: tpl.uploadedBy,
+            updatedAt: tpl.updatedAt,
+          };
+        })
+      )
+    ).sort((a, b) =>
+      (a.name || "").localeCompare(b.name || "", "tr", {
+        numeric: true,
+        sensitivity: "base",
       })
     );
 
