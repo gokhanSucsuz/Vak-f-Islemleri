@@ -27,11 +27,17 @@ import {
   Sparkles,
   Type,
   MoveVertical,
+  Bold,
+  Italic,
+  Underline,
+  Eraser,
+  Maximize2,
 } from "lucide-react";
 import ModernConfirmDialog from "@/components/ModernConfirmDialog";
 import {
   SlideItem,
   PresentationTemplateClient,
+  SLIDE_FONT_OPTIONS,
   compressImageToJpeg,
   exportSlidesToPptx,
 } from "@/lib/presentationClient";
@@ -82,17 +88,170 @@ function emptySlide(defaultTemplateId?: string): SlideItem {
     photoCount: 1,
     photos: [],
     description: "",
+    descriptionHtml: "",
+    fontFamily: "Verdana",
     fontSize: "auto",
     descTopPct: 46,
     descBottomPct: 96.5,
+    photoWidthPct: 41,
+    photoHeightPct: 41.6,
+    photoFitMode: "contain",
     templateId: defaultTemplateId || undefined,
   };
 }
 
 /**
+ * Zengin Metin Editörü (Kalın, İtalik, Altı Çizili, Renk)
+ */
+function RichDescriptionEditor({
+  slideKey,
+  initialHtml,
+  initialPlain,
+  onChange,
+}: {
+  slideKey: string;
+  initialHtml: string;
+  initialPlain: string;
+  onChange: (html: string, plain: string) => void;
+}) {
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    const el = ref.current;
+    if (!el) return;
+    if (initialHtml) {
+      el.innerHTML = initialHtml;
+    } else if (initialPlain) {
+      el.innerHTML = initialPlain
+        .split(/\r?\n/)
+        .map((l) => `<p>${l.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`)
+        .join("");
+    } else {
+      el.innerHTML = "";
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [slideKey]);
+
+  const emit = () => {
+    const el = ref.current;
+    if (!el) return;
+    onChange(el.innerHTML, el.innerText || "");
+  };
+
+  const exec = (cmd: string, val?: string) => {
+    document.execCommand(cmd, false, val);
+    ref.current?.focus();
+    emit();
+  };
+
+  return (
+    <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
+      <div className="flex flex-wrap items-center gap-1 px-2.5 py-2 bg-slate-50 border-b border-slate-200">
+        <button
+          type="button"
+          onClick={() => exec("bold")}
+          className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-700"
+          title="Kalın"
+        >
+          <Bold className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => exec("italic")}
+          className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-700"
+          title="İtalik"
+        >
+          <Italic className="w-3.5 h-3.5" />
+        </button>
+        <button
+          type="button"
+          onClick={() => exec("underline")}
+          className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-700"
+          title="Altı Çizili"
+        >
+          <Underline className="w-3.5 h-3.5" />
+        </button>
+        <span className="h-4 w-px bg-slate-300 mx-1" />
+        {[
+          { color: "#111827", label: "Siyah" },
+          { color: "#dc2626", label: "Kırmızı" },
+          { color: "#1d4ed8", label: "Mavi" },
+          { color: "#15803d", label: "Yeşil" },
+        ].map((c) => (
+          <button
+            key={c.color}
+            type="button"
+            onClick={() => exec("foreColor", c.color)}
+            className="w-5 h-5 rounded-full border border-slate-300"
+            style={{ backgroundColor: c.color }}
+            title={c.label}
+          />
+        ))}
+        <button
+          type="button"
+          onClick={() => exec("removeFormat")}
+          className="ml-auto p-1.5 rounded-lg hover:bg-slate-200 text-slate-600 text-xs flex items-center gap-1"
+          title="Biçimi Temizle"
+        >
+          <Eraser className="w-3.5 h-3.5" />
+        </button>
+      </div>
+      <div
+        ref={ref}
+        contentEditable
+        suppressContentEditableWarning
+        onInput={emit}
+        className="min-h-[140px] max-h-[240px] overflow-y-auto px-3.5 py-2.5 text-sm text-slate-900 focus:outline-none [&_p]:mb-1"
+      />
+    </div>
+  );
+}
+
+function splitHtmlToVisualLines(html: string): string[] {
+  if (typeof window === "undefined" || !html.trim()) return [];
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  const root = doc.body.firstElementChild;
+  if (!root) return [];
+  const result: string[] = [];
+  let buf = "";
+
+  const flush = () => {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = buf;
+    if ((tmp.textContent || "").trim()) result.push(buf);
+    buf = "";
+  };
+
+  root.childNodes.forEach((node) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      buf += node.textContent || "";
+    } else if (node.nodeType === Node.ELEMENT_NODE) {
+      const el = node as HTMLElement;
+      const tag = el.tagName.toUpperCase();
+      if (tag === "BR") {
+        flush();
+      } else if (["P", "DIV", "LI", "H1", "H2", "H3"].includes(tag)) {
+        flush();
+        const inner = el.innerHTML;
+        const parts = inner.split(/<br\s*\/?>/i);
+        parts.forEach((p) => {
+          const tmp = document.createElement("div");
+          tmp.innerHTML = p;
+          if ((tmp.textContent || "").trim()) result.push(p);
+        });
+      } else {
+        buf += el.outerHTML;
+      }
+    }
+  });
+  flush();
+  return result;
+}
+
+/**
  * Tek bir slaydın PowerPoint (4:3) canlı görsel önizleme bileşeni.
- * Scrollbar içermez; punto otomatik veya manuel ayarlanır ve açıklama kutusu
- * fotoğraf alanına geçmeden / sayfa dışına taşmadan aşağı-yukarı uzayabilir.
+ * Fotoğraf arkasında beyaz alan yoktur, en-boy manuel ayarlanabilir,
+ * başlık kutusu Verdana (veya seçili font) kalın ve gölgelidir.
  */
 function SlidePreviewCard({
   slide,
@@ -110,11 +269,27 @@ function SlidePreviewCard({
     templates[0] ||
     null;
 
+  const fontFamily = slide.fontFamily || "Verdana";
   const photos = (slide.photos || []).filter(Boolean).slice(0, slide.photoCount || 4);
-  const lines = (slide.description || "")
+  const richLinesHtml = slide.descriptionHtml
+    ? splitHtmlToVisualLines(slide.descriptionHtml)
+    : [];
+  const plainLines = (slide.description || "")
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
+
+  const displayLines =
+    richLinesHtml.length > 0
+      ? richLinesHtml.map((h) => ({ isHtml: true, content: h }))
+      : plainLines.map((t) => ({ isHtml: false, content: t }));
+
+  const photoW = Math.min(52, Math.max(20, slide.photoWidthPct ?? 41));
+  const photoH = Math.min(44, Math.max(22, slide.photoHeightPct ?? 41.6));
+  const fitMode = slide.photoFitMode || "contain";
+
+  const titleLeftPct = Math.max(47.5, 3.2 + photoW + 2.5);
+  const titleWidthPct = Math.min(46.5, 96.8 - titleLeftPct);
 
   const topPct = Math.min(65, Math.max(44.5, slide.descTopPct ?? 46));
   const bottomPct = Math.min(97.5, Math.max(topPct + 18, slide.descBottomPct ?? 96.5));
@@ -128,46 +303,49 @@ function SlidePreviewCard({
     const card = cardRef.current;
     if (!box || !card) return;
 
-    const scale = card.clientWidth / 720; // 720px referans genişlik (10 inç ~ 720pt)
+    const scale = card.clientWidth / 720;
 
     if (slide.fontSize && slide.fontSize !== "auto") {
       setFittedPx(Math.max(5.5, Number(slide.fontSize) * scale));
       return;
     }
 
-    if (!list || lines.length === 0) {
-      setFittedPx(Math.max(8, 13 * scale));
+    if (!list || displayLines.length === 0) {
+      setFittedPx(Math.max(8, 12.5 * scale));
       return;
     }
 
-    let size = Math.max(8, 13.5 * scale);
+    let size = Math.max(8, 13 * scale);
     list.style.fontSize = `${size}px`;
     list.style.lineHeight = "1.28";
 
-    // Taşma bitene kadar puntoyu küçült (scroll oluşmasını engelle)
     while (box.scrollHeight > box.clientHeight && size > 5.5) {
       size -= 0.4;
       list.style.fontSize = `${size}px`;
     }
     setFittedPx(size);
-  }, [slide.description, slide.fontSize, topPct, bottomPct, lines.length]);
+  }, [slide.description, slide.descriptionHtml, slide.fontSize, topPct, bottomPct, displayLines.length]);
 
   return (
     <div
       ref={cardRef}
       className="relative w-full aspect-[4/3] rounded-xl overflow-hidden border border-slate-300 shadow-md select-none bg-gradient-to-br from-slate-200 via-slate-100 to-slate-300"
-      style={
-        selectedTpl?.backgroundImageBase64
+      style={{
+        fontFamily,
+        ...(selectedTpl?.backgroundImageBase64
           ? {
               backgroundImage: `url(${selectedTpl.backgroundImageBase64})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
             }
-          : undefined
-      }
+          : {}),
+      }}
     >
-      {/* Sol Üst Fotoğraf Alanı (Üst %2.4 - %44 arası, en-boy oranı korunur) */}
-      <div className="absolute left-[3.2%] top-[2.4%] w-[41%] h-[41.6%]">
+      {/* Sol Üst Fotoğraf Alanı (Beyaz arka plan YOK!) */}
+      <div
+        style={{ width: `${photoW}%`, height: `${photoH}%` }}
+        className="absolute left-[3.2%] top-[2.4%]"
+      >
         {photos.length > 0 ? (
           <div
             className={`w-full h-full grid gap-1.5 ${
@@ -181,18 +359,24 @@ function SlidePreviewCard({
             {photos.map((src, idx) => (
               <div
                 key={idx}
-                className="w-full h-full bg-white border border-slate-300 shadow-sm p-1 flex items-center justify-center overflow-hidden"
+                className="w-full h-full flex items-center justify-center overflow-hidden"
               >
                 <img
                   src={src}
                   alt={`Slayt fotoğrafı ${idx + 1}`}
-                  className="max-w-full max-h-full object-contain"
+                  className={`w-full h-full drop-shadow-md ${
+                    fitMode === "fill"
+                      ? "object-fill"
+                      : fitMode === "cover"
+                        ? "object-cover"
+                        : "object-contain"
+                  }`}
                 />
               </div>
             ))}
           </div>
         ) : (
-          <div className="w-full h-full border-2 border-dashed border-slate-400/50 rounded-lg flex flex-col items-center justify-center text-slate-500/80 bg-white/30">
+          <div className="w-full h-full border-2 border-dashed border-slate-400/50 rounded-lg flex flex-col items-center justify-center text-slate-500/80 bg-white/25">
             <ImageIcon className="w-6 h-6 mb-1" />
             <span className="text-[10px] font-medium">
               {slide.photoCount === 0 ? "Fotoğrafsız Slayt" : "Fotoğraf Alanı"}
@@ -201,17 +385,26 @@ function SlidePreviewCard({
         )}
       </div>
 
-      {/* Sağ Üst Adı Soyadı ve Mahalle Kutusu */}
-      <div className="absolute left-[47.5%] top-[15.3%] w-[46.2%] h-[11.5%] bg-gradient-to-b from-white to-slate-100 border border-slate-300 shadow-sm flex flex-col items-center justify-center px-2 text-center">
-        <div className="font-bold text-slate-950 text-xs sm:text-sm md:text-base leading-tight truncate w-full">
+      {/* Sağ Üst Adı Soyadı ve Mahalle Kutusu (Resmi, kalın puntolu, gölgeli) */}
+      <div
+        style={{ left: `${titleLeftPct}%`, width: `${titleWidthPct}%` }}
+        className="absolute top-[15.3%] h-[12.2%] bg-gradient-to-b from-white via-slate-50 to-slate-100 border border-slate-300 shadow-[0_4px_12px_rgba(15,23,42,0.18)] flex flex-col items-center justify-center px-2.5 text-center rounded-[2px]"
+      >
+        <div
+          style={{ textShadow: "0 1px 2px rgba(15, 23, 42, 0.22)" }}
+          className="font-bold text-slate-950 text-xs sm:text-sm md:text-[15px] leading-tight truncate w-full"
+        >
           {slide.fullName || "Adı Soyadı"}
         </div>
-        <div className="font-bold text-slate-900 text-[11px] sm:text-xs md:text-sm leading-tight truncate w-full">
+        <div
+          style={{ textShadow: "0 1px 2px rgba(15, 23, 42, 0.16)" }}
+          className="font-bold text-slate-800 text-[11px] sm:text-xs md:text-[13.5px] leading-tight truncate w-full mt-0.5"
+        >
           {slide.neighborhood || "...... Mahallesi"}
         </div>
       </div>
 
-      {/* Açıklama Alanı (Scroll YOK, overflow-hidden, punto otomatik/manuel ayarlı) */}
+      {/* Açıklama Alanı */}
       <div
         ref={descBoxRef}
         style={{
@@ -220,16 +413,23 @@ function SlidePreviewCard({
         }}
         className="absolute left-[3.2%] w-[93.6%] bg-white border border-slate-200 shadow-sm px-3 py-2 overflow-hidden"
       >
-        {lines.length > 0 ? (
+        {displayLines.length > 0 ? (
           <ul
             ref={descListRef}
-            style={{ fontSize: `${fittedPx}px`, lineHeight: 1.28 }}
+            style={{ fontSize: `${fittedPx}px`, lineHeight: 1.28, fontFamily }}
             className="space-y-0.5 text-slate-900"
           >
-            {lines.map((line, i) => (
+            {displayLines.map((line, i) => (
               <li key={i} className="flex items-start gap-1.5">
                 <span className="text-slate-700 font-bold shrink-0">➢</span>
-                <span className="break-words">{line}</span>
+                {line.isHtml ? (
+                  <span
+                    className="break-words"
+                    dangerouslySetInnerHTML={{ __html: line.content }}
+                  />
+                ) : (
+                  <span className="break-words">{line.content}</span>
+                )}
               </li>
             ))}
           </ul>
@@ -661,6 +861,9 @@ export default function PresentationsPage() {
     const activeSlide = slides[activeSlideIdx] || emptySlide(templates[0]?._id);
     const currentTop = activeSlide.descTopPct ?? 46;
     const currentBottom = activeSlide.descBottomPct ?? 96.5;
+    const currentPhotoW = activeSlide.photoWidthPct ?? 41;
+    const currentPhotoH = activeSlide.photoHeightPct ?? 41.6;
+    const currentFit = activeSlide.photoFitMode || "contain";
 
     return (
       <div className="space-y-5 max-w-[1440px] mx-auto">
@@ -757,25 +960,43 @@ export default function PresentationsPage() {
         {/* Editör Formu + Canlı Slayt Önizlemesi */}
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
           <div className="xl:col-span-5 bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-            {/* Şablon Seçimi */}
-            {templates.length > 0 && (
+            {/* Şablon ve Yazı Tipi Seçimi */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {templates.length > 0 && (
+                <div>
+                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                    Slayt Şablonu
+                  </label>
+                  <select
+                    value={activeSlide.templateId || templates[0]?._id || ""}
+                    onChange={(e) => updateCurrentSlide({ templateId: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    {templates.map((tpl) => (
+                      <option key={tpl._id} value={tpl._id}>
+                        {tpl.name}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              )}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Slayt Şablonu Seç
+                  Yazı Tipi (Font)
                 </label>
                 <select
-                  value={activeSlide.templateId || templates[0]?._id || ""}
-                  onChange={(e) => updateCurrentSlide({ templateId: e.target.value })}
-                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  value={activeSlide.fontFamily || "Verdana"}
+                  onChange={(e) => updateCurrentSlide({ fontFamily: e.target.value })}
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
                 >
-                  {templates.map((tpl) => (
-                    <option key={tpl._id} value={tpl._id}>
-                      {tpl.name} ({tpl.fileName})
+                  {SLIDE_FONT_OPTIONS.map((f) => (
+                    <option key={f} value={f}>
+                      {f}
                     </option>
                   ))}
                 </select>
               </div>
-            )}
+            </div>
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -879,6 +1100,74 @@ export default function PresentationsPage() {
                     ))}
                   </div>
                 )}
+
+                {/* Fotoğraf Manuel En/Boy & Sığdırma Ayarları */}
+                <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                      <Maximize2 className="w-3.5 h-3.5 text-blue-600" />
+                      Fotoğraf Boyutu & En-Boy Modu
+                    </span>
+                    <div className="flex items-center gap-1">
+                      {(
+                        [
+                          { id: "contain", label: "Oranı Koru" },
+                          { id: "cover", label: "Kırparak Doldur" },
+                          { id: "fill", label: "Serbest Yay" },
+                        ] as const
+                      ).map((m) => (
+                        <button
+                          key={m.id}
+                          type="button"
+                          onClick={() => updateCurrentSlide({ photoFitMode: m.id })}
+                          className={`px-2 py-1 rounded-lg text-[10px] font-semibold transition-colors ${
+                            currentFit === m.id
+                              ? "bg-blue-600 text-white"
+                              : "bg-white border border-slate-200 text-slate-700"
+                          }`}
+                        >
+                          {m.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                  <div className="grid grid-cols-2 gap-3">
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-600 flex justify-between mb-1">
+                        <span>Genişlik</span>
+                        <span>%{currentPhotoW.toFixed(0)}</span>
+                      </label>
+                      <input
+                        type="range"
+                        min={20}
+                        max={52}
+                        step={1}
+                        value={currentPhotoW}
+                        onChange={(e) =>
+                          updateCurrentSlide({ photoWidthPct: Number(e.target.value) })
+                        }
+                        className="w-full accent-blue-600"
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[11px] font-semibold text-slate-600 flex justify-between mb-1">
+                        <span>Yükseklik</span>
+                        <span>%{currentPhotoH.toFixed(0)}</span>
+                      </label>
+                      <input
+                        type="range"
+                        min={22}
+                        max={44}
+                        step={1}
+                        value={currentPhotoH}
+                        onChange={(e) =>
+                          updateCurrentSlide({ photoHeightPct: Number(e.target.value) })
+                        }
+                        className="w-full accent-blue-600"
+                      />
+                    </div>
+                  </div>
+                </div>
               </div>
             )}
 
@@ -979,14 +1268,15 @@ export default function PresentationsPage() {
 
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Açıklama Maddeleri (Her satır otomatik ➢ işareti alır)
+                Açıklama Alanı (Metin Editörü — Her satır otomatik ➢ işareti alır)
               </label>
-              <textarea
-                rows={7}
-                value={activeSlide.description}
-                onChange={(e) => updateCurrentSlide({ description: e.target.value })}
-                placeholder={"Hane durumu ve tespitler...\nSosyal inceleme notları...\nTalep edilen yardım..."}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y"
+              <RichDescriptionEditor
+                slideKey={`${editingId || "new"}_${activeSlideIdx}`}
+                initialHtml={activeSlide.descriptionHtml || ""}
+                initialPlain={activeSlide.description || ""}
+                onChange={(html, plain) =>
+                  updateCurrentSlide({ descriptionHtml: html, description: plain })
+                }
               />
             </div>
           </div>

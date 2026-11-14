@@ -8,9 +8,14 @@ export interface SlideItem {
   photoCount: 0 | 1 | 2 | 4;
   photos: string[];
   description: string;
+  descriptionHtml?: string;
+  fontFamily?: string;
   fontSize?: number | "auto";
   descTopPct?: number;
   descBottomPct?: number;
+  photoWidthPct?: number;
+  photoHeightPct?: number;
+  photoFitMode?: "contain" | "cover" | "fill";
   templateId?: string;
 }
 
@@ -23,10 +28,15 @@ export interface PresentationTemplateClient {
   slideHeightIn: number;
 }
 
-/**
- * Yüklenen fotoğrafı en-boy oranını bozmadan yeniden boyutlandırıp
- * sıkıştırılmış JPEG data URI formatına dönüştürür (~40-90 KB, net görüntü).
- */
+export const SLIDE_FONT_OPTIONS = [
+  "Verdana",
+  "Calibri",
+  "Times New Roman",
+  "Arial",
+  "Tahoma",
+  "Georgia",
+] as const;
+
 export function compressImageToJpeg(
   file: File,
   maxDim = 1100,
@@ -77,25 +87,20 @@ function getImageDimensions(dataUrl: string): Promise<{ w: number; h: number }> 
   });
 }
 
-/**
- * Açıklama satırlarını kutu genişliği ve yüksekliğine göre taşmayacak
- * en büyük puntoya (7pt - 14pt) otomatik sığdırır.
- */
 export function computeAutoFontSizePt(
   lines: string[],
   boxWidthIn: number,
   boxHeightIn: number
 ): number {
-  if (lines.length === 0) return 13;
+  if (lines.length === 0) return 12.5;
   const usableW = Math.max(2, boxWidthIn - 0.32);
   const usableH = Math.max(1, boxHeightIn - 0.2);
 
-  for (let pt = 14; pt >= 7; pt -= 0.5) {
-    // Ortalama karakter genişliği ~ pt * 0.52 pt (1 inch = 72pt)
-    const charsPerLine = Math.max(15, Math.floor((usableW * 72) / (pt * 0.52)));
+  for (let pt = 13.5; pt >= 7; pt -= 0.5) {
+    const charsPerLine = Math.max(14, Math.floor((usableW * 72) / (pt * 0.56)));
     let totalVisualLines = 0;
     for (const line of lines) {
-      const len = line.length + 3; // "➢  " dahil
+      const len = line.length + 3;
       totalVisualLines += Math.max(1, Math.ceil(len / charsPerLine));
     }
     const lineHeightIn = (pt * 1.32) / 72;
@@ -107,10 +112,89 @@ export function computeAutoFontSizePt(
   return 7;
 }
 
-/**
- * Verilen slayt listesini (her slayt kendi seçili şablonuyla birlikte)
- * PowerPoint (.pptx) dosyası olarak indirir.
- */
+interface RichRun {
+  text: string;
+  bold?: boolean;
+  italic?: boolean;
+  underline?: boolean;
+  color?: string;
+}
+
+function rgbToHex(colorStr: string): string | undefined {
+  if (!colorStr) return undefined;
+  const trimmed = colorStr.trim();
+  if (/^#[0-9a-fA-F]{6}$/.test(trimmed)) return trimmed.slice(1).toUpperCase();
+  const m = trimmed.match(/rgba?\((\d+),\s*(\d+),\s*(\d+)/i);
+  if (m) {
+    const r = Number(m[1]).toString(16).padStart(2, "0");
+    const g = Number(m[2]).toString(16).padStart(2, "0");
+    const b = Number(m[3]).toString(16).padStart(2, "0");
+    return `${r}${g}${b}`.toUpperCase();
+  }
+  return undefined;
+}
+
+function htmlToLinesOfRuns(html: string): RichRun[][] {
+  if (typeof window === "undefined" || !html.trim()) return [];
+  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  const root = doc.body.firstElementChild;
+  if (!root) return [];
+
+  const lines: RichRun[][] = [];
+  let currentLine: RichRun[] = [];
+
+  const flushLine = () => {
+    const combined = currentLine.map((r) => r.text).join("").trim();
+    if (combined) lines.push(currentLine);
+    currentLine = [];
+  };
+
+  const walk = (
+    node: Node,
+    style: { bold?: boolean; italic?: boolean; underline?: boolean; color?: string }
+  ) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const txt = (node.textContent || "").replace(/\u00A0/g, " ");
+      if (txt) currentLine.push({ text: txt, ...style });
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node as HTMLElement;
+    const tag = el.tagName.toUpperCase();
+
+    if (tag === "BR") {
+      flushLine();
+      return;
+    }
+
+    const nextStyle = { ...style };
+    if (tag === "B" || tag === "STRONG" || Number(el.style.fontWeight) >= 600 || el.style.fontWeight === "bold") {
+      nextStyle.bold = true;
+    }
+    if (tag === "I" || tag === "EM" || el.style.fontStyle === "italic") {
+      nextStyle.italic = true;
+    }
+    if (tag === "U" || el.style.textDecoration.includes("underline")) {
+      nextStyle.underline = true;
+    }
+    if (el.style.color) {
+      const hex = rgbToHex(el.style.color);
+      if (hex) nextStyle.color = hex;
+    }
+
+    const isBlock = ["P", "DIV", "LI", "H1", "H2", "H3"].includes(tag);
+    if (isBlock && currentLine.length > 0) flushLine();
+
+    el.childNodes.forEach((child) => walk(child, nextStyle));
+
+    if (isBlock) flushLine();
+  };
+
+  root.childNodes.forEach((child) => walk(child, {}));
+  flushLine();
+  return lines;
+}
+
 export async function exportSlidesToPptx(params: {
   slides: SlideItem[];
   fileName: string;
@@ -131,6 +215,7 @@ export async function exportSlidesToPptx(params: {
 
   for (const item of slides) {
     const slide = pptx.addSlide();
+    const fontFamily = item.fontFamily || "Verdana";
     const slideTpl =
       (item.templateId && templates.find((t) => t._id === item.templateId)) ||
       defaultTpl;
@@ -141,12 +226,15 @@ export async function exportSlidesToPptx(params: {
       slide.background = { color: "E5E7EB" };
     }
 
-    // Sol üst fotoğraf alanı (yukarıdan aşağı slaydın ~yarısına denk gelen alan)
+    // Sol üst fotoğraf alanı (BEYAZ ARKA PLAN YOK, manuel genişlik/yükseklik destekli)
     const photos = (item.photos || []).filter(Boolean).slice(0, item.photoCount || 4);
+    const wPct = Math.min(52, Math.max(20, item.photoWidthPct ?? 41));
+    const hPct = Math.min(44, Math.max(22, item.photoHeightPct ?? 41.6));
     const areaX = 0.32 * sx;
     const areaY = 0.18 * sy;
-    const areaW = 4.1 * sx;
-    const areaH = 3.12 * sy;
+    const areaW = (wPct / 100) * slideW;
+    const areaH = (hPct / 100) * slideH;
+    const fitMode = item.photoFitMode || "contain";
 
     if (photos.length > 0) {
       const boxes: Array<{ x: number; y: number; w: number; h: number }> = [];
@@ -171,31 +259,24 @@ export async function exportSlidesToPptx(params: {
       for (let i = 0; i < photos.length; i++) {
         const box = boxes[i];
         const photoData = photos[i];
-        slide.addShape(pptx.ShapeType.rect, {
-          x: box.x,
-          y: box.y,
-          w: box.w,
-          h: box.h,
-          fill: { color: "FFFFFF" },
-          line: { color: "CBD5E1", width: 1 },
-        });
 
-        const pad = 0.06 * Math.min(sx, sy);
-        const innerW = box.w - pad * 2;
-        const innerH = box.h - pad * 2;
-        const dims = await getImageDimensions(photoData);
-        const imgRatio = dims.w / dims.h;
-        const boxRatio = innerW / innerH;
+        let drawX = box.x;
+        let drawY = box.y;
+        let drawW = box.w;
+        let drawH = box.h;
 
-        let drawW = innerW;
-        let drawH = innerH;
-        if (imgRatio > boxRatio) {
-          drawH = innerW / imgRatio;
-        } else {
-          drawW = innerH * imgRatio;
+        if (fitMode !== "fill") {
+          const dims = await getImageDimensions(photoData);
+          const imgRatio = dims.w / dims.h;
+          const boxRatio = box.w / box.h;
+          if (imgRatio > boxRatio) {
+            drawH = box.w / imgRatio;
+          } else {
+            drawW = box.h * imgRatio;
+          }
+          drawX = box.x + (box.w - drawW) / 2;
+          drawY = box.y + (box.h - drawH) / 2;
         }
-        const drawX = box.x + pad + (innerW - drawW) / 2;
-        const drawY = box.y + pad + (innerH - drawH) / 2;
 
         slide.addImage({
           data: photoData,
@@ -203,43 +284,79 @@ export async function exportSlidesToPptx(params: {
           y: drawY,
           w: drawW,
           h: drawH,
+          shadow: {
+            type: "outer",
+            blur: 4,
+            offset: 2,
+            angle: 45,
+            color: "475569",
+            opacity: 0.3,
+          },
         });
       }
     }
 
-    // Sağ üst Adı Soyadı + Mahalle kutusu
+    // Sağ üst Adı Soyadı + Mahalle kutusu (Resmi, kalın puntolu, hafif gölgeli)
+    const boxX = Math.max(4.75 * sx, areaX + areaW + 0.25 * sx);
+    const boxW = Math.min(4.65 * sx, slideW - boxX - 0.32 * sx);
+
     slide.addShape(pptx.ShapeType.rect, {
-      x: 4.75 * sx,
+      x: boxX,
       y: 1.15 * sy,
-      w: 4.62 * sx,
-      h: 0.85 * sy,
+      w: boxW,
+      h: 0.92 * sy,
       fill: { color: "FFFFFF" },
-      line: { color: "D1D5DB", width: 0.75 },
+      line: { color: "CBD5E1", width: 1 },
+      shadow: {
+        type: "outer",
+        blur: 6,
+        offset: 2,
+        angle: 45,
+        color: "334155",
+        opacity: 0.25,
+      },
     });
 
     slide.addText(
       [
         {
           text: item.fullName || "",
-          options: { fontSize: 16, bold: true, color: "000000", breakLine: true },
+          options: {
+            fontSize: 15,
+            bold: true,
+            color: "0F172A",
+            breakLine: true,
+          },
         },
         {
           text: item.neighborhood || "",
-          options: { fontSize: 15, bold: true, color: "000000" },
+          options: {
+            fontSize: 13.5,
+            bold: true,
+            color: "1E293B",
+          },
         },
       ],
       {
-        x: 4.8 * sx,
+        x: boxX + 0.08 * sx,
         y: 1.18 * sy,
-        w: 4.52 * sx,
-        h: 0.79 * sy,
+        w: boxW - 0.16 * sx,
+        h: 0.86 * sy,
         align: "center",
         valign: "middle",
-        fontFace: "Calibri",
+        fontFace: fontFamily,
+        shadow: {
+          type: "outer",
+          blur: 2,
+          offset: 1,
+          angle: 45,
+          color: "94A3B8",
+          opacity: 0.4,
+        },
       }
     );
 
-    // Açıklama kutusu (fotoğraf alanının altına ve sayfa sınırına kelepçeli)
+    // Açıklama kutusu
     const topPct = Math.min(65, Math.max(44.5, item.descTopPct ?? 46));
     const bottomPct = Math.min(97.5, Math.max(topPct + 18, item.descBottomPct ?? 96.5));
     const descX = 0.32 * sx;
@@ -253,27 +370,66 @@ export async function exportSlidesToPptx(params: {
       w: descW,
       h: descH,
       fill: { color: "FFFFFF" },
-      line: { color: "E5E7EB", width: 0.75 },
+      line: { color: "E2E8F0", width: 0.75 },
     });
 
-    const lines = (item.description || "")
+    const richLines = item.descriptionHtml ? htmlToLinesOfRuns(item.descriptionHtml) : [];
+    const plainLines = (item.description || "")
       .split(/\r?\n/)
       .map((l) => l.trim())
       .filter(Boolean);
 
+    const textLinesForSizing =
+      richLines.length > 0
+        ? richLines.map((runs) => runs.map((r) => r.text).join(""))
+        : plainLines;
+
     const fontSize =
       item.fontSize && item.fontSize !== "auto"
         ? Number(item.fontSize)
-        : computeAutoFontSizePt(lines, descW, descH);
+        : computeAutoFontSizePt(textLinesForSizing, descW, descH);
 
-    if (lines.length > 0) {
+    if (richLines.length > 0) {
+      const pptxRuns: PptxGenJS.TextProps[] = [];
+      richLines.forEach((runs, lineIdx) => {
+        pptxRuns.push({
+          text: "➢  ",
+          options: { fontSize, bold: true, color: "334155" },
+        });
+        runs.forEach((r, rIdx) => {
+          const isLastRunOfLine = rIdx === runs.length - 1;
+          const isLastLine = lineIdx === richLines.length - 1;
+          pptxRuns.push({
+            text: r.text,
+            options: {
+              fontSize,
+              bold: r.bold,
+              italic: r.italic,
+              underline: r.underline ? { style: "sng" } : undefined,
+              color: r.color || "111827",
+              breakLine: isLastRunOfLine && !isLastLine,
+              paraSpaceAfter: isLastRunOfLine ? 2 : 0,
+            },
+          });
+        });
+      });
+
+      slide.addText(pptxRuns, {
+        x: descX + 0.14 * sx,
+        y: descY + 0.1 * sy,
+        w: descW - 0.28 * sx,
+        h: descH - 0.2 * sy,
+        valign: "top",
+        fontFace: fontFamily,
+      });
+    } else if (plainLines.length > 0) {
       slide.addText(
-        lines.map((line, idx) => ({
+        plainLines.map((line, idx) => ({
           text: `➢  ${line}`,
           options: {
             fontSize,
             color: "111827",
-            breakLine: idx < lines.length - 1,
+            breakLine: idx < plainLines.length - 1,
             paraSpaceAfter: 2,
           },
         })),
@@ -283,7 +439,7 @@ export async function exportSlidesToPptx(params: {
           w: descW - 0.28 * sx,
           h: descH - 0.2 * sy,
           valign: "top",
-          fontFace: "Calibri",
+          fontFace: fontFamily,
         }
       );
     }

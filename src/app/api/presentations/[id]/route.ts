@@ -111,12 +111,20 @@ export async function PUT(
         : 0) as 0 | 1 | 2 | 4,
       photos: Array.isArray(s.photos) ? s.photos.slice(0, 4) : [],
       description: (s.description || "").trim(),
+      descriptionHtml: typeof s.descriptionHtml === "string" ? s.descriptionHtml : "",
+      fontFamily: (s.fontFamily || "Verdana").trim() || "Verdana",
       fontSize:
         s.fontSize === "auto" || !s.fontSize
           ? "auto"
           : Math.min(20, Math.max(7, Number(s.fontSize))),
       descTopPct: Math.min(65, Math.max(44.5, Number(s.descTopPct ?? 46))),
       descBottomPct: Math.min(97.5, Math.max(72, Number(s.descBottomPct ?? 96.5))),
+      photoWidthPct: Math.min(52, Math.max(20, Number(s.photoWidthPct ?? 41))),
+      photoHeightPct: Math.min(44, Math.max(22, Number(s.photoHeightPct ?? 41.6))),
+      photoFitMode:
+        s.photoFitMode === "fill" || s.photoFitMode === "cover"
+          ? s.photoFitMode
+          : "contain",
       templateId: s.templateId ? String(s.templateId) : undefined,
     }));
 
