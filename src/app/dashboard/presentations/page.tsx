@@ -491,12 +491,26 @@ export default function PresentationsPage() {
   const [saving, setSaving] = useState(false);
   const [compressingPhotos, setCompressingPhotos] = useState(false);
 
-  // Önizleme Modalı
+  // Önizleme Modalı (Tekil)
   const [previewRecord, setPreviewRecord] = useState<{
     title: string;
     slides: SlideItem[];
   } | null>(null);
   const [previewSlideIdx, setPreviewSlideIdx] = useState(0);
+
+  // Toplantı Toplu Önizleme & Anında Açıklama Düzenleme Modalı
+  const [bulkPreviewModal, setBulkPreviewModal] = useState<{
+    meeting: MeetingItem;
+    groups: OrderedPresentationGroup[];
+    flatSlides: Array<{
+      presentationId: string;
+      slideIndex: number;
+      authorName: string;
+      slide: SlideItem;
+    }>;
+  } | null>(null);
+  const [bulkIdx, setBulkIdx] = useState(0);
+  const [savingBulkEdit, setSavingBulkEdit] = useState(false);
 
   // Toplantı Yönetimi / Sıralama / Birleştirme / İndirme Modalı
   const [manageMeetingModal, setManageMeetingModal] = useState<{
@@ -789,6 +803,92 @@ export default function PresentationsPage() {
       toast.error(err.message);
     } finally {
       setSaving(false);
+    }
+  };
+
+  // Toplantı Toplu Önizleme Modalını Aç
+  const openBulkPreview = async (meeting: MeetingItem) => {
+    setLoadingMeetingSlides(true);
+    try {
+      const res = await fetch(`/api/presentations/meetings/${meeting._id}`);
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Toplantı slaytları alınamadı");
+      const groups: OrderedPresentationGroup[] = data.orderedPresentations || [];
+      const flatSlides: Array<{
+        presentationId: string;
+        slideIndex: number;
+        authorName: string;
+        slide: SlideItem;
+      }> = [];
+      for (const grp of groups) {
+        grp.slides.forEach((s, idx) => {
+          flatSlides.push({
+            presentationId: grp.presentationId,
+            slideIndex: idx,
+            authorName: grp.authorName,
+            slide: s,
+          });
+        });
+      }
+      if (flatSlides.length === 0) {
+        toast.error("Bu toplantıda önizlenecek slayt bulunmuyor.");
+        return;
+      }
+      setBulkPreviewModal({
+        meeting: data.meeting,
+        groups,
+        flatSlides,
+      });
+      setBulkIdx(0);
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setLoadingMeetingSlides(false);
+    }
+  };
+
+  // Toplu Önizleme Modunda Anında Açıklama Güncelleme (Yönetici & Yetkili Personel)
+  const handleBulkSlideInstantSave = async () => {
+    if (!bulkPreviewModal) return;
+    const current = bulkPreviewModal.flatSlides[bulkIdx];
+    if (!current) return;
+
+    const targetGroup = bulkPreviewModal.groups.find(
+      (g) => g.presentationId === current.presentationId
+    );
+    if (!targetGroup) return;
+
+    const updatedGroupSlides = targetGroup.slides.map((s, idx) =>
+      idx === current.slideIndex ? current.slide : s
+    );
+
+    setSavingBulkEdit(true);
+    try {
+      const res = await fetch(`/api/presentations/${current.presentationId}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ slides: updatedGroupSlides }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Slayt güncellenemedi");
+
+      setBulkPreviewModal((prev) => {
+        if (!prev) return null;
+        return {
+          ...prev,
+          groups: prev.groups.map((g) =>
+            g.presentationId === current.presentationId
+              ? { ...g, slides: updatedGroupSlides }
+              : g
+          ),
+        };
+      });
+      toast.success("Slayt açıklaması anında güncellendi.");
+      await fetchPresentations();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSavingBulkEdit(false);
     }
   };
 
@@ -1567,6 +1667,16 @@ export default function PresentationsPage() {
               </div>
 
               <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => openBulkPreview(selectedMeeting)}
+                  disabled={loadingMeetingSlides}
+                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors"
+                >
+                  <Eye className="w-4 h-4" />
+                  Toplu Önizle ({selectedMeeting.totalSlides})
+                </button>
+
                 {isManager && selectedMeeting.status === "open" && (
                   <select
                     value={selectedMeeting.authorizedUserId?._id || ""}
@@ -2102,6 +2212,153 @@ export default function PresentationsPage() {
                   ? "Birleştiriliyor..."
                   : "Birleştirilmiş Sunuyu İndir (.pptx)"}
               </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toplu Önizleme & Anında Açıklama Güncelleme Modalı */}
+      {bulkPreviewModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/75 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-6xl w-full max-h-[94vh] flex flex-col p-5 sm:p-6 space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-3 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-lg font-bold text-slate-900 flex items-center gap-2">
+                  <Eye className="w-5 h-5 text-blue-600" />
+                  {bulkPreviewModal.meeting.title} — Toplu Slayt Önizleme
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Slayt {bulkIdx + 1} / {bulkPreviewModal.flatSlides.length} • Hazırlayan:{" "}
+                  <strong className="text-slate-700">
+                    {bulkPreviewModal.flatSlides[bulkIdx]?.authorName}
+                  </strong>
+                  {bulkPreviewModal.meeting.status === "closed"
+                    ? " • Kapatılmış (Salt Okunur)"
+                    : canManageSelectedMeeting
+                      ? " • Açıklamaları anında düzenleyebilirsiniz"
+                      : ""}
+                </p>
+              </div>
+              <button
+                onClick={() => setBulkPreviewModal(null)}
+                className="p-1.5 rounded-xl hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto grid grid-cols-1 lg:grid-cols-12 gap-5 items-start">
+              {/* Slayt Önizleme Sahnesi */}
+              <div
+                className={
+                  bulkPreviewModal.meeting.status === "open" && canManageSelectedMeeting
+                    ? "lg:col-span-7 space-y-3"
+                    : "lg:col-span-12 space-y-3"
+                }
+              >
+                <SlidePreviewCard
+                  slide={
+                    bulkPreviewModal.flatSlides[bulkIdx]?.slide || emptySlide()
+                  }
+                  templates={templates}
+                />
+
+                {/* Slayt Geçiş ve Hızlı Seçim Çubuğu */}
+                <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                  <button
+                    disabled={bulkIdx === 0}
+                    onClick={() => setBulkIdx((p) => Math.max(0, p - 1))}
+                    className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold disabled:opacity-40 flex items-center gap-1"
+                  >
+                    <ChevronLeft className="w-4 h-4" /> Önceki Slayt
+                  </button>
+
+                  <div className="flex flex-wrap items-center gap-1">
+                    {bulkPreviewModal.flatSlides.map((item, idx) => (
+                      <button
+                        key={`${item.presentationId}_${item.slideIndex}`}
+                        onClick={() => setBulkIdx(idx)}
+                        className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                          idx === bulkIdx
+                            ? "bg-blue-600 text-white"
+                            : "bg-slate-100 text-slate-700 hover:bg-slate-200"
+                        }`}
+                        title={`${item.slide.fullName} (${item.authorName})`}
+                      >
+                        {idx + 1}. {item.slide.fullName.split(" ")[0]}
+                      </button>
+                    ))}
+                  </div>
+
+                  <button
+                    disabled={bulkIdx >= bulkPreviewModal.flatSlides.length - 1}
+                    onClick={() =>
+                      setBulkIdx((p) =>
+                        Math.min(bulkPreviewModal.flatSlides.length - 1, p + 1)
+                      )
+                    }
+                    className="px-4 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold disabled:opacity-40 flex items-center gap-1"
+                  >
+                    Sonraki Slayt <ChevronRight className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+
+              {/* Yönetici / Yetkili Personel İçin Anında Açıklama Düzenleme Paneli */}
+              {bulkPreviewModal.meeting.status === "open" && canManageSelectedMeeting && (
+                <div className="lg:col-span-5 bg-slate-50 border border-slate-200 rounded-2xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <h4 className="text-xs font-bold uppercase tracking-wider text-slate-700">
+                      Anında Açıklama Düzenle
+                    </h4>
+                    <span className="text-[11px] font-semibold text-blue-700">
+                      {bulkPreviewModal.flatSlides[bulkIdx]?.slide.fullName}
+                    </span>
+                  </div>
+
+                  <RichDescriptionEditor
+                    slideKey={`bulk_${bulkPreviewModal.flatSlides[bulkIdx]?.presentationId}_${bulkPreviewModal.flatSlides[bulkIdx]?.slideIndex}`}
+                    initialHtml={
+                      bulkPreviewModal.flatSlides[bulkIdx]?.slide.descriptionHtml || ""
+                    }
+                    initialPlain={
+                      bulkPreviewModal.flatSlides[bulkIdx]?.slide.description || ""
+                    }
+                    onChange={(html, plain) => {
+                      setBulkPreviewModal((prev) => {
+                        if (!prev) return null;
+                        return {
+                          ...prev,
+                          flatSlides: prev.flatSlides.map((fs, i) =>
+                            i === bulkIdx
+                              ? {
+                                  ...fs,
+                                  slide: {
+                                    ...fs.slide,
+                                    descriptionHtml: html,
+                                    description: plain,
+                                  },
+                                }
+                              : fs
+                          ),
+                        };
+                      });
+                    }}
+                  />
+
+                  <button
+                    type="button"
+                    onClick={handleBulkSlideInstantSave}
+                    disabled={savingBulkEdit}
+                    className="w-full py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm flex items-center justify-center gap-2 disabled:opacity-60 transition-colors"
+                  >
+                    <Save className="w-4 h-4" />
+                    {savingBulkEdit
+                      ? "Güncelleniyor..."
+                      : "Değişikliği Kaydet (Anında Güncelle)"}
+                  </button>
+                </div>
+              )}
             </div>
           </div>
         </div>
