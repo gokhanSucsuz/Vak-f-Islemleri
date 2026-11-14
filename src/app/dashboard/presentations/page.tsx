@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
 import {
@@ -25,6 +25,8 @@ import {
   Clock,
   Save,
   Sparkles,
+  Type,
+  MoveVertical,
 } from "lucide-react";
 import ModernConfirmDialog from "@/components/ModernConfirmDialog";
 import {
@@ -63,53 +65,108 @@ interface PresentationListItem {
   createdAt: string;
 }
 
-interface OrderedSlide extends SlideItem {
-  key: string;
+interface OrderedPresentationGroup {
   presentationId: string;
-  slideIndex: number;
+  summaryTitle: string;
   authorName: string;
+  slideCount: number;
+  firstPhoto: string;
+  createdAt: string;
+  slides: SlideItem[];
 }
 
-function emptySlide(): SlideItem {
+function emptySlide(defaultTemplateId?: string): SlideItem {
   return {
     fullName: "",
     neighborhood: "",
     photoCount: 1,
     photos: [],
     description: "",
+    fontSize: "auto",
+    descTopPct: 46,
+    descBottomPct: 96.5,
+    templateId: defaultTemplateId || undefined,
   };
 }
 
 /**
- * Tek bir slaydın PowerPoint (4:3) canlı görsel önizleme bileşeni
+ * Tek bir slaydın PowerPoint (4:3) canlı görsel önizleme bileşeni.
+ * Scrollbar içermez; punto otomatik veya manuel ayarlanır ve açıklama kutusu
+ * fotoğraf alanına geçmeden / sayfa dışına taşmadan aşağı-yukarı uzayabilir.
  */
 function SlidePreviewCard({
   slide,
-  template,
+  templates,
 }: {
   slide: SlideItem;
-  template: PresentationTemplateClient | null;
+  templates: PresentationTemplateClient[];
 }) {
+  const cardRef = useRef<HTMLDivElement>(null);
+  const descBoxRef = useRef<HTMLDivElement>(null);
+  const descListRef = useRef<HTMLUListElement>(null);
+
+  const selectedTpl =
+    (slide.templateId && templates.find((t) => t._id === slide.templateId)) ||
+    templates[0] ||
+    null;
+
   const photos = (slide.photos || []).filter(Boolean).slice(0, slide.photoCount || 4);
   const lines = (slide.description || "")
     .split(/\r?\n/)
     .map((l) => l.trim())
     .filter(Boolean);
 
+  const topPct = Math.min(65, Math.max(44.5, slide.descTopPct ?? 46));
+  const bottomPct = Math.min(97.5, Math.max(topPct + 18, slide.descBottomPct ?? 96.5));
+  const heightPct = bottomPct - topPct;
+
+  const [fittedPx, setFittedPx] = useState(12);
+
+  useLayoutEffect(() => {
+    const box = descBoxRef.current;
+    const list = descListRef.current;
+    const card = cardRef.current;
+    if (!box || !card) return;
+
+    const scale = card.clientWidth / 720; // 720px referans genişlik (10 inç ~ 720pt)
+
+    if (slide.fontSize && slide.fontSize !== "auto") {
+      setFittedPx(Math.max(5.5, Number(slide.fontSize) * scale));
+      return;
+    }
+
+    if (!list || lines.length === 0) {
+      setFittedPx(Math.max(8, 13 * scale));
+      return;
+    }
+
+    let size = Math.max(8, 13.5 * scale);
+    list.style.fontSize = `${size}px`;
+    list.style.lineHeight = "1.28";
+
+    // Taşma bitene kadar puntoyu küçült (scroll oluşmasını engelle)
+    while (box.scrollHeight > box.clientHeight && size > 5.5) {
+      size -= 0.4;
+      list.style.fontSize = `${size}px`;
+    }
+    setFittedPx(size);
+  }, [slide.description, slide.fontSize, topPct, bottomPct, lines.length]);
+
   return (
     <div
+      ref={cardRef}
       className="relative w-full aspect-[4/3] rounded-xl overflow-hidden border border-slate-300 shadow-md select-none bg-gradient-to-br from-slate-200 via-slate-100 to-slate-300"
       style={
-        template?.backgroundImageBase64
+        selectedTpl?.backgroundImageBase64
           ? {
-              backgroundImage: `url(${template.backgroundImageBase64})`,
+              backgroundImage: `url(${selectedTpl.backgroundImageBase64})`,
               backgroundSize: "cover",
               backgroundPosition: "center",
             }
           : undefined
       }
     >
-      {/* Sol Üst Fotoğraf Alanı (Slaydın üst yarısı, en-boy oranı korunur) */}
+      {/* Sol Üst Fotoğraf Alanı (Üst %2.4 - %44 arası, en-boy oranı korunur) */}
       <div className="absolute left-[3.2%] top-[2.4%] w-[41%] h-[41.6%]">
         {photos.length > 0 ? (
           <div
@@ -154,14 +211,25 @@ function SlidePreviewCard({
         </div>
       </div>
 
-      {/* Ortadan En Alta Kadar Açıklama Alanı */}
-      <div className="absolute left-[3.2%] top-[46%] w-[93.6%] h-[50.4%] bg-white border border-slate-200 shadow-sm p-2.5 sm:p-3.5 overflow-y-auto">
+      {/* Açıklama Alanı (Scroll YOK, overflow-hidden, punto otomatik/manuel ayarlı) */}
+      <div
+        ref={descBoxRef}
+        style={{
+          top: `${topPct}%`,
+          height: `${heightPct}%`,
+        }}
+        className="absolute left-[3.2%] w-[93.6%] bg-white border border-slate-200 shadow-sm px-3 py-2 overflow-hidden"
+      >
         {lines.length > 0 ? (
-          <ul className="space-y-0.5 text-slate-900 text-[10px] sm:text-xs leading-snug">
+          <ul
+            ref={descListRef}
+            style={{ fontSize: `${fittedPx}px`, lineHeight: 1.28 }}
+            className="space-y-0.5 text-slate-900"
+          >
             {lines.map((line, i) => (
               <li key={i} className="flex items-start gap-1.5">
                 <span className="text-slate-700 font-bold shrink-0">➢</span>
-                <span>{line}</span>
+                <span className="break-words">{line}</span>
               </li>
             ))}
           </ul>
@@ -181,22 +249,24 @@ export default function PresentationsPage() {
   const userId = (session?.user as any)?.id;
   const isManager = role === "superadmin" || role === "manager";
 
-  const [template, setTemplate] = useState<PresentationTemplateClient | null>(null);
+  const [templates, setTemplates] = useState<PresentationTemplateClient[]>([]);
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
   const [selectedMeetingId, setSelectedMeetingId] = useState<string>("");
   const [presentations, setPresentations] = useState<PresentationListItem[]>([]);
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(true);
 
-  // Modals
+  // Şablon Modalı
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
+  const [newTemplateName, setNewTemplateName] = useState("");
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
 
+  // Yeni Toplantı Modalı
   const [isNewMeetingOpen, setIsNewMeetingOpen] = useState(false);
   const [newMeetingTitle, setNewMeetingTitle] = useState("");
   const [creatingMeeting, setCreatingMeeting] = useState(false);
 
-  // Editör State (Yeni / Düzenle)
+  // Editör State
   const [editorMode, setEditorMode] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
   const [editorMeetingId, setEditorMeetingId] = useState<string>("");
@@ -212,10 +282,10 @@ export default function PresentationsPage() {
   } | null>(null);
   const [previewSlideIdx, setPreviewSlideIdx] = useState(0);
 
-  // Toplantı Yönetimi / Sıralama / Kapatma / İndirme Modalı
+  // Toplantı Yönetimi / Sıralama / Birleştirme / İndirme Modalı
   const [manageMeetingModal, setManageMeetingModal] = useState<{
     meeting: MeetingItem;
-    orderedSlides: OrderedSlide[];
+    orderedPresentations: OrderedPresentationGroup[];
   } | null>(null);
   const [loadingMeetingSlides, setLoadingMeetingSlides] = useState(false);
   const [exportingMeeting, setExportingMeeting] = useState(false);
@@ -233,7 +303,9 @@ export default function PresentationsPage() {
       const tplData = await tplRes.json();
       const meetData = await meetRes.json();
 
-      if (tplRes.ok) setTemplate(tplData.template || null);
+      if (tplRes.ok) {
+        setTemplates(tplData.templates || (tplData.template ? [tplData.template] : []));
+      }
       if (meetRes.ok) {
         const list: MeetingItem[] = meetData.meetings || [];
         setMeetings(list);
@@ -259,7 +331,7 @@ export default function PresentationsPage() {
       const data = await res.json();
       if (res.ok) setPresentations(data.presentations || []);
     } catch {
-      // sessiz geç
+      // sessiz
     }
   }, [selectedMeetingId, search]);
 
@@ -273,7 +345,7 @@ export default function PresentationsPage() {
 
   const selectedMeeting = meetings.find((m) => m._id === selectedMeetingId) || null;
 
-  // Şablon Yükle
+  // Yeni Şablon Yükle (Birden fazla şablon destekli)
   const handleUploadTemplate = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -281,20 +353,35 @@ export default function PresentationsPage() {
     try {
       const fd = new FormData();
       fd.append("file", file);
+      if (newTemplateName.trim()) fd.append("name", newTemplateName.trim());
       const res = await fetch("/api/presentations/template", {
         method: "POST",
         body: fd,
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Şablon yüklenemedi");
-      setTemplate(data.template);
-      toast.success("Sunu şablonu başarıyla yüklendi.");
-      setIsTemplateModalOpen(false);
+      setNewTemplateName("");
+      toast.success("Sunu şablonu eklendi.");
+      await fetchAll();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
       setUploadingTemplate(false);
       e.target.value = "";
+    }
+  };
+
+  const handleDeleteTemplate = async (tplId: string) => {
+    try {
+      const res = await fetch(`/api/presentations/template?id=${tplId}`, {
+        method: "DELETE",
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Şablon silinemedi");
+      toast.success("Şablon silindi.");
+      await fetchAll();
+    } catch (err: any) {
+      toast.error(err.message);
     }
   };
 
@@ -336,7 +423,7 @@ export default function PresentationsPage() {
 
     setEditingId(null);
     setEditorMeetingId(openMeeting._id);
-    setSlides([emptySlide()]);
+    setSlides([emptySlide(templates[0]?._id)]);
     setActiveSlideIdx(0);
     setEditorMode(true);
   };
@@ -358,14 +445,14 @@ export default function PresentationsPage() {
       } else if (mode === "edit") {
         setEditingId(item._id);
         setEditorMeetingId(data.presentation.meetingId);
-        setSlides(loadedSlides.length > 0 ? loadedSlides : [emptySlide()]);
+        setSlides(loadedSlides.length > 0 ? loadedSlides : [emptySlide(templates[0]?._id)]);
         setActiveSlideIdx(0);
         setEditorMode(true);
       } else if (mode === "download") {
         await exportSlidesToPptx({
           slides: loadedSlides,
           fileName: `${item.summaryTitle}.pptx`,
-          template,
+          templates,
         });
         toast.success("Sunu (.pptx) indirildi.");
       }
@@ -415,7 +502,6 @@ export default function PresentationsPage() {
     );
   };
 
-  // Kaydet
   const handleSavePresentation = async () => {
     if (slides.some((s) => !s.fullName.trim())) {
       toast.error("Lütfen tüm slayt sayfalarında Adı Soyadı alanını doldurun.");
@@ -445,7 +531,7 @@ export default function PresentationsPage() {
     }
   };
 
-  // Toplantı Yönetimi Modalını Aç (Tüm Slaytları Sıralama / Kapatma / Toplu İndirme)
+  // Toplantı Yönetimi Modalını Aç (Kayıt bazlı sıralama - çok sayfalı slaytlar kopmaz!)
   const openManageMeeting = async (meeting: MeetingItem) => {
     setLoadingMeetingSlides(true);
     try {
@@ -454,7 +540,7 @@ export default function PresentationsPage() {
       if (!res.ok) throw new Error(data.error || "Toplantı slaytları alınamadı");
       setManageMeetingModal({
         meeting: data.meeting,
-        orderedSlides: data.slides || [],
+        orderedPresentations: data.orderedPresentations || [],
       });
     } catch (err: any) {
       toast.error(err.message);
@@ -463,45 +549,42 @@ export default function PresentationsPage() {
     }
   };
 
-  const moveOrderedSlide = (idx: number, dir: -1 | 1) => {
+  const moveOrderedGroup = (idx: number, dir: -1 | 1) => {
     if (!manageMeetingModal) return;
-    const list = [...manageMeetingModal.orderedSlides];
+    const list = [...manageMeetingModal.orderedPresentations];
     const target = idx + dir;
     if (target < 0 || target >= list.length) return;
     const temp = list[idx];
     list[idx] = list[target];
     list[target] = temp;
-    setManageMeetingModal({ ...manageMeetingModal, orderedSlides: list });
+    setManageMeetingModal({ ...manageMeetingModal, orderedPresentations: list });
   };
 
   const handleMeetingAction = async (
     action: "reorder" | "close" | "reopen" | "downloadCombined"
   ) => {
     if (!manageMeetingModal) return;
-    const { meeting, orderedSlides } = manageMeetingModal;
-    const slideOrder = orderedSlides.map((s) => ({
-      presentationId: s.presentationId,
-      slideIndex: s.slideIndex,
-    }));
+    const { meeting, orderedPresentations } = manageMeetingModal;
+    const presentationOrder = orderedPresentations.map((g) => g.presentationId);
 
     if (action === "downloadCombined") {
-      if (orderedSlides.length === 0) {
+      const combinedSlides = orderedPresentations.flatMap((g) => g.slides);
+      if (combinedSlides.length === 0) {
         toast.error("Bu toplantıda indirilecek slayt bulunmuyor.");
         return;
       }
       setExportingMeeting(true);
       try {
-        // Sırayı kaydet + indir + 12 saat timer başlat
         await fetch(`/api/presentations/meetings/${meeting._id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "reorder", slideOrder }),
+          body: JSON.stringify({ action: "reorder", presentationOrder }),
         });
 
         await exportSlidesToPptx({
-          slides: orderedSlides,
+          slides: combinedSlides,
           fileName: `${meeting.title}.pptx`,
-          template,
+          templates,
         });
 
         await fetch(`/api/presentations/meetings/${meeting._id}`, {
@@ -511,7 +594,7 @@ export default function PresentationsPage() {
         });
 
         toast.success(
-          "Toplu toplantı sunusu (.pptx) indirildi. Fotoğraflar 12 saat sonra otomatik silinecek."
+          "Tüm slaytlar belirlenen sırayla tek dosya (.pptx) olarak indirildi. Fotoğraflar 12 saat sonra otomatik silinecek."
         );
         await fetchAll();
         const refreshed = await fetch(`/api/presentations/meetings/${meeting._id}`);
@@ -519,7 +602,7 @@ export default function PresentationsPage() {
         if (refreshed.ok) {
           setManageMeetingModal({
             meeting: refData.meeting,
-            orderedSlides: refData.slides || [],
+            orderedPresentations: refData.orderedPresentations || [],
           });
         }
       } catch (err: any) {
@@ -534,14 +617,14 @@ export default function PresentationsPage() {
       const res = await fetch(`/api/presentations/meetings/${meeting._id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ action, slideOrder }),
+        body: JSON.stringify({ action, presentationOrder }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "İşlem başarısız");
 
       toast.success(
         action === "close"
-          ? "Toplantı kapatıldı ve slayt sırası kaydedildi."
+          ? "Toplantı kapatıldı ve slayt sırası kaydedildi. Artık tek dosya olarak indirebilirsiniz."
           : action === "reopen"
             ? "Toplantı tekrar açıldı."
             : "Slayt sıralaması kaydedildi."
@@ -575,10 +658,12 @@ export default function PresentationsPage() {
 
   // EDİTÖR GÖRÜNÜMÜ
   if (editorMode) {
-    const activeSlide = slides[activeSlideIdx] || emptySlide();
+    const activeSlide = slides[activeSlideIdx] || emptySlide(templates[0]?._id);
+    const currentTop = activeSlide.descTopPct ?? 46;
+    const currentBottom = activeSlide.descBottomPct ?? 96.5;
+
     return (
       <div className="space-y-5 max-w-[1440px] mx-auto">
-        {/* Üst Araç Çubuğu */}
         <div className="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <button
@@ -592,7 +677,7 @@ export default function PresentationsPage() {
                 {editingId ? "Sunuyu Düzenle" : "Yeni Sunu Slaytları Hazırla"}
               </h1>
               <p className="text-xs text-slate-500">
-                Her kayıt birden fazla sunu sayfası içerebilir • Fotoğraflar otomatik sıkıştırılır
+                Çok sayfalı slaytlar hazırlayabilir, şablon ve yazı puntosunu dilediğiniz gibi ayarlayabilirsiniz
               </p>
             </div>
           </div>
@@ -603,7 +688,7 @@ export default function PresentationsPage() {
                 exportSlidesToPptx({
                   slides,
                   fileName: `${activeSlide.fullName || "sunu"}.pptx`,
-                  template,
+                  templates,
                 })
               }
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold transition-colors"
@@ -644,7 +729,10 @@ export default function PresentationsPage() {
           ))}
           <button
             onClick={() => {
-              setSlides((prev) => [...prev, emptySlide()]);
+              setSlides((prev) => [
+                ...prev,
+                emptySlide(activeSlide.templateId || templates[0]?._id),
+              ]);
               setActiveSlideIdx(slides.length);
             }}
             className="px-3.5 py-2 rounded-xl text-xs font-semibold bg-emerald-50 text-emerald-700 hover:bg-emerald-100 border border-emerald-200 flex items-center gap-1.5 transition-colors"
@@ -669,30 +757,52 @@ export default function PresentationsPage() {
         {/* Editör Formu + Canlı Slayt Önizlemesi */}
         <div className="grid grid-cols-1 xl:grid-cols-12 gap-6">
           <div className="xl:col-span-5 bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4">
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Adı Soyadı <span className="text-red-500">*</span>
-              </label>
-              <input
-                type="text"
-                value={activeSlide.fullName}
-                onChange={(e) => updateCurrentSlide({ fullName: e.target.value })}
-                placeholder="Örn: Ahmet YILMAZ"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-              />
-            </div>
+            {/* Şablon Seçimi */}
+            {templates.length > 0 && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Slayt Şablonu Seç
+                </label>
+                <select
+                  value={activeSlide.templateId || templates[0]?._id || ""}
+                  onChange={(e) => updateCurrentSlide({ templateId: e.target.value })}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  {templates.map((tpl) => (
+                    <option key={tpl._id} value={tpl._id}>
+                      {tpl.name} ({tpl.fileName})
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
 
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Mahalle / Köy
-              </label>
-              <input
-                type="text"
-                value={activeSlide.neighborhood}
-                onChange={(e) => updateCurrentSlide({ neighborhood: e.target.value })}
-                placeholder="Örn: Karaağaç Mahallesi"
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
-              />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Adı Soyadı <span className="text-red-500">*</span>
+                </label>
+                <input
+                  type="text"
+                  value={activeSlide.fullName}
+                  onChange={(e) => updateCurrentSlide({ fullName: e.target.value })}
+                  placeholder="Örn: Ahmet YILMAZ"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Mahalle / Köy
+                </label>
+                <input
+                  type="text"
+                  value={activeSlide.neighborhood}
+                  onChange={(e) => updateCurrentSlide({ neighborhood: e.target.value })}
+                  placeholder="Örn: Karaağaç Mahallesi"
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                />
+              </div>
             </div>
 
             <div>
@@ -772,16 +882,111 @@ export default function PresentationsPage() {
               </div>
             )}
 
+            {/* Punto ve Açıklama Alanı Boyut Ayarları */}
+            <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                  <Type className="w-3.5 h-3.5 text-blue-600" />
+                  Yazı Puntosu
+                </span>
+                <div className="flex items-center gap-1.5">
+                  <button
+                    type="button"
+                    onClick={() => updateCurrentSlide({ fontSize: "auto" })}
+                    className={`px-2.5 py-1 rounded-lg text-xs font-semibold transition-colors ${
+                      !activeSlide.fontSize || activeSlide.fontSize === "auto"
+                        ? "bg-blue-600 text-white"
+                        : "bg-white border border-slate-200 text-slate-700"
+                    }`}
+                  >
+                    Otomatik Sığdır
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const base =
+                        activeSlide.fontSize && activeSlide.fontSize !== "auto"
+                          ? Number(activeSlide.fontSize)
+                          : 12;
+                      updateCurrentSlide({ fontSize: Math.max(7, base - 0.5) });
+                    }}
+                    className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100"
+                  >
+                    -
+                  </button>
+                  <span className="text-xs font-semibold w-12 text-center text-slate-700">
+                    {!activeSlide.fontSize || activeSlide.fontSize === "auto"
+                      ? "Oto"
+                      : `${activeSlide.fontSize} pt`}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const base =
+                        activeSlide.fontSize && activeSlide.fontSize !== "auto"
+                          ? Number(activeSlide.fontSize)
+                          : 12;
+                      updateCurrentSlide({ fontSize: Math.min(20, base + 0.5) });
+                    }}
+                    className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100"
+                  >
+                    +
+                  </button>
+                </div>
+              </div>
+
+              <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/70">
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 flex items-center justify-between mb-1">
+                    <span className="flex items-center gap-1">
+                      <MoveVertical className="w-3 h-3" /> Üst Sınır
+                    </span>
+                    <span>%{currentTop.toFixed(1)}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min={44.5}
+                    max={62}
+                    step={0.5}
+                    value={currentTop}
+                    onChange={(e) =>
+                      updateCurrentSlide({ descTopPct: Number(e.target.value) })
+                    }
+                    className="w-full accent-blue-600"
+                  />
+                </div>
+                <div>
+                  <label className="text-[11px] font-semibold text-slate-600 flex items-center justify-between mb-1">
+                    <span className="flex items-center gap-1">
+                      <MoveVertical className="w-3 h-3" /> Alt Sınır
+                    </span>
+                    <span>%{currentBottom.toFixed(1)}</span>
+                  </label>
+                  <input
+                    type="range"
+                    min={72}
+                    max={97.5}
+                    step={0.5}
+                    value={currentBottom}
+                    onChange={(e) =>
+                      updateCurrentSlide({ descBottomPct: Number(e.target.value) })
+                    }
+                    className="w-full accent-blue-600"
+                  />
+                </div>
+              </div>
+            </div>
+
             <div>
               <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                 Açıklama Maddeleri (Her satır otomatik ➢ işareti alır)
               </label>
               <textarea
-                rows={8}
+                rows={7}
                 value={activeSlide.description}
                 onChange={(e) => updateCurrentSlide({ description: e.target.value })}
                 placeholder={"Hane durumu ve tespitler...\nSosyal inceleme notları...\nTalep edilen yardım..."}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none resize-y"
+                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-y"
               />
             </div>
           </div>
@@ -791,13 +996,11 @@ export default function PresentationsPage() {
               <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
                 Canlı Slayt Önizlemesi — Sayfa {activeSlideIdx + 1} / {slides.length}
               </span>
-              {template && (
-                <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                  Şablon: {template.fileName}
-                </span>
-              )}
+              <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                Scroll Yok • Sayfaya Otomatik Sığar
+              </span>
             </div>
-            <SlidePreviewCard slide={activeSlide} template={template} />
+            <SlidePreviewCard slide={activeSlide} templates={templates} />
           </div>
         </div>
       </div>
@@ -817,7 +1020,7 @@ export default function PresentationsPage() {
               Sunular & Toplantı Slaytları
             </h1>
             <p className="text-sm text-slate-500 mt-0.5">
-              Toplantı klasörlerine çok sayfalı sunular hazırlayın, sıralayın ve toplu .pptx olarak indirin.
+              Tüm personellerin hazırladığı slaytları tek ekranda görün, sıralayın ve toplantı sonunda tek .pptx dosyası olarak indirin.
             </p>
           </div>
         </div>
@@ -830,7 +1033,7 @@ export default function PresentationsPage() {
                 className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold transition-colors"
               >
                 <Upload className="w-4 h-4" />
-                Şablon Yönet
+                Şablonları Yönet ({templates.length})
               </button>
               <button
                 onClick={() => setIsNewMeetingOpen(true)}
@@ -858,11 +1061,6 @@ export default function PresentationsPage() {
             <FolderOpen className="w-4 h-4 text-blue-600" />
             Toplantı Slaytları Klasörleri
           </h2>
-          {template && (
-            <span className="text-xs text-slate-500">
-              Aktif Şablon: <strong className="text-slate-700">{template.fileName}</strong>
-            </span>
-          )}
         </div>
 
         {loading ? (
@@ -946,7 +1144,7 @@ export default function PresentationsPage() {
                         className="text-xs font-semibold text-blue-700 hover:text-blue-900 bg-blue-100/70 hover:bg-blue-100 px-3 py-1.5 rounded-lg transition-colors flex items-center gap-1.5"
                       >
                         <Layers className="w-3.5 h-3.5" />
-                        Sırala / Kapat / Toplu İndir
+                        Sırala / Birleştir & Kapat / İndir
                       </button>
                     </div>
                   )}
@@ -957,13 +1155,13 @@ export default function PresentationsPage() {
         )}
       </div>
 
-      {/* Arama ve Seçili Toplantıdaki Sunular */}
+      {/* Tüm Personel Slaytları Tek Ekranda (Thumbnail + Ad Soyad + Personel Adı) */}
       <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 space-y-4">
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <h2 className="text-base font-bold text-slate-900">
             {selectedMeeting
-              ? `${selectedMeeting.title} — Sunu Kayıtları`
-              : "Sunu Kayıtları"}
+              ? `${selectedMeeting.title} — Tüm Personel Slaytları (${presentations.length})`
+              : `Tüm Personel Slaytları (${presentations.length})`}
           </h2>
           <div className="relative w-full sm:w-80">
             <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
@@ -997,20 +1195,22 @@ export default function PresentationsPage() {
                     {item.firstPhoto ? (
                       <img
                         src={item.firstPhoto}
-                        alt="Kapak"
-                        className="w-16 h-12 rounded-lg object-cover border border-slate-200 shrink-0"
+                        alt="Slayt Thumbnail"
+                        className="w-20 h-15 rounded-xl object-cover border border-slate-200 shrink-0 shadow-xs"
                       />
                     ) : (
-                      <div className="w-16 h-12 rounded-lg bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
-                        <PresentationIcon className="w-5 h-5" />
+                      <div className="w-20 h-15 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
+                        <PresentationIcon className="w-6 h-6" />
                       </div>
                     )}
                     <div className="min-w-0 flex-1">
                       <div className="font-bold text-slate-900 text-sm line-clamp-2">
                         {item.summaryTitle}
                       </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {item.createdBy?.name || "Personel"} •{" "}
+                      <div className="text-xs font-medium text-blue-700 mt-1">
+                        Hazırlayan: {item.createdBy?.name || "Personel"}
+                      </div>
+                      <div className="text-[11px] text-slate-400">
                         {new Date(item.createdAt).toLocaleDateString("tr-TR")}
                       </div>
                     </div>
@@ -1068,13 +1268,13 @@ export default function PresentationsPage() {
         )}
       </div>
 
-      {/* Şablon Yükleme Modalı (Yönetici) */}
+      {/* Çoklu Şablon Yönetim Modalı (Yönetici) */}
       {isTemplateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-lg w-full p-6 space-y-4">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-bold text-slate-900">
-                Sunu Şablonu Yönet (.pptx / Görsel)
+                Sunu Şablonlarını Yönet (Birden Fazla Eklenebilir)
               </h3>
               <button
                 onClick={() => setIsTemplateModalOpen(false)}
@@ -1083,39 +1283,74 @@ export default function PresentationsPage() {
                 <X className="w-5 h-5" />
               </button>
             </div>
-            <p className="text-xs text-slate-500">
-              Örnek PowerPoint şablonunuzu (.pptx) veya slayt arka plan görselini (.png/.jpg) yükleyin. Sistem slayt boyutunu ve arka plan tasarımını otomatik çıkarır.
-            </p>
-            {template && (
-              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                <div className="text-xs font-semibold text-slate-700">
-                  Mevcut Şablon: {template.fileName}
-                </div>
-                {template.backgroundImageBase64 && (
-                  <img
-                    src={template.backgroundImageBase64}
-                    alt="Şablon Arka Plan"
-                    className="w-full aspect-[4/3] object-cover rounded-xl border border-slate-200"
-                  />
-                )}
-              </div>
-            )}
-            <label className="cursor-pointer w-full py-3 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors">
-              <Upload className="w-4 h-4" />
-              {uploadingTemplate ? "Yükleniyor..." : "Şablon Dosyası Seç (.pptx / .jpg / .png)"}
+
+            <div className="flex flex-col sm:flex-row gap-2">
               <input
-                type="file"
-                accept=".pptx,.png,.jpg,.jpeg,.webp"
-                disabled={uploadingTemplate}
-                onChange={handleUploadTemplate}
-                className="hidden"
+                type="text"
+                value={newTemplateName}
+                onChange={(e) => setNewTemplateName(e.target.value)}
+                placeholder="Şablon adı (Örn: Klasik Gri, Mavi Tema...)"
+                className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               />
-            </label>
+              <label className="cursor-pointer py-2.5 px-4 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold flex items-center justify-center gap-2 transition-colors shrink-0">
+                <Upload className="w-4 h-4" />
+                {uploadingTemplate ? "Yükleniyor..." : "Şablon Ekle (.pptx / Görsel)"}
+                <input
+                  type="file"
+                  accept=".pptx,.png,.jpg,.jpeg,.webp"
+                  disabled={uploadingTemplate}
+                  onChange={handleUploadTemplate}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {templates.length === 0 ? (
+                <div className="text-center py-8 text-sm text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  Henüz yüklenmiş şablon yok.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {templates.map((tpl) => (
+                    <div
+                      key={tpl._id}
+                      className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <div className="min-w-0">
+                          <div className="text-xs font-bold text-slate-900 truncate">
+                            {tpl.name}
+                          </div>
+                          <div className="text-[11px] text-slate-500 truncate">
+                            {tpl.fileName}
+                          </div>
+                        </div>
+                        <button
+                          onClick={() => handleDeleteTemplate(tpl._id)}
+                          className="p-1.5 rounded-lg text-red-600 hover:bg-red-100"
+                          title="Şablonu Sil"
+                        >
+                          <Trash2 className="w-4 h-4" />
+                        </button>
+                      </div>
+                      {tpl.backgroundImageBase64 && (
+                        <img
+                          src={tpl.backgroundImageBase64}
+                          alt={tpl.name}
+                          className="w-full aspect-[4/3] object-cover rounded-xl border border-slate-200"
+                        />
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         </div>
       )}
 
-      {/* Toplantı Açma Modalı (Yönetici) */}
+      {/* Toplantı Açma Modalı */}
       {isNewMeetingOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <form
@@ -1188,7 +1423,7 @@ export default function PresentationsPage() {
 
             <SlidePreviewCard
               slide={previewRecord.slides[previewSlideIdx] || emptySlide()}
-              template={template}
+              templates={templates}
             />
 
             <div className="flex items-center justify-between">
@@ -1215,7 +1450,7 @@ export default function PresentationsPage() {
         </div>
       )}
 
-      {/* Toplantı Sıralama, Kapatma ve Toplu İndirme Modalı (Yönetici) */}
+      {/* Toplantı Sıralama (Çok Sayfalı Kayıtlar Kopmadan), Kapatma ve Birleştirip İndirme Modalı */}
       {manageMeetingModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/70 backdrop-blur-sm">
           <div className="bg-white rounded-3xl shadow-2xl max-w-4xl w-full max-h-[90vh] flex flex-col p-6 space-y-4">
@@ -1225,7 +1460,7 @@ export default function PresentationsPage() {
                   {manageMeetingModal.meeting.title}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  Toplam {manageMeetingModal.orderedSlides.length} slayt • Yukarı/Aşağı butonları ile sunum sırasını belirleyin
+                  {manageMeetingModal.orderedPresentations.length} Sunu Kaydı • Çok sayfalı kayıtlar bir arada kalır ve sırası bozulmaz
                 </p>
               </div>
               <button
@@ -1237,49 +1472,47 @@ export default function PresentationsPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
-              {manageMeetingModal.orderedSlides.length === 0 ? (
+              {manageMeetingModal.orderedPresentations.length === 0 ? (
                 <div className="text-center py-10 text-sm text-slate-500">
                   Bu toplantıda henüz slayt yok.
                 </div>
               ) : (
-                manageMeetingModal.orderedSlides.map((s, idx) => (
+                manageMeetingModal.orderedPresentations.map((grp, idx) => (
                   <div
-                    key={s.key}
+                    key={grp.presentationId}
                     className="p-3 rounded-2xl border border-slate-200 bg-slate-50/70 flex items-center justify-between gap-3"
                   >
                     <div className="flex items-center gap-3 min-w-0">
                       <span className="w-8 h-8 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center justify-center shrink-0">
                         {idx + 1}
                       </span>
-                      {s.photos?.[0] ? (
+                      {grp.firstPhoto ? (
                         <img
-                          src={s.photos[0]}
+                          src={grp.firstPhoto}
                           alt="Thumb"
-                          className="w-12 h-9 rounded-lg object-cover border border-slate-200 shrink-0"
+                          className="w-14 h-10 rounded-lg object-cover border border-slate-200 shrink-0"
                         />
                       ) : (
-                        <div className="w-12 h-9 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
+                        <div className="w-14 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
                           <Sparkles className="w-4 h-4" />
                         </div>
                       )}
                       <div className="min-w-0">
                         <div className="font-bold text-sm text-slate-900 truncate">
-                          {s.fullName}{" "}
-                          {s.neighborhood && (
-                            <span className="font-normal text-slate-600">
-                              — {s.neighborhood}
-                            </span>
-                          )}
+                          {grp.summaryTitle}
                         </div>
                         <div className="text-xs text-slate-500">
-                          Hazırlayan: {s.authorName} • {s.photos.length} Fotoğraf
+                          Hazırlayan: <strong className="text-slate-700">{grp.authorName}</strong> •{" "}
+                          <span className="text-indigo-700 font-semibold">
+                            {grp.slideCount} Sayfa (Birlikte Sıralanır)
+                          </span>
                         </div>
                       </div>
                     </div>
 
                     <div className="flex items-center gap-1.5 shrink-0">
                       <button
-                        onClick={() => moveOrderedSlide(idx, -1)}
+                        onClick={() => moveOrderedGroup(idx, -1)}
                         disabled={idx === 0}
                         className="p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40"
                         title="Yukarı Taşı"
@@ -1287,8 +1520,8 @@ export default function PresentationsPage() {
                         <ArrowUp className="w-4 h-4" />
                       </button>
                       <button
-                        onClick={() => moveOrderedSlide(idx, 1)}
-                        disabled={idx === manageMeetingModal.orderedSlides.length - 1}
+                        onClick={() => moveOrderedGroup(idx, 1)}
+                        disabled={idx === manageMeetingModal.orderedPresentations.length - 1}
                         className="p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40"
                         title="Aşağı Taşı"
                       >
@@ -1329,13 +1562,16 @@ export default function PresentationsPage() {
 
               <button
                 onClick={() => handleMeetingAction("downloadCombined")}
-                disabled={exportingMeeting || manageMeetingModal.orderedSlides.length === 0}
+                disabled={
+                  exportingMeeting ||
+                  manageMeetingModal.orderedPresentations.length === 0
+                }
                 className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-lg shadow-blue-500/20 disabled:opacity-50 flex items-center gap-2"
               >
                 <Download className="w-4 h-4" />
                 {exportingMeeting
-                  ? "Hazırlanıyor..."
-                  : "Toplu Slayt Dosyası İndir (.pptx)"}
+                  ? "Birleştiriliyor..."
+                  : "Belirlenen Sırada Birleştir & İndir (.pptx)"}
               </button>
             </div>
           </div>

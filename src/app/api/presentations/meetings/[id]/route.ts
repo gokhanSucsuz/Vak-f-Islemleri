@@ -3,7 +3,7 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import PresentationMeeting from "@/models/PresentationMeeting";
-import Presentation from "@/models/Presentation";
+import Presentation, { ISlideData } from "@/models/Presentation";
 import Log from "@/models/Log";
 import {
   decompressSlides,
@@ -36,63 +36,53 @@ export async function GET(
       .populate("createdBy", "name")
       .sort({ createdAt: 1 });
 
-    // Tüm slaytları düzleştir (presentationId + slideIndex bazında)
-    type FlatSlide = {
-      key: string;
+    // Çok sayfalı sunu kayıtlarını birbirinden koparmadan kayıt bazlı sırala
+    type RecordGroup = {
       presentationId: string;
-      slideIndex: number;
+      summaryTitle: string;
       authorName: string;
+      slideCount: number;
+      firstPhoto: string;
       createdAt: Date;
-      fullName: string;
-      neighborhood: string;
-      photoCount: 0 | 1 | 2 | 4;
-      photos: string[];
-      description: string;
+      slides: ISlideData[];
     };
 
-    const flatMap = new Map<string, FlatSlide>();
-    const defaultList: FlatSlide[] = [];
+    const groupMap = new Map<string, RecordGroup>();
+    const defaultList: RecordGroup[] = [];
 
     for (const pres of presentations) {
       const slides = await decompressSlides(pres.slidesCompressed);
       const authorName = (pres.createdBy as any)?.name || "Personel";
-      slides.forEach((s, idx) => {
-        const key = `${pres._id}_${idx}`;
-        const item: FlatSlide = {
-          key,
-          presentationId: String(pres._id),
-          slideIndex: idx,
-          authorName,
-          createdAt: pres.createdAt,
-          fullName: s.fullName || "",
-          neighborhood: s.neighborhood || "",
-          photoCount: s.photoCount ?? (s.photos?.length ? 1 : 0),
-          photos: Array.isArray(s.photos) ? s.photos : [],
-          description: s.description || "",
-        };
-        flatMap.set(key, item);
-        defaultList.push(item);
-      });
+      const firstPhoto = slides.find((s) => s.photos?.length > 0)?.photos?.[0] || "";
+      const grp: RecordGroup = {
+        presentationId: String(pres._id),
+        summaryTitle: pres.summaryTitle,
+        authorName,
+        slideCount: slides.length,
+        firstPhoto,
+        createdAt: pres.createdAt,
+        slides,
+      };
+      groupMap.set(grp.presentationId, grp);
+      defaultList.push(grp);
     }
 
-    // Kayıtlı slideOrder varsa ona göre sırala, yeni eklenenleri sona ekle
-    const orderedSlides: FlatSlide[] = [];
+    const orderedPresentations: RecordGroup[] = [];
     const seen = new Set<string>();
 
-    if (Array.isArray(meeting.slideOrder) && meeting.slideOrder.length > 0) {
-      for (const ord of meeting.slideOrder) {
-        const key = `${ord.presentationId}_${ord.slideIndex}`;
-        const found = flatMap.get(key);
-        if (found && !seen.has(key)) {
-          orderedSlides.push(found);
-          seen.add(key);
+    if (Array.isArray(meeting.presentationOrder) && meeting.presentationOrder.length > 0) {
+      for (const pid of meeting.presentationOrder) {
+        const found = groupMap.get(String(pid));
+        if (found && !seen.has(found.presentationId)) {
+          orderedPresentations.push(found);
+          seen.add(found.presentationId);
         }
       }
     }
     for (const item of defaultList) {
-      if (!seen.has(item.key)) {
-        orderedSlides.push(item);
-        seen.add(item.key);
+      if (!seen.has(item.presentationId)) {
+        orderedPresentations.push(item);
+        seen.add(item.presentationId);
       }
     }
 
@@ -110,7 +100,7 @@ export async function GET(
         photosPurged: meeting.photosPurged,
         photosPurgedAt: meeting.photosPurgedAt,
       },
-      slides: orderedSlides,
+      orderedPresentations,
     });
   } catch (error: any) {
     console.error("GET /api/presentations/meetings/[id] error:", error);
@@ -139,7 +129,7 @@ export async function PATCH(
 
     const { id } = await context.params;
     const body = await req.json();
-    const { action, slideOrder } = body;
+    const { action, presentationOrder } = body;
 
     await dbConnect();
     const meeting = await PresentationMeeting.findById(id);
@@ -147,11 +137,8 @@ export async function PATCH(
       return NextResponse.json({ error: "Toplantı bulunamadı." }, { status: 404 });
     }
 
-    if (Array.isArray(slideOrder)) {
-      meeting.slideOrder = slideOrder.map((s: any) => ({
-        presentationId: String(s.presentationId),
-        slideIndex: Number(s.slideIndex),
-      }));
+    if (Array.isArray(presentationOrder)) {
+      meeting.presentationOrder = presentationOrder.map((pid: any) => String(pid));
     }
 
     if (action === "close") {
@@ -174,7 +161,6 @@ export async function PATCH(
     } else if (action === "markDownloaded") {
       const now = new Date();
       meeting.downloadedAt = now;
-      // İndirildikten 12 saat sonra fotoğraflar otomatik silinir
       meeting.photosExpireAt = new Date(now.getTime() + 12 * 60 * 60 * 1000);
       meeting.photosPurged = false;
       await Log.create({

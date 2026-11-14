@@ -7,6 +7,10 @@ export interface ISlideData {
   photoCount: 0 | 1 | 2 | 4;
   photos: string[]; // Sıkıştırılmış JPEG data URI dizisi
   description: string;
+  fontSize?: number | "auto"; // Punto: "auto" veya 8..18
+  descTopPct?: number; // Açıklama kutusu üst konumu % (44.5..65)
+  descBottomPct?: number; // Açıklama kutusu alt konumu % (72..97.5)
+  templateId?: string; // Seçilen şablon ID
 }
 
 export interface IPresentation extends Document {

@@ -1,11 +1,6 @@
 import mongoose, { Schema, Document } from "mongoose";
 import { applyFieldEncryption } from "@/lib/encryption";
 
-export interface ISlideOrderItem {
-  presentationId: string;
-  slideIndex: number;
-}
-
 export interface IPresentationMeeting extends Document {
   title: string;
   meetingDate: Date;
@@ -13,7 +8,7 @@ export interface IPresentationMeeting extends Document {
   openedBy: mongoose.Types.ObjectId;
   closedBy?: mongoose.Types.ObjectId;
   closedAt?: Date;
-  slideOrder: ISlideOrderItem[];
+  presentationOrder: string[];
   downloadedAt?: Date;
   photosExpireAt?: Date;
   photosPurged: boolean;
@@ -35,13 +30,8 @@ const PresentationMeetingSchema = new Schema<IPresentationMeeting>(
     openedBy: { type: Schema.Types.ObjectId, ref: "User", required: true },
     closedBy: { type: Schema.Types.ObjectId, ref: "User" },
     closedAt: { type: Date },
-    slideOrder: {
-      type: [
-        {
-          presentationId: { type: String, required: true },
-          slideIndex: { type: Number, required: true },
-        },
-      ],
+    presentationOrder: {
+      type: [String],
       default: [],
     },
     downloadedAt: { type: Date },

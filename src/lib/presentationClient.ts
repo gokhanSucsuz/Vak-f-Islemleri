@@ -8,9 +8,15 @@ export interface SlideItem {
   photoCount: 0 | 1 | 2 | 4;
   photos: string[];
   description: string;
+  fontSize?: number | "auto";
+  descTopPct?: number;
+  descBottomPct?: number;
+  templateId?: string;
 }
 
 export interface PresentationTemplateClient {
+  _id: string;
+  name: string;
   fileName: string;
   backgroundImageBase64: string;
   slideWidthIn: number;
@@ -72,19 +78,51 @@ function getImageDimensions(dataUrl: string): Promise<{ w: number; h: number }> 
 }
 
 /**
- * Verilen slayt listesini yüklenmiş şablon arka planı ve birebir yerleşimle
+ * Açıklama satırlarını kutu genişliği ve yüksekliğine göre taşmayacak
+ * en büyük puntoya (7pt - 14pt) otomatik sığdırır.
+ */
+export function computeAutoFontSizePt(
+  lines: string[],
+  boxWidthIn: number,
+  boxHeightIn: number
+): number {
+  if (lines.length === 0) return 13;
+  const usableW = Math.max(2, boxWidthIn - 0.32);
+  const usableH = Math.max(1, boxHeightIn - 0.2);
+
+  for (let pt = 14; pt >= 7; pt -= 0.5) {
+    // Ortalama karakter genişliği ~ pt * 0.52 pt (1 inch = 72pt)
+    const charsPerLine = Math.max(15, Math.floor((usableW * 72) / (pt * 0.52)));
+    let totalVisualLines = 0;
+    for (const line of lines) {
+      const len = line.length + 3; // "➢  " dahil
+      totalVisualLines += Math.max(1, Math.ceil(len / charsPerLine));
+    }
+    const lineHeightIn = (pt * 1.32) / 72;
+    const totalHeightIn = totalVisualLines * lineHeightIn + lines.length * (2.5 / 72);
+    if (totalHeightIn <= usableH) {
+      return pt;
+    }
+  }
+  return 7;
+}
+
+/**
+ * Verilen slayt listesini (her slayt kendi seçili şablonuyla birlikte)
  * PowerPoint (.pptx) dosyası olarak indirir.
  */
 export async function exportSlidesToPptx(params: {
   slides: SlideItem[];
   fileName: string;
+  templates?: PresentationTemplateClient[];
   template?: PresentationTemplateClient | null;
 }) {
-  const { slides, fileName, template } = params;
+  const { slides, fileName, templates = [], template = null } = params;
   const pptx = new PptxGenJS();
 
-  const slideW = template?.slideWidthIn || 10;
-  const slideH = template?.slideHeightIn || 7.5;
+  const defaultTpl = templates[0] || template;
+  const slideW = defaultTpl?.slideWidthIn || 10;
+  const slideH = defaultTpl?.slideHeightIn || 7.5;
   const sx = slideW / 10;
   const sy = slideH / 7.5;
 
@@ -93,9 +131,12 @@ export async function exportSlidesToPptx(params: {
 
   for (const item of slides) {
     const slide = pptx.addSlide();
+    const slideTpl =
+      (item.templateId && templates.find((t) => t._id === item.templateId)) ||
+      defaultTpl;
 
-    if (template?.backgroundImageBase64) {
-      slide.background = { data: template.backgroundImageBase64 };
+    if (slideTpl?.backgroundImageBase64) {
+      slide.background = { data: slideTpl.backgroundImageBase64 };
     } else {
       slide.background = { color: "E5E7EB" };
     }
@@ -130,7 +171,6 @@ export async function exportSlidesToPptx(params: {
       for (let i = 0; i < photos.length; i++) {
         const box = boxes[i];
         const photoData = photos[i];
-        // Beyaz çerçeve (örnek PowerPoint görüntüsündeki gibi)
         slide.addShape(pptx.ShapeType.rect, {
           x: box.x,
           y: box.y,
@@ -199,11 +239,13 @@ export async function exportSlidesToPptx(params: {
       }
     );
 
-    // Ortadan en alta kadar açıklama kutusu
+    // Açıklama kutusu (fotoğraf alanının altına ve sayfa sınırına kelepçeli)
+    const topPct = Math.min(65, Math.max(44.5, item.descTopPct ?? 46));
+    const bottomPct = Math.min(97.5, Math.max(topPct + 18, item.descBottomPct ?? 96.5));
     const descX = 0.32 * sx;
-    const descY = 3.45 * sy;
+    const descY = (topPct / 100) * slideH;
     const descW = 9.36 * sx;
-    const descH = 3.78 * sy;
+    const descH = ((bottomPct - topPct) / 100) * slideH;
 
     slide.addShape(pptx.ShapeType.rect, {
       x: descX,
@@ -219,7 +261,10 @@ export async function exportSlidesToPptx(params: {
       .map((l) => l.trim())
       .filter(Boolean);
 
-    const fontSize = lines.length > 12 ? 10.5 : lines.length > 9 ? 11.5 : 13;
+    const fontSize =
+      item.fontSize && item.fontSize !== "auto"
+        ? Number(item.fontSize)
+        : computeAutoFontSizePt(lines, descW, descH);
 
     if (lines.length > 0) {
       slide.addText(
@@ -229,14 +274,14 @@ export async function exportSlidesToPptx(params: {
             fontSize,
             color: "111827",
             breakLine: idx < lines.length - 1,
-            paraSpaceAfter: 3,
+            paraSpaceAfter: 2,
           },
         })),
         {
-          x: descX + 0.16 * sx,
-          y: descY + 0.12 * sy,
-          w: descW - 0.32 * sx,
-          h: descH - 0.24 * sy,
+          x: descX + 0.14 * sx,
+          y: descY + 0.1 * sy,
+          w: descW - 0.28 * sx,
+          h: descH - 0.2 * sy,
           valign: "top",
           fontFace: "Calibri",
         }
@@ -245,5 +290,7 @@ export async function exportSlidesToPptx(params: {
   }
 
   const safeName = fileName.replace(/[\\/:*?"<>|]/g, "_");
-  await pptx.writeFile({ fileName: safeName.endsWith(".pptx") ? safeName : `${safeName}.pptx` });
+  await pptx.writeFile({
+    fileName: safeName.endsWith(".pptx") ? safeName : `${safeName}.pptx`,
+  });
 }

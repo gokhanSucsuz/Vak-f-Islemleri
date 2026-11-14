@@ -2,7 +2,7 @@ import mongoose, { Schema, Document } from "mongoose";
 import { applyFieldEncryption } from "@/lib/encryption";
 
 export interface IPresentationTemplate extends Document {
-  key: string;
+  name: string;
   fileName: string;
   fileSize: number;
   backgroundImageBase64: string;
@@ -16,12 +16,7 @@ export interface IPresentationTemplate extends Document {
 
 const PresentationTemplateSchema = new Schema<IPresentationTemplate>(
   {
-    key: {
-      type: String,
-      default: "default",
-      unique: true,
-      required: true,
-    },
+    name: { type: String, required: true, trim: true },
     fileName: { type: String, required: true },
     fileSize: { type: Number, default: 0 },
     backgroundImageBase64: { type: String, default: "" },

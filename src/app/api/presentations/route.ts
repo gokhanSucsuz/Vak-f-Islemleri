@@ -114,6 +114,13 @@ export async function POST(req: NextRequest) {
         : 0) as 0 | 1 | 2 | 4,
       photos: Array.isArray(s.photos) ? s.photos.slice(0, 4) : [],
       description: (s.description || "").trim(),
+      fontSize:
+        s.fontSize === "auto" || !s.fontSize
+          ? "auto"
+          : Math.min(20, Math.max(7, Number(s.fontSize))),
+      descTopPct: Math.min(65, Math.max(44.5, Number(s.descTopPct ?? 46))),
+      descBottomPct: Math.min(97.5, Math.max(72, Number(s.descBottomPct ?? 96.5))),
+      templateId: s.templateId ? String(s.templateId) : undefined,
     }));
 
     if (sanitizedSlides.some((s) => !s.fullName)) {
