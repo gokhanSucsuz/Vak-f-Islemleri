@@ -2,6 +2,54 @@
 
 import PptxGenJS from "pptxgenjs";
 
+const cleanedBgCache = new Map<string, string>();
+
+/**
+ * Şablon arka plan görselinin sol alt köşesindeki (fppt.com) filigran alanını
+ * hemen üstündeki temiz arka plan dokusuyla pürüzsüzce kapatır.
+ */
+export async function cleanTemplateWatermark(dataUrl: string): Promise<string> {
+  if (!dataUrl || typeof window === "undefined") return dataUrl;
+  const cached = cleanedBgCache.get(dataUrl);
+  if (cached) return cached;
+
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Görsel yüklenemedi"));
+      el.src = dataUrl;
+    });
+
+    const w = img.naturalWidth || img.width;
+    const h = img.naturalHeight || img.height;
+    if (!w || !h) return dataUrl;
+
+    const canvas = document.createElement("canvas");
+    canvas.width = w;
+    canvas.height = h;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return dataUrl;
+
+    ctx.drawImage(img, 0, 0, w, h);
+
+    // Sol alt köşedeki fppt.com yazısı (~x: %1.2..%14, y: %94..%98.5)
+    const x0 = Math.floor(w * 0.012);
+    const regionW = Math.max(1, Math.floor(w * 0.14) - x0);
+    const sampleY = Math.max(0, Math.floor(h * 0.935));
+    const y0 = Math.floor(h * 0.94);
+    const regionH = Math.max(1, Math.floor(h * 0.985) - y0);
+
+    ctx.drawImage(canvas, x0, sampleY, regionW, 1, x0, y0, regionW, regionH);
+
+    const cleaned = canvas.toDataURL("image/jpeg", 0.92);
+    cleanedBgCache.set(dataUrl, cleaned);
+    return cleaned;
+  } catch {
+    return dataUrl;
+  }
+}
+
 export interface SlideItem {
   fullName: string;
   neighborhood: string;
@@ -244,7 +292,8 @@ export async function exportSlidesToPptx(params: {
     const layout = slideTpl?.layoutConfig || DEFAULT_TEMPLATE_LAYOUT;
 
     if (slideTpl?.backgroundImageBase64) {
-      slide.background = { data: slideTpl.backgroundImageBase64 };
+      const cleanedBg = await cleanTemplateWatermark(slideTpl.backgroundImageBase64);
+      slide.background = { data: cleanedBg };
     } else {
       slide.background = { color: "E5E7EB" };
     }

@@ -39,6 +39,7 @@ import {
   PresentationTemplateClient,
   DEFAULT_TEMPLATE_LAYOUT,
   SLIDE_FONT_OPTIONS,
+  cleanTemplateWatermark,
   compressImageToJpeg,
   exportSlidesToPptx,
 } from "@/lib/presentationClient";
@@ -619,7 +620,21 @@ export default function PresentationsPage() {
       const meetData = await meetRes.json();
 
       if (tplRes.ok) {
-        setTemplates(tplData.templates || (tplData.template ? [tplData.template] : []));
+        const rawTpls: PresentationTemplateClient[] =
+          tplData.templates || (tplData.template ? [tplData.template] : []);
+        const cleanedTpls = await Promise.all(
+          rawTpls.map(async (t) =>
+            t.backgroundImageBase64
+              ? {
+                  ...t,
+                  backgroundImageBase64: await cleanTemplateWatermark(
+                    t.backgroundImageBase64
+                  ),
+                }
+              : t
+          )
+        );
+        setTemplates(cleanedTpls);
       }
       if (meetRes.ok) {
         const list: MeetingItem[] = meetData.meetings || [];
