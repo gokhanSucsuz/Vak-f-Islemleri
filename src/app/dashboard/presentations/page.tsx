@@ -1895,47 +1895,51 @@ export default function PresentationsPage() {
                     </div>
                   )}
                 </div>
-
-                <div>
-                  <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                    Açıklama Alanı (Metin Editörü — Her satır otomatik ➢ işareti alır)
-                  </label>
-                  <RichDescriptionEditor
-                    slideKey={`${editingId || "new"}_${activeSlideIdx}`}
-                    initialHtml={activeSlide.descriptionHtml || ""}
-                    initialPlain={activeSlide.description || ""}
-                    onChange={(html, plain) =>
-                      updateCurrentSlide({ descriptionHtml: html, description: plain })
-                    }
-                  />
-                </div>
               </>
             )}
           </div>
 
-          <div className="xl:col-span-7 bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-3">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
-                Canlı Slayt Önizlemesi — Sayfa {activeSlideIdx + 1} / {slides.length}
-              </span>
-              <div className="flex items-center gap-2">
-                {activeSlide.photos.length > 1 && (
-                  <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
-                    Fotoğrafları sürükleyerek yerini değiştirebilirsiniz
-                  </span>
-                )}
-                {hasDescBox && (
-                  <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
-                    Scroll Yok • Sayfaya Otomatik Sığar
-                  </span>
-                )}
+          <div className="xl:col-span-7 bg-white p-5 rounded-3xl border border-slate-200 shadow-sm space-y-4">
+            <div className="space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-bold uppercase tracking-wider text-slate-500">
+                  Canlı Slayt Önizlemesi — Sayfa {activeSlideIdx + 1} / {slides.length}
+                </span>
+                <div className="flex items-center gap-2">
+                  {activeSlide.photos.length > 1 && (
+                    <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-blue-50 text-blue-700 border border-blue-200">
+                      Fotoğrafları sürükleyerek yerini değiştirebilirsiniz
+                    </span>
+                  )}
+                  {hasDescBox && (
+                    <span className="text-[11px] font-medium px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                      Scroll Yok • Sayfaya Otomatik Sığar
+                    </span>
+                  )}
+                </div>
               </div>
+              <SlidePreviewCard
+                slide={activeSlide}
+                templates={templates}
+                onReorderPhotos={(newPhotos) => updateCurrentSlide({ photos: newPhotos })}
+              />
             </div>
-            <SlidePreviewCard
-              slide={activeSlide}
-              templates={templates}
-              onReorderPhotos={(newPhotos) => updateCurrentSlide({ photos: newPhotos })}
-            />
+
+            {hasDescBox && (
+              <div className="pt-2 border-t border-slate-100">
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Açıklama Alanı (Metin Editörü — Her satır otomatik ➢ işareti alır)
+                </label>
+                <RichDescriptionEditor
+                  slideKey={`${editingId || "new"}_${activeSlideIdx}`}
+                  initialHtml={activeSlide.descriptionHtml || ""}
+                  initialPlain={activeSlide.description || ""}
+                  onChange={(html, plain) =>
+                    updateCurrentSlide({ descriptionHtml: html, description: plain })
+                  }
+                />
+              </div>
+            )}
           </div>
         </div>
       </div>
