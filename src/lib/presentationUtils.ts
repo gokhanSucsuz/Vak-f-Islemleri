@@ -191,11 +191,33 @@ export async function extractPptxTemplateInfo(buffer: Buffer): Promise<{
     titleBox = null;
     descBox = null;
   } else if (photoSlots.length === 0 && spBoxes.length === 1) {
-    // Üstte başlık kutusu var, açıklama kutusu yok (boş veya fotoğraf alanı)
+    // sablon2: Üstte başlık kutusu var, açıklama kutusu yok (boş veya fotoğraf alanı)
     mode = "title_only";
     const sp = spBoxes[0];
     titleBox = { xPct: sp.xPct, yPct: sp.yPct, wPct: sp.wPct, hPct: Math.max(sp.hPct, 11) };
     descBox = null;
+  } else if (photoSlots.length === 0 && spBoxes.length >= 2) {
+    // sablon6: Fotoğrafsız, üst başlık kutusu + alt açıklama kutusu
+    mode = "title_and_desc";
+    const smallTitle =
+      spBoxes.find((b) => /ad[ıi]\s*soyad|mahalle/i.test(b.text)) ||
+      spBoxes.find((b) => b.hPct <= 18) ||
+      spBoxes[0];
+    const largeDesc =
+      spBoxes.find((b) => b !== smallTitle && b.hPct > 20) ||
+      spBoxes.find((b) => b !== smallTitle);
+
+    titleBox = smallTitle
+      ? {
+          xPct: smallTitle.xPct,
+          yPct: smallTitle.yPct,
+          wPct: smallTitle.wPct,
+          hPct: Math.max(smallTitle.hPct, 11.5),
+        }
+      : { xPct: 18.2, yPct: 14.5, wPct: 63.6, hPct: 11.5 };
+    descBox = largeDesc
+      ? { xPct: largeDesc.xPct, yPct: largeDesc.yPct, wPct: largeDesc.wPct, hPct: largeDesc.hPct }
+      : { xPct: 1.3, yPct: 41.3, wPct: 97.5, hPct: 53.9 };
   } else if (photoSlots.length === 1 && spBoxes.length >= 1) {
     // sablon1 (classic): 1 üst-sol fotoğraf alanı + sağ üst başlık + alt açıklama
     mode = "classic";
@@ -228,7 +250,7 @@ export async function extractPptxTemplateInfo(buffer: Buffer): Promise<{
     slideWidthIn,
     slideHeightIn,
     layoutConfig: {
-      version: 2,
+      version: 3,
       mode,
       titleBox,
       descBox,

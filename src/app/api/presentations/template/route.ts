@@ -34,7 +34,7 @@ export async function GET() {
 
     const templates = await Promise.all(
       docs.map(async (tpl) => {
-        if ((!tpl.layoutConfig || tpl.layoutConfig.version !== 2) && tpl.pptxCompressed) {
+        if ((!tpl.layoutConfig || tpl.layoutConfig.version !== 3) && tpl.pptxCompressed) {
           try {
             const rawBuf = await gunzip(tpl.pptxCompressed);
             const info = await extractPptxTemplateInfo(rawBuf);

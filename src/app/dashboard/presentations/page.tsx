@@ -353,14 +353,25 @@ function SlidePreviewCard({
   const hasDescBox = Boolean(layout.descBox);
   const descLeftPct = layout.mode === "classic" ? 3.2 : layout.descBox?.xPct ?? 3.2;
   const descWidthPct = layout.mode === "classic" ? 93.6 : layout.descBox?.wPct ?? 93.6;
+  const minDescTop =
+    layout.mode === "classic"
+      ? 44.5
+      : layout.titleBox
+        ? Math.max(20, layout.titleBox.yPct + layout.titleBox.hPct + 2)
+        : 25;
+  const defaultDescTop = layout.descBox?.yPct ?? 46;
+  const defaultDescBottom = Math.min(
+    97.5,
+    (layout.descBox?.yPct ?? 46) + (layout.descBox?.hPct ?? 50.5)
+  );
   const topPct =
-    layout.mode === "classic"
-      ? Math.min(65, Math.max(44.5, slide.descTopPct ?? layout.descBox?.yPct ?? 46))
-      : layout.descBox?.yPct ?? 46;
+    layout.mode === "classic" || layout.mode === "title_and_desc"
+      ? Math.min(65, Math.max(minDescTop, slide.descTopPct ?? defaultDescTop))
+      : defaultDescTop;
   const bottomPct =
-    layout.mode === "classic"
-      ? Math.min(97.5, Math.max(topPct + 18, slide.descBottomPct ?? 96.5))
-      : Math.min(98, (layout.descBox?.yPct ?? 46) + (layout.descBox?.hPct ?? 50.5));
+    layout.mode === "classic" || layout.mode === "title_and_desc"
+      ? Math.min(97.5, Math.max(topPct + 18, slide.descBottomPct ?? (layout.mode === "classic" ? 96.5 : defaultDescBottom)))
+      : Math.min(98, defaultDescBottom);
   const heightPct = bottomPct - topPct;
 
   const [fittedPx, setFittedPx] = useState(12);
@@ -565,8 +576,11 @@ function SlidePreviewCard({
           );
         })}
 
-      {/* 2. BAŞLIK KUTUSU (classic ve title_only şablonlarında) */}
-      {layout.titleBox && (layout.mode === "classic" || layout.mode === "title_only") && (
+      {/* 2. BAŞLIK KUTUSU (classic, title_only ve title_and_desc şablonlarında) */}
+      {layout.titleBox &&
+        (layout.mode === "classic" ||
+          layout.mode === "title_only" ||
+          layout.mode === "title_and_desc") && (
         <div
           style={{
             left: `${titleLeftPct}%`,
@@ -1254,9 +1268,10 @@ export default function PresentationsPage() {
     const activeLayout = activeTpl?.layoutConfig || DEFAULT_TEMPLATE_LAYOUT;
     const isClassic = activeLayout.mode === "classic";
     const isMultiSlot = activeLayout.mode === "multi_slot";
+    const isTitleAndDesc = activeLayout.mode === "title_and_desc";
     const hasDescBox = Boolean(activeLayout.descBox);
-    const canChoosePhotoCount = !isMultiSlot;
-    const hasPhotoFeature = isMultiSlot || activeSlide.photoCount > 0;
+    const canChoosePhotoCount = !isMultiSlot && !isTitleAndDesc;
+    const hasPhotoFeature = isMultiSlot || (canChoosePhotoCount && activeSlide.photoCount > 0);
 
     const currentTop = activeSlide.descTopPct ?? 46;
     const currentBottom = activeSlide.descBottomPct ?? 96.5;
@@ -1379,7 +1394,11 @@ export default function PresentationsPage() {
                       const nextTpl = templates.find((t) => t._id === nextTplId);
                       const nextLayout = nextTpl?.layoutConfig || DEFAULT_TEMPLATE_LAYOUT;
                       let nextPhotoCount: 0 | 1 | 2 | 4 = activeSlide.photoCount;
-                      if (nextLayout.mode === "title_only" || nextLayout.mode === "blank_text") {
+                      if (
+                        nextLayout.mode === "title_only" ||
+                        nextLayout.mode === "blank_text" ||
+                        nextLayout.mode === "title_and_desc"
+                      ) {
                         nextPhotoCount = 0;
                       } else if (nextLayout.mode === "multi_slot") {
                         nextPhotoCount = (
@@ -1462,9 +1481,11 @@ export default function PresentationsPage() {
                 ? "Düzen: Üst Başlık (Açıklama Alanı Yok — Boş veya Fotoğraf Alanı)"
                 : activeLayout.mode === "blank_text"
                   ? "Düzen: Serbest Slayt (Açıklama Alanı Yok — Boş veya Fotoğraf Alanı)"
-                  : activeLayout.mode === "multi_slot"
-                    ? `Düzen: ${activeLayout.photoSlots.length}'lü Fotoğraf Şablonu (Açıklama Alanı Yok)`
-                    : "Düzen: Klasik Üst-Sol Fotoğraf + Sağ Üst Başlık + Alt Açıklama"}
+                  : activeLayout.mode === "title_and_desc"
+                    ? "Düzen: Fotoğrafsız Üst Başlık + Alt Açıklama"
+                    : activeLayout.mode === "multi_slot"
+                      ? `Düzen: ${activeLayout.photoSlots.length}'lü Fotoğraf Şablonu (Açıklama Alanı Yok)`
+                      : "Düzen: Klasik Üst-Sol Fotoğraf + Sağ Üst Başlık + Alt Açıklama"}
             </div>
 
             {canChoosePhotoCount && (
@@ -1677,7 +1698,7 @@ export default function PresentationsPage() {
                     </div>
                   </div>
 
-                  {isClassic && (
+                  {(isClassic || isTitleAndDesc) && (
                     <div className="grid grid-cols-2 gap-3 pt-1 border-t border-slate-200/70">
                       <div>
                         <label className="text-[11px] font-semibold text-slate-600 flex items-center justify-between mb-1">
@@ -1688,7 +1709,7 @@ export default function PresentationsPage() {
                         </label>
                         <input
                           type="range"
-                          min={44.5}
+                          min={isClassic ? 44.5 : 28}
                           max={62}
                           step={0.5}
                           value={currentTop}

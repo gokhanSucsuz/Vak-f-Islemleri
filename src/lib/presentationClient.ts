@@ -76,7 +76,7 @@ export interface TemplateBox {
 
 export interface TemplateLayoutConfig {
   version?: number;
-  mode: "classic" | "title_only" | "blank_text" | "multi_slot";
+  mode: "classic" | "title_only" | "blank_text" | "title_and_desc" | "multi_slot";
   titleBox: TemplateBox | null;
   descBox: TemplateBox | null;
   photoSlots: TemplateBox[];
@@ -422,8 +422,13 @@ export async function exportSlidesToPptx(params: {
       }
     }
 
-    // 2. BAŞLIK KUTUSU (classic veya title_only şablonlarında)
-    if (layout.titleBox && (layout.mode === "classic" || layout.mode === "title_only")) {
+    // 2. BAŞLIK KUTUSU (classic, title_only veya title_and_desc şablonlarında)
+    if (
+      layout.titleBox &&
+      (layout.mode === "classic" ||
+        layout.mode === "title_only" ||
+        layout.mode === "title_and_desc")
+    ) {
       const tb = layout.titleBox;
       let boxX = (tb.xPct / 100) * slideW;
       let boxW = (tb.wPct / 100) * slideW;
@@ -495,6 +500,15 @@ export async function exportSlidesToPptx(params: {
       if (layout.mode === "classic") {
         const topPct = Math.min(65, Math.max(44.5, item.descTopPct ?? layout.descBox.yPct));
         const bottomPct = Math.min(97.5, Math.max(topPct + 18, item.descBottomPct ?? 96.5));
+        descY = (topPct / 100) * slideH;
+        descH = ((bottomPct - topPct) / 100) * slideH;
+      } else if (layout.mode === "title_and_desc") {
+        const minTop = layout.titleBox
+          ? Math.max(20, layout.titleBox.yPct + layout.titleBox.hPct + 2)
+          : 25;
+        const topPct = Math.min(65, Math.max(minTop, item.descTopPct ?? layout.descBox.yPct));
+        const defaultBottom = Math.min(97.5, layout.descBox.yPct + layout.descBox.hPct);
+        const bottomPct = Math.min(97.5, Math.max(topPct + 18, item.descBottomPct ?? defaultBottom));
         descY = (topPct / 100) * slideH;
         descH = ((bottomPct - topPct) / 100) * slideH;
       }
