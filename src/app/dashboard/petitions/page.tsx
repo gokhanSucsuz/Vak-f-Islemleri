@@ -257,12 +257,22 @@ export default function PetitionsPage() {
       return;
     }
 
+    const todayStr = new Date().toLocaleDateString("tr-TR", {
+      day: "2-digit",
+      month: "2-digit",
+      year: "numeric",
+    });
+    const filledHtml = (tpl.htmlContent || "<p></p>").replace(
+      /\(\s*tar[iİıI]h\s*\)|\[\s*tar[iİıI]h\s*\]|\{\{\s*tar[iİıI]h\s*\}\}/gi,
+      todayStr
+    );
+
     setEditingId(null);
     setEditorType(type);
     setCitizenName("");
     setTcNo("");
     setSubject("");
-    setEditorInitialHtml(tpl.htmlContent);
+    setEditorInitialHtml(filledHtml);
     setEditorMode(true);
   };
 
@@ -617,12 +627,21 @@ export default function PetitionsPage() {
 
         {/* A4 Word Kağıt Alanı */}
         <div className="bg-slate-200/70 p-4 sm:p-8 rounded-3xl overflow-x-auto print:bg-white print:p-0">
-          <div
-            ref={editorRef}
-            contentEditable
-            suppressContentEditableWarning
-            className="w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white shadow-xl border border-slate-200 p-10 sm:p-16 text-slate-900 text-[14px] leading-relaxed focus:outline-none print:shadow-none print:border-none print:p-0 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-3 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-2 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-slate-300 [&_td]:p-2 [&_th]:border [&_th]:border-slate-300 [&_th]:p-2 [&_th]:bg-slate-50 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6"
-          />
+          <div className="w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white shadow-xl border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:p-0">
+            <div className="flex justify-center mb-3">
+              <img
+                src="/logo-vakif.jpg"
+                alt="Vakıf Logosu"
+                className="w-16 h-16 object-contain rounded-full"
+              />
+            </div>
+            <div
+              ref={editorRef}
+              contentEditable
+              suppressContentEditableWarning
+              className="w-full min-h-[250mm] text-slate-900 text-[13.5px] leading-snug focus:outline-none [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-black [&_td]:p-1.5 [&_th]:border [&_th]:border-black [&_th]:p-1.5 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6"
+            />
+          </div>
         </div>
       </div>
     );
@@ -1182,10 +1201,19 @@ export default function PetitionsPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto bg-slate-100 p-4 sm:p-8 rounded-2xl mt-4 print:bg-white print:p-0 print:mt-0 print:overflow-visible">
-              <div
-                className="w-full max-w-[210mm] min-h-[260mm] mx-auto bg-white shadow-md border border-slate-200 p-10 sm:p-14 text-slate-900 text-[14px] leading-relaxed print:shadow-none print:border-none print:p-0 [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-3 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-2 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-slate-300 [&_td]:p-2 [&_th]:border [&_th]:border-slate-300 [&_th]:p-2 [&_th]:bg-slate-50 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6"
-                dangerouslySetInnerHTML={{ __html: previewPetition.htmlContent }}
-              />
+              <div className="w-full max-w-[210mm] min-h-[260mm] mx-auto bg-white shadow-md border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:p-0">
+                <div className="flex justify-center mb-3">
+                  <img
+                    src="/logo-vakif.jpg"
+                    alt="Vakıf Logosu"
+                    className="w-16 h-16 object-contain rounded-full"
+                  />
+                </div>
+                <div
+                  className="text-slate-900 text-[13.5px] leading-snug [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-black [&_td]:p-1.5 [&_th]:border [&_th]:border-black [&_th]:p-1.5 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6"
+                  dangerouslySetInnerHTML={{ __html: previewPetition.htmlContent }}
+                />
+              </div>
             </div>
           </div>
         </div>

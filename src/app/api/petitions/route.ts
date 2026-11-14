@@ -185,7 +185,7 @@ export async function POST(req: Request) {
     });
 
     await Log.create({
-      user: (session.user as any).id,
+      userId: (session.user as any).id,
       action: "DİLEKÇE OLUŞTURULDU",
       details: `${citizenName} (${tcNo}) için ${
         petitionType === "matbu" ? "Matbu" : "Detaylı"

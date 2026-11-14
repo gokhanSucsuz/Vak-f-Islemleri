@@ -4,7 +4,7 @@ import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import PetitionTemplate from "@/models/PetitionTemplate";
 import Log from "@/models/Log";
-import mammoth from "mammoth";
+import { convertDocxBufferToStyledHtml } from "@/lib/docxToHtml";
 import { gzipSync } from "zlib";
 
 export async function GET() {
@@ -77,19 +77,8 @@ export async function POST(req: Request) {
     const arrayBuffer = await file.arrayBuffer();
     const buffer = Buffer.from(arrayBuffer);
 
-    // Word (.docx) -> düzenlenebilir temiz HTML dönüşümü
-    const result = await mammoth.convertToHtml(
-      { buffer },
-      {
-        styleMap: [
-          "p[style-name='Title'] => h1:fresh",
-          "p[style-name='Heading 1'] => h2:fresh",
-          "p[style-name='Heading 2'] => h3:fresh",
-        ],
-      }
-    );
-
-    const htmlContent = (result.value || "").trim() || "<p></p>";
+    // Word (.docx) -> birebir hizalama, tablo, satır yüksekliği ve biçimlendirmeyi koruyan HTML
+    const htmlContent = await convertDocxBufferToStyledHtml(buffer);
     const docxCompressed = gzipSync(buffer);
 
     await dbConnect();
@@ -110,7 +99,7 @@ export async function POST(req: Request) {
       .populate("uploadedBy", "name email");
 
     await Log.create({
-      user: (session.user as any).id,
+      userId: (session.user as any).id,
       action: "DİLEKÇE ŞABLONU YÜKLENDİ",
       details: `${type === "detayli" ? "Detaylı" : "Matbu"} dilekçe şablonu güncellendi: ${fileName}`,
     });

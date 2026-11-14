@@ -104,7 +104,7 @@ export async function PUT(
     }
 
     await Log.create({
-      user: (session.user as any).id,
+      userId: (session.user as any).id,
       action: "DİLEKÇE GÜNCELLENDİ",
       details: `${citizenName} (${tcNo}) dilekçesi güncellendi.`,
     });
@@ -150,7 +150,7 @@ export async function DELETE(
     await Petition.findByIdAndDelete(id);
 
     await Log.create({
-      user: userId,
+      userId: userId,
       action: "DİLEKÇE SİLİNDİ",
       details: `${existing.citizenName} (${existing.tcNo}) dilekçesi silindi.`,
     });

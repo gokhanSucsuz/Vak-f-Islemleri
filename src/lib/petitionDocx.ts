@@ -3,6 +3,7 @@ import {
   Packer,
   Paragraph,
   TextRun,
+  ImageRun,
   AlignmentType,
   HeadingLevel,
   Table,
@@ -207,6 +208,28 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
 
 export async function downloadPetitionAsDocx(htmlContent: string, fileBaseName: string) {
   const children = htmlToDocxChildren(htmlContent);
+
+  try {
+    const res = await fetch("/logo-vakif.jpg");
+    if (res.ok) {
+      const arrayBuffer = await res.arrayBuffer();
+      const logoParagraph = new Paragraph({
+        alignment: AlignmentType.CENTER,
+        spacing: { after: 140 },
+        children: [
+          new ImageRun({
+            data: new Uint8Array(arrayBuffer),
+            transformation: { width: 58, height: 58 },
+            type: "jpg",
+          }),
+        ],
+      });
+      children.unshift(logoParagraph);
+    }
+  } catch {
+    // Logo fetch fail olsa bile Word indirme işlemi devam etsin
+  }
+
   const doc = new Document({
     sections: [
       {
