@@ -640,6 +640,122 @@ export default function InKindAidPage() {
     }
   };
 
+  // Tek sayfa A4'e tam sığan Boş Islak İmza Listesi PDF'i
+  const handleDownloadBlankSignaturePDF = async () => {
+    setIsGeneratingPdf(true);
+    try {
+      const { default: jsPDF } = await import("jspdf");
+      const { default: autoTable } = await import("jspdf-autotable");
+
+      const doc = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
+
+      const fontName = await registerTurkishFont(doc);
+
+      doc.setFont(fontName, "bold");
+      doc.setFontSize(12);
+      doc.text("T.C.", 148.5, 11, { align: "center" });
+      doc.setFontSize(10.5);
+      doc.text(institutionName || "SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI", 148.5, 16.5, {
+        align: "center",
+      });
+      doc.setFontSize(10);
+      doc.text("AYNİ YARDIM TESLİM VE ISLAK İMZA LİSTESİ", 148.5, 22, {
+        align: "center",
+      });
+
+      doc.setFont(fontName, "normal");
+      doc.setFontSize(8.5);
+      doc.text("Tarih: .... / .... / 202...", 12, 28);
+      doc.text("Sayfa: 1 / 1", 285, 28, { align: "right" });
+
+      const blankRows = Array.from({ length: 15 }, (_, idx) => [
+        idx + 1,
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+      ]);
+
+      autoTable(doc, {
+        startY: 31,
+        margin: { left: 12, right: 12, bottom: 20 },
+        head: [
+          [
+            "Sıra",
+            "Tarih",
+            "T.C. Kimlik No",
+            "Hak Sahibi Adı Soyadı",
+            "Teslim Alan",
+            "Telefon",
+            "Verilen Yardım Türü",
+            "Miktar",
+            "İmza",
+          ],
+        ],
+        body: blankRows,
+        theme: "grid",
+        styles: {
+          font: fontName,
+          fontSize: 8.5,
+          minCellHeight: 9.5,
+          valign: "middle",
+          lineColor: [148, 163, 184],
+          lineWidth: 0.25,
+          textColor: [15, 23, 42],
+        },
+        headStyles: {
+          fillColor: [30, 41, 59],
+          textColor: [255, 255, 255],
+          font: fontName,
+          fontStyle: "bold",
+          halign: "center",
+          minCellHeight: 8.5,
+        },
+        columnStyles: {
+          0: { cellWidth: 10, halign: "center" },
+          1: { cellWidth: 22, halign: "center" },
+          2: { cellWidth: 32 },
+          3: { cellWidth: 52 },
+          4: { cellWidth: 35 },
+          5: { cellWidth: 28 },
+          6: { cellWidth: 46 },
+          7: { cellWidth: 15, halign: "center" },
+          8: { cellWidth: 33 },
+        },
+      });
+
+      const footerY = 193;
+      doc.setFont(fontName, "bold");
+      doc.setFontSize(8.5);
+      doc.text("Teslim Eden / Düzenleyen", 45, footerY, { align: "center" });
+      doc.text("Onaylayan", 252, footerY, { align: "center" });
+      doc.setFont(fontName, "normal");
+      doc.text(
+        `${session?.user?.name || "................................"}   (İmza)`,
+        45,
+        footerY + 6,
+        { align: "center" }
+      );
+      doc.text("Vakıf Müdürü   (İmza - Mühür)", 252, footerY + 6, { align: "center" });
+
+      doc.save("Ayni_Yardim_Bos_Islak_Imza_Listesi.pdf");
+      toast.success("Tam sayfa boş ıslak imza listesi indirildi.");
+    } catch (err: any) {
+      console.error(err);
+      toast.error("Boş imza listesi oluşturulurken hata oluştu: " + err.message);
+    } finally {
+      setIsGeneratingPdf(false);
+    }
+  };
+
   return (
     <div className="space-y-6 print:space-y-0 print:bg-white">
       {/* Üst Başlık ve Aksiyon Alanı */}
@@ -1620,12 +1736,24 @@ export default function InKindAidPage() {
                 Kapat
               </button>
 
-              <button
-                type="button"
-                disabled={isGeneratingPdf || officialPdfRecords.length === 0}
-                onClick={handleDownloadDirectPDF}
-                className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-all shadow-lg shadow-amber-600/30 flex items-center gap-2 disabled:opacity-50"
-              >
+              <div className="flex flex-wrap items-center gap-2.5">
+                <button
+                  type="button"
+                  disabled={isGeneratingPdf}
+                  onClick={handleDownloadBlankSignaturePDF}
+                  className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-sm font-semibold transition-all shadow-md flex items-center gap-2 disabled:opacity-50"
+                  title="Elle doldurmak için tek sayfa A4 boş ıslak imza listesi indir"
+                >
+                  <FileText className="w-4 h-4 text-slate-300" />
+                  Boş Islak İmza Listesi (.pdf)
+                </button>
+
+                <button
+                  type="button"
+                  disabled={isGeneratingPdf || officialPdfRecords.length === 0}
+                  onClick={handleDownloadDirectPDF}
+                  className="px-5 py-2.5 rounded-xl bg-amber-600 hover:bg-amber-700 text-white text-sm font-semibold transition-all shadow-lg shadow-amber-600/30 flex items-center gap-2 disabled:opacity-50"
+                >
                 {isGeneratingPdf ? (
                   <>
                     <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
@@ -1638,6 +1766,7 @@ export default function InKindAidPage() {
                   </>
                 )}
               </button>
+              </div>
             </div>
           </div>
         </div>
