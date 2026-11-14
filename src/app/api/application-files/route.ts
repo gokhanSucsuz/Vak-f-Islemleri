@@ -5,7 +5,59 @@ import dbConnect from "@/lib/db";
 import ApplicationFile from "@/models/ApplicationFile";
 import User from "@/models/User";
 import Log from "@/models/Log";
-import { toTurkishRegexPattern } from "@/lib/turkish";
+import { toTurkishRegexPattern, normalizeTurkish } from "@/lib/turkish";
+
+function computeSearchRelevance(
+  record: any,
+  normSearch: string,
+  normTokens: string[]
+): number {
+  const appNo = normalizeTurkish(String(record.applicationNo || "")).replace(/^#/, "");
+  const tc = normalizeTurkish(String(record.tcNo || ""));
+  const spouseTc = normalizeTurkish(String(record.spouseTcNo || ""));
+  const name = normalizeTurkish(String(record.applicantName || ""));
+  const spouse = normalizeTurkish(String(record.spouseName || ""));
+
+  // 1. TC Kimlik No veya Dosya No birebir eşleşme
+  if (
+    (tc && tc === normSearch) ||
+    (spouseTc && spouseTc === normSearch) ||
+    (appNo && (appNo === normSearch || appNo.endsWith(`-${normSearch}`)))
+  ) {
+    return 1000;
+  }
+
+  // 2. Başvuru sahibi Adı Soyadı tam ifade eşleşmesi ("ali kaya" -> "Ali Kaya")
+  if (name === normSearch) return 900;
+  if (name.startsWith(normSearch)) return 850;
+  if (name.includes(normSearch)) return 800;
+
+  // 3. Eş Adı Soyadı tam ifade eşleşmesi
+  if (spouse === normSearch) return 650;
+  if (spouse.includes(normSearch)) return 600;
+
+  // 4. Tüm kelimeler Ad Soyad içinde geçiyorsa ("Ali Mehmet Kaya" için "ali kaya")
+  if (normTokens.length > 1 && normTokens.every((t) => name.includes(t))) {
+    return 450;
+  }
+
+  // 5. Tüm kelimeler Eş Adı içinde geçiyorsa
+  if (normTokens.length > 1 && normTokens.every((t) => spouse.includes(t))) {
+    return 300;
+  }
+
+  // 6. TC veya Dosya No kısmi/başlangıç eşleşmesi
+  if (
+    (tc && tc.startsWith(normSearch)) ||
+    (spouseTc && spouseTc.startsWith(normSearch)) ||
+    (appNo && appNo.includes(normSearch))
+  ) {
+    return 150;
+  }
+
+  // 7. Kelimeler farklı alanlara dağılmışsa (ör. ad + adres/not)
+  return 50;
+}
 
 async function checkManagePermission(session: any): Promise<boolean> {
   if (!session?.user) return false;
@@ -127,19 +179,50 @@ export async function GET(req: Request) {
       sortOptions = { applicantName: -1 };
     }
 
-    // Sayfalama (Pagination)
-    let queryExec = ApplicationFile.find(query)
-      .populate("createdBy", "name email")
-      .populate("updatedBy", "name email")
-      .sort(sortOptions);
+    // Sayfalama & Arama Önceliklendirme (Pagination + Relevance)
+    let records: any[] = [];
+    let totalMatched = 0;
 
-    if (!fetchAll) {
-      const skip = (page - 1) * limit;
-      queryExec = queryExec.skip(skip).limit(limit);
+    if (search) {
+      const allMatched = await ApplicationFile.find(query)
+        .populate("createdBy", "name email")
+        .populate("updatedBy", "name email")
+        .sort(sortOptions)
+        .lean();
+
+      const normSearch = normalizeTurkish(search.replace(/\s+/g, " "));
+      const normTokens = normSearch.split(/\s+/).filter(Boolean);
+
+      const scored = allMatched.map((doc: any) => ({
+        doc,
+        score: computeSearchRelevance(doc, normSearch, normTokens),
+      }));
+      scored.sort((a, b) => b.score - a.score);
+
+      const ranked = scored.map((item) => item.doc);
+      totalMatched = ranked.length;
+
+      if (fetchAll) {
+        records = ranked;
+      } else {
+        const skip = (page - 1) * limit;
+        records = ranked.slice(skip, skip + limit);
+      }
+    } else {
+      let queryExec = ApplicationFile.find(query)
+        .populate("createdBy", "name email")
+        .populate("updatedBy", "name email")
+        .sort(sortOptions);
+
+      if (!fetchAll) {
+        const skip = (page - 1) * limit;
+        queryExec = queryExec.skip(skip).limit(limit);
+      }
+
+      records = await queryExec.lean();
+      totalMatched = await ApplicationFile.countDocuments(query);
     }
 
-    const records = await queryExec.lean();
-    const totalMatched = await ApplicationFile.countDocuments(query);
     const totalPages = fetchAll ? 1 : Math.ceil(totalMatched / limit) || 1;
 
     // Genel İstatistikler
