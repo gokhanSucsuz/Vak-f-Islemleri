@@ -95,6 +95,7 @@ export async function GET(
         status: meeting.status,
         isLocked: Boolean(meeting.isLocked),
         authorizedUserId: meeting.authorizedUserId || null,
+        backgroundPreset: meeting.backgroundPreset || "template",
         openedBy: meeting.openedBy,
         closedBy: meeting.closedBy,
         closedAt: meeting.closedAt,
@@ -129,7 +130,7 @@ export async function PATCH(
 
     const { id } = await context.params;
     const body = await req.json();
-    const { action, presentationOrder, authorizedUserId } = body;
+    const { action, presentationOrder, authorizedUserId, backgroundPreset } = body;
 
     await dbConnect();
     const meeting = await PresentationMeeting.findById(id);
@@ -268,6 +269,32 @@ export async function PATCH(
         meeting: {
           _id: meeting._id,
           authorizedUserId: populated?.authorizedUserId || null,
+        },
+      });
+    }
+
+    // Toplantı arka plan teması sadece yönetici veya yetkili personel tarafından değiştirilebilir
+    if (action === "setBackgroundPreset") {
+      if (!isManager && !isAuthorizedStaff) {
+        return NextResponse.json(
+          { error: "Arka plan teması sadece yönetici veya toplantı yetkili personeli tarafından değiştirilebilir." },
+          { status: 403 }
+        );
+      }
+      meeting.backgroundPreset = backgroundPreset
+        ? String(backgroundPreset).slice(0, 40)
+        : "template";
+      await meeting.save();
+      await Log.create({
+        userId,
+        action: "TOPLANTI_ARKAPLAN_GUNCELLENDI",
+        details: `Toplantı (${meeting.title}) arka plan teması güncellendi: ${meeting.backgroundPreset}`,
+      });
+      return NextResponse.json({
+        success: true,
+        meeting: {
+          _id: meeting._id,
+          backgroundPreset: meeting.backgroundPreset,
         },
       });
     }

@@ -53,6 +53,7 @@ interface MeetingItem {
   status: "open" | "closed";
   isLocked: boolean;
   authorizedUserId?: { _id: string; name: string; email?: string } | null;
+  backgroundPreset?: string;
   openedBy?: { name: string };
   closedBy?: { name: string };
   closedAt?: string;
@@ -276,10 +277,12 @@ function splitHtmlToVisualLines(html: string): string[] {
 function SlidePreviewCard({
   slide,
   templates,
+  meetingBackgroundPreset,
   onReorderPhotos,
 }: {
   slide: SlideItem;
   templates: PresentationTemplateClient[];
+  meetingBackgroundPreset?: string;
   onReorderPhotos?: (newPhotos: string[]) => void;
 }) {
   const cardRef = useRef<HTMLDivElement>(null);
@@ -436,9 +439,11 @@ function SlidePreviewCard({
       }
     : { xPct: 3, yPct: 4, wPct: 94, hPct: 92 };
 
+  const effectiveBgPreset =
+    meetingBackgroundPreset ?? slide.backgroundPreset ?? "template";
   const activeBgImage =
-    slide.backgroundPreset && slide.backgroundPreset !== "template"
-      ? getPresetBackgroundDataUrl(slide.backgroundPreset) ||
+    effectiveBgPreset && effectiveBgPreset !== "template"
+      ? getPresetBackgroundDataUrl(effectiveBgPreset) ||
         selectedTpl?.backgroundImageBase64
       : selectedTpl?.backgroundImageBase64;
 
@@ -769,6 +774,7 @@ export default function PresentationsPage() {
   } | null>(null);
   const [loadingMeetingSlides, setLoadingMeetingSlides] = useState(false);
   const [exportingMeeting, setExportingMeeting] = useState(false);
+  const [isBgPickerOpen, setIsBgPickerOpen] = useState(false);
 
   // Silme Onayı
   const [deleteTarget, setDeleteTarget] = useState<PresentationListItem | null>(null);
@@ -991,6 +997,7 @@ export default function PresentationsPage() {
           slides: loadedSlides,
           fileName: `${item.summaryTitle}.pptx`,
           templates,
+          meetingBackgroundPreset: selectedMeeting?.backgroundPreset || "template",
         });
         toast.success("Sunu (.pptx) indirildi.");
       }
@@ -1094,6 +1101,27 @@ export default function PresentationsPage() {
       toast.success("Toplantı tekrar açıldı. Artık slayt eklenip düzenlenebilir.");
       await fetchAll();
       await fetchPresentations();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  // Toplantı Arka Plan Temasını Değiştir (Yönetici veya Yetkili Personel - Tüm Slaytlara Uygulanır)
+  const handleSetMeetingBackground = async (meetingId: string, presetId: string) => {
+    try {
+      const res = await fetch(`/api/presentations/meetings/${meetingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "setBackgroundPreset", backgroundPreset: presetId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Arka plan güncellenemedi");
+      setMeetings((prev) =>
+        prev.map((m) => (m._id === meetingId ? { ...m, backgroundPreset: presetId } : m))
+      );
+      const label =
+        BACKGROUND_PRESETS.find((p) => p.id === presetId)?.label || presetId;
+      toast.success(`Tüm toplantı slaytları için arka plan güncellendi: ${label}`);
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -1258,6 +1286,7 @@ export default function PresentationsPage() {
           slides: combinedSlides,
           fileName: `${meeting.title}.pptx`,
           templates,
+          meetingBackgroundPreset: meeting.backgroundPreset || "template",
         });
 
         await fetch(`/api/presentations/meetings/${meeting._id}`, {
@@ -1346,6 +1375,13 @@ export default function PresentationsPage() {
     const canChoosePhotoCount = !isMultiSlot && !isTitleAndDesc;
     const hasPhotoFeature = isMultiSlot || (canChoosePhotoCount && activeSlide.photoCount > 0);
 
+    const editorMeeting =
+      meetings.find((m) => m._id === editorMeetingId) || selectedMeeting;
+    const canManageEditorMeeting =
+      isManager ||
+      (Boolean(editorMeeting?.authorizedUserId?._id) &&
+        String(editorMeeting?.authorizedUserId?._id) === String(userId));
+    const editorBgPreset = editorMeeting?.backgroundPreset || "template";
     const currentTop = activeSlide.descTopPct ?? 46;
     const currentBottom = activeSlide.descBottomPct ?? 96.5;
     const currentPhotoW = activeSlide.photoWidthPct ?? 41;
@@ -1379,6 +1415,7 @@ export default function PresentationsPage() {
                   slides,
                   fileName: `${activeSlide.fullName || "sunu"}.pptx`,
                   templates,
+                  meetingBackgroundPreset: editorBgPreset,
                 })
               }
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold transition-colors"
@@ -1517,60 +1554,66 @@ export default function PresentationsPage() {
               </div>
             </div>
 
-            {/* Kurumsal Arka Plan Teması (Şablon Düzenini Bozmaz) */}
-            <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-xs font-semibold text-slate-700">
-                  Kurumsal Arka Plan (Şablon Düzenini Bozmaz)
-                </span>
-                {slides.length > 1 && (
-                  <button
-                    type="button"
-                    onClick={() => {
-                      const chosen = activeSlide.backgroundPreset || "template";
-                      setSlides((prev) =>
-                        prev.map((s) => ({ ...s, backgroundPreset: chosen }))
-                      );
-                      toast.success("Arka plan tüm sayfalara uygulandı.");
-                    }}
-                    className="text-[11px] font-semibold text-blue-600 hover:underline"
-                  >
-                    Tüm Sayfalara Uygula
-                  </button>
-                )}
-              </div>
-              <div className="grid grid-cols-4 gap-1.5">
-                {BACKGROUND_PRESETS.map((preset) => {
-                  const isActive = (activeSlide.backgroundPreset || "template") === preset.id;
-                  return (
-                    <button
-                      key={preset.id}
-                      type="button"
-                      onClick={() => updateCurrentSlide({ backgroundPreset: preset.id })}
-                      title={preset.label}
-                      className={`p-1.5 rounded-xl border text-left transition-all ${
-                        isActive
-                          ? "border-blue-600 ring-2 ring-blue-500/30 bg-white shadow-xs"
-                          : "border-slate-200 bg-white hover:border-slate-300"
-                      }`}
-                    >
-                      <div
-                        className="w-full aspect-[4/3] rounded-md border border-slate-200 relative overflow-hidden mb-1"
-                        style={{ background: preset.previewBg }}
+            {/* Kurumsal Arka Plan Teması (Sadece Yönetici veya Yetkili Personel — Tüm Slaytlara Uygulanır) */}
+            {canManageEditorMeeting ? (
+              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-xs font-semibold text-slate-700">
+                    Toplantı Arka Planı (Tüm Slaytlara Uygulanır)
+                  </span>
+                  <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
+                    Yönetici / Yetkili
+                  </span>
+                </div>
+                <div className="grid grid-cols-4 gap-1.5">
+                  {BACKGROUND_PRESETS.map((preset) => {
+                    const isActive = editorBgPreset === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        onClick={() =>
+                          editorMeetingId &&
+                          handleSetMeetingBackground(editorMeetingId, preset.id)
+                        }
+                        title={preset.label}
+                        className={`p-1.5 rounded-xl border text-left transition-all ${
+                          isActive
+                            ? "border-blue-600 ring-2 ring-blue-500/30 bg-white shadow-xs"
+                            : "border-slate-200 bg-white hover:border-slate-300"
+                        }`}
                       >
                         <div
-                          className="absolute inset-x-0 top-0 h-1.5"
-                          style={{ backgroundColor: preset.accentColor }}
-                        />
-                      </div>
-                      <div className="text-[10px] font-semibold text-slate-700 truncate">
-                        {preset.label}
-                      </div>
-                    </button>
-                  );
-                })}
+                          className="w-full aspect-[4/3] rounded-md border border-slate-200 relative overflow-hidden mb-1"
+                          style={{ background: preset.previewBg }}
+                        >
+                          <div
+                            className="absolute inset-x-0 top-0 h-1.5"
+                            style={{ backgroundColor: preset.accentColor }}
+                          />
+                        </div>
+                        <div className="text-[10px] font-semibold text-slate-700 truncate">
+                          {preset.label}
+                        </div>
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 flex items-center justify-between">
+                <span>
+                  Toplantı Arka Planı:{" "}
+                  <strong>
+                    {BACKGROUND_PRESETS.find((p) => p.id === editorBgPreset)?.label ||
+                      "Şablon Varsayılanı"}
+                  </strong>
+                </span>
+                <span className="text-[10px] text-slate-400">
+                  Sadece yönetici / yetkili değiştirebilir
+                </span>
+              </div>
+            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
@@ -1985,6 +2028,7 @@ export default function PresentationsPage() {
               <SlidePreviewCard
                 slide={activeSlide}
                 templates={templates}
+                meetingBackgroundPreset={editorBgPreset}
                 onReorderPhotos={(newPhotos) => updateCurrentSlide({ photos: newPhotos })}
               />
             </div>
@@ -2220,6 +2264,24 @@ export default function PresentationsPage() {
                 {canManageSelectedMeeting && selectedMeeting.status === "open" && (
                   <button
                     type="button"
+                    onClick={() => setIsBgPickerOpen((p) => !p)}
+                    className={`px-3.5 py-2 rounded-xl text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors border ${
+                      isBgPickerOpen
+                        ? "bg-blue-600 text-white border-blue-600"
+                        : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200"
+                    }`}
+                  >
+                    <ImageIcon className="w-4 h-4" />
+                    Arka Plan:{" "}
+                    {BACKGROUND_PRESETS.find(
+                      (p) => p.id === (selectedMeeting.backgroundPreset || "template")
+                    )?.label || "Şablon Varsayılanı"}
+                  </button>
+                )}
+
+                {canManageSelectedMeeting && selectedMeeting.status === "open" && (
+                  <button
+                    type="button"
                     onClick={() => openManageMeeting(selectedMeeting)}
                     disabled={loadingMeetingSlides}
                     className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors"
@@ -2258,6 +2320,58 @@ export default function PresentationsPage() {
                 )}
               </div>
             </div>
+
+            {canManageSelectedMeeting &&
+              selectedMeeting.status === "open" &&
+              isBgPickerOpen && (
+                <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-bold text-slate-800">
+                      Toplantı Arka Planını Seç (Tüm Slaytlara Uygulanır)
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => setIsBgPickerOpen(false)}
+                      className="text-xs text-slate-500 hover:text-slate-700"
+                    >
+                      Kapat
+                    </button>
+                  </div>
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2">
+                    {BACKGROUND_PRESETS.map((preset) => {
+                      const isActive =
+                        (selectedMeeting.backgroundPreset || "template") === preset.id;
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          onClick={() =>
+                            handleSetMeetingBackground(selectedMeeting._id, preset.id)
+                          }
+                          className={`p-1.5 rounded-xl border text-left transition-all ${
+                            isActive
+                              ? "border-blue-600 ring-2 ring-blue-500/30 bg-white shadow-xs"
+                              : "border-slate-200 bg-white hover:border-slate-300"
+                          }`}
+                        >
+                          <div
+                            className="w-full aspect-[4/3] rounded-md border border-slate-200 relative overflow-hidden mb-1"
+                            style={{ background: preset.previewBg }}
+                          >
+                            <div
+                              className="absolute inset-x-0 top-0 h-1.5"
+                              style={{ backgroundColor: preset.accentColor }}
+                            />
+                          </div>
+                          <div className="text-[10px] font-semibold text-slate-700 truncate">
+                            {preset.label}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
             {selectedMeeting.status === "closed" && (
               <div className="text-xs text-slate-700 bg-slate-100 border border-slate-200 rounded-2xl px-4 py-2.5 flex items-center gap-2">
@@ -2642,6 +2756,7 @@ export default function PresentationsPage() {
             <SlidePreviewCard
               slide={previewRecord.slides[previewSlideIdx] || emptySlide()}
               templates={templates}
+              meetingBackgroundPreset={selectedMeeting?.backgroundPreset || "template"}
             />
 
             <div className="flex items-center justify-between">
@@ -2856,6 +2971,9 @@ export default function PresentationsPage() {
                     bulkPreviewModal.flatSlides[bulkIdx]?.slide || emptySlide()
                   }
                   templates={templates}
+                  meetingBackgroundPreset={
+                    bulkPreviewModal.meeting.backgroundPreset || "template"
+                  }
                 />
 
                 {/* Slayt Geçiş ve Hızlı Seçim Çubuğu */}

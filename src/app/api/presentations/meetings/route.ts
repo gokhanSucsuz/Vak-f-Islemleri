@@ -51,6 +51,7 @@ export async function GET() {
         status: m.status,
         isLocked: Boolean(m.isLocked),
         authorizedUserId: m.authorizedUserId || null,
+        backgroundPreset: m.backgroundPreset || "template",
         openedBy: m.openedBy,
         closedBy: m.closedBy,
         closedAt: m.closedAt,

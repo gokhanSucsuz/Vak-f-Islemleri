@@ -544,8 +544,9 @@ export async function exportSlidesToPptx(params: {
   fileName: string;
   templates?: PresentationTemplateClient[];
   template?: PresentationTemplateClient | null;
+  meetingBackgroundPreset?: string;
 }) {
-  const { slides, fileName, templates = [], template = null } = params;
+  const { slides, fileName, templates = [], template = null, meetingBackgroundPreset } = params;
   const pptx = new PptxGenJS();
 
   const defaultTpl = templates[0] || template;
@@ -565,9 +566,10 @@ export async function exportSlidesToPptx(params: {
       defaultTpl;
     const layout = slideTpl?.layoutConfig || DEFAULT_TEMPLATE_LAYOUT;
 
+    const activePreset = meetingBackgroundPreset ?? item.backgroundPreset;
     const presetBg =
-      item.backgroundPreset && item.backgroundPreset !== "template"
-        ? getPresetBackgroundDataUrl(item.backgroundPreset)
+      activePreset && activePreset !== "template"
+        ? getPresetBackgroundDataUrl(activePreset)
         : "";
 
     if (presetBg) {

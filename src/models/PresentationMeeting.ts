@@ -11,6 +11,7 @@ export interface IPresentationMeeting extends Document {
   closedBy?: mongoose.Types.ObjectId;
   closedAt?: Date;
   presentationOrder: string[];
+  backgroundPreset?: string;
   downloadedAt?: Date;
   photosExpireAt?: Date;
   photosPurged: boolean;
@@ -43,6 +44,10 @@ const PresentationMeetingSchema = new Schema<IPresentationMeeting>(
     presentationOrder: {
       type: [String],
       default: [],
+    },
+    backgroundPreset: {
+      type: String,
+      default: "template",
     },
     downloadedAt: { type: Date },
     photosExpireAt: { type: Date, index: true },
