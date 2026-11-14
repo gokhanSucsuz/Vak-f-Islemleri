@@ -1026,6 +1026,24 @@ export default function PresentationsPage() {
     }
   };
 
+  // Kapatılmış Toplantıyı 12 Saat İçinde Tekrar Aç (Yönetici veya Yetkili Personel)
+  const handleReopenMeeting = async (meeting: MeetingItem) => {
+    try {
+      const res = await fetch(`/api/presentations/meetings/${meeting._id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "reopen" }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Toplantı tekrar açılamadı");
+      toast.success("Toplantı tekrar açıldı. Artık slayt eklenip düzenlenebilir.");
+      await fetchAll();
+      await fetchPresentations();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
   // Toplantı Toplu Önizleme Modalını Aç
   const openBulkPreview = async (meeting: MeetingItem) => {
     setLoadingMeetingSlides(true);
@@ -2008,15 +2026,31 @@ export default function PresentationsPage() {
                 )}
 
                 {selectedMeeting.status === "closed" && (
-                  <button
-                    type="button"
-                    onClick={() => openManageMeeting(selectedMeeting)}
-                    disabled={loadingMeetingSlides}
-                    className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors"
-                  >
-                    <Download className="w-4 h-4" />
-                    Birleştirilmiş Sunuyu İndir (.pptx)
-                  </button>
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => openManageMeeting(selectedMeeting)}
+                      disabled={loadingMeetingSlides}
+                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors"
+                    >
+                      <Download className="w-4 h-4" />
+                      Birleştirilmiş Sunuyu İndir (.pptx)
+                    </button>
+                    {canManageSelectedMeeting &&
+                      selectedMeeting.closedAt &&
+                      Date.now() - new Date(selectedMeeting.closedAt).getTime() <=
+                        12 * 60 * 60 * 1000 && (
+                        <button
+                          type="button"
+                          onClick={() => handleReopenMeeting(selectedMeeting)}
+                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors"
+                          title="Kapatıldıktan sonraki 12 saat içinde tekrar açılabilir"
+                        >
+                          <Unlock className="w-4 h-4" />
+                          Toplantıyı Tekrar Aç
+                        </button>
+                      )}
+                  </>
                 )}
               </div>
             </div>

@@ -169,6 +169,70 @@ export async function PATCH(
       });
     }
 
+    // Kapatılmış toplantıyı 12 saat içinde tekrar açma (Yönetici veya yetkili personel)
+    if (action === "reopen") {
+      if (!isManager && !isAuthorizedStaff) {
+        return NextResponse.json(
+          { error: "Bu işlem için yönetici veya toplantı yetkili personeli olmalısınız." },
+          { status: 403 }
+        );
+      }
+      if (meeting.status !== "closed") {
+        return NextResponse.json(
+          { error: "Sadece kapatılmış toplantılar tekrar açılabilir." },
+          { status: 400 }
+        );
+      }
+      const closedMs = meeting.closedAt ? new Date(meeting.closedAt).getTime() : 0;
+      if (!closedMs || Date.now() - closedMs > 12 * 60 * 60 * 1000) {
+        return NextResponse.json(
+          { error: "Kapatılan toplantı yalnızca kapatıldıktan sonraki 12 saat içinde tekrar açılabilir." },
+          { status: 400 }
+        );
+      }
+      const anotherOpen = await PresentationMeeting.findOne({
+        _id: { $ne: meeting._id },
+        status: "open",
+      });
+      if (anotherOpen) {
+        return NextResponse.json(
+          {
+            error: `Şu anda açık olan başka bir toplantı (${anotherOpen.title}) bulunduğu için bu toplantı tekrar açılamaz. Önce açık toplantıyı kapatın.`,
+          },
+          { status: 400 }
+        );
+      }
+
+      meeting.status = "open";
+      meeting.isLocked = false;
+      meeting.closedBy = undefined;
+      meeting.closedAt = undefined;
+      if (!meeting.photosPurged) {
+        meeting.downloadedAt = undefined;
+        meeting.photosExpireAt = undefined;
+      }
+      await meeting.save();
+
+      await Log.create({
+        userId,
+        action: "TOPLANTI_TEKRAR_ACILDI",
+        details: `Kapatılan toplantı 12 saat içinde tekrar açıldı: ${meeting.title}`,
+      });
+
+      return NextResponse.json({
+        success: true,
+        meeting: {
+          _id: meeting._id,
+          status: meeting.status,
+          isLocked: Boolean(meeting.isLocked),
+          closedAt: meeting.closedAt,
+          downloadedAt: meeting.downloadedAt,
+          photosExpireAt: meeting.photosExpireAt,
+          photosPurged: meeting.photosPurged,
+        },
+      });
+    }
+
     // Kapatılmış toplantı sistem üzerinde tamamen salt okunurdur
     if (meeting.status === "closed") {
       return NextResponse.json(
