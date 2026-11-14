@@ -10,6 +10,8 @@ export interface ISlideData {
   descriptionHtml?: string; // Zengin metin editörü HTML içeriği
   fontFamily?: string; // Varsayılan: "Verdana"
   fontSize?: number | "auto"; // Punto: "auto" veya 7..20
+  titleFontSize?: number; // Başlık alanı puntosu (varsayılan: 20, açıklamadan büyük)
+  titleBold?: boolean; // Başlık alanı çok kalın mı (varsayılan: true)
   descTopPct?: number; // Açıklama kutusu üst konumu % (44.5..65)
   descBottomPct?: number; // Açıklama kutusu alt konumu % (72..97.5)
   photoWidthPct?: number; // Fotoğraf alanı genişliği % (20..52)

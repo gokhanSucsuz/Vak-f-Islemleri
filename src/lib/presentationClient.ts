@@ -104,6 +104,8 @@ export interface SlideItem {
   descriptionHtml?: string;
   fontFamily?: string;
   fontSize?: number | "auto";
+  titleFontSize?: number;
+  titleBold?: boolean;
   descTopPct?: number;
   descBottomPct?: number;
   photoWidthPct?: number;
@@ -486,6 +488,13 @@ export async function exportSlidesToPptx(params: {
       }
       const boxY = (tb.yPct / 100) * slideH;
       const boxH = Math.max(0.85 * sy, (tb.hPct / 100) * slideH);
+      const minTitleFromDesc =
+        item.fontSize && item.fontSize !== "auto" ? Number(item.fontSize) + 1 : 14;
+      const titlePt = Math.min(
+        36,
+        Math.max(minTitleFromDesc, Number(item.titleFontSize ?? 20))
+      );
+      const isTitleBold = item.titleBold !== false;
 
       slide.addShape(pptx.ShapeType.rect, {
         x: boxX,
@@ -508,11 +517,11 @@ export async function exportSlidesToPptx(params: {
         [
           {
             text: item.fullName || "",
-            options: { fontSize: 17, bold: true, color: "020617", breakLine: true },
+            options: { fontSize: titlePt, bold: isTitleBold, color: "020617", breakLine: true },
           },
           {
             text: item.neighborhood || "",
-            options: { fontSize: 15, bold: true, color: "0F172A" },
+            options: { fontSize: titlePt, bold: isTitleBold, color: "0F172A" },
           },
         ],
         {
@@ -529,7 +538,7 @@ export async function exportSlidesToPptx(params: {
             offset: 1.5,
             angle: 45,
             color: "475569",
-            opacity: 0.5,
+            opacity: isTitleBold ? 0.5 : 0.3,
           },
         }
       );

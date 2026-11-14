@@ -106,6 +106,8 @@ function emptySlide(defaultTemplateId?: string): SlideItem {
     descriptionHtml: "",
     fontFamily: "Verdana",
     fontSize: "auto",
+    titleFontSize: 20,
+    titleBold: true,
     descTopPct: 46,
     descBottomPct: 96.5,
     photoWidthPct: 41,
@@ -375,15 +377,18 @@ function SlidePreviewCard({
   const heightPct = bottomPct - topPct;
 
   const [fittedPx, setFittedPx] = useState(12);
+  const [cardScale, setCardScale] = useState(1);
 
   useLayoutEffect(() => {
+    const card = cardRef.current;
+    if (!card) return;
+    const scale = card.clientWidth / 720;
+    setCardScale(scale);
+
     if (!hasDescBox) return;
     const box = descBoxRef.current;
     const list = descListRef.current;
-    const card = cardRef.current;
-    if (!box || !card) return;
-
-    const scale = card.clientWidth / 720;
+    if (!box) return;
 
     if (slide.fontSize && slide.fontSize !== "auto") {
       setFittedPx(Math.max(5.5, Number(slide.fontSize) * scale));
@@ -405,6 +410,19 @@ function SlidePreviewCard({
     }
     setFittedPx(size);
   }, [hasDescBox, slide.description, slide.descriptionHtml, slide.fontSize, topPct, bottomPct, displayLines.length]);
+
+  const effectiveDescPt =
+    slide.fontSize && slide.fontSize !== "auto"
+      ? Number(slide.fontSize)
+      : cardScale > 0
+        ? Math.round(fittedPx / cardScale)
+        : 13;
+  const effectiveTitlePt = Math.min(
+    36,
+    Math.max(effectiveDescPt + 1, Number(slide.titleFontSize ?? 20))
+  );
+  const titleFontPx = Math.max(10, effectiveTitlePt * cardScale);
+  const isTitleBold = slide.titleBold !== false;
 
   const optionalPhotoArea = layout.titleBox
     ? {
@@ -591,14 +609,26 @@ function SlidePreviewCard({
           className="absolute bg-gradient-to-b from-white via-slate-50 to-slate-100 border border-slate-300 shadow-[0_4px_12px_rgba(15,23,42,0.18)] flex flex-col items-center justify-center px-2.5 text-center rounded-[2px]"
         >
           <div
-            style={{ textShadow: "0 1.5px 3px rgba(15, 23, 42, 0.36), 0 0 1px rgba(15, 23, 42, 0.2)" }}
-            className="font-extrabold text-slate-950 text-sm sm:text-base md:text-[17px] leading-tight tracking-tight truncate w-full"
+            style={{
+              fontSize: `${titleFontPx}px`,
+              fontWeight: isTitleBold ? 800 : 500,
+              textShadow: isTitleBold
+                ? "0 1.5px 3px rgba(15, 23, 42, 0.36), 0 0 1px rgba(15, 23, 42, 0.2)"
+                : "0 1px 2px rgba(15, 23, 42, 0.2)",
+            }}
+            className="text-slate-950 leading-tight tracking-tight truncate w-full"
           >
             {slide.fullName || "Adı Soyadı"}
           </div>
           <div
-            style={{ textShadow: "0 1.5px 2.5px rgba(15, 23, 42, 0.28), 0 0 1px rgba(15, 23, 42, 0.14)" }}
-            className="font-extrabold text-slate-900 text-xs sm:text-sm md:text-[15px] leading-tight tracking-tight truncate w-full mt-0.5"
+            style={{
+              fontSize: `${titleFontPx}px`,
+              fontWeight: isTitleBold ? 800 : 500,
+              textShadow: isTitleBold
+                ? "0 1.5px 2.5px rgba(15, 23, 42, 0.28), 0 0 1px rgba(15, 23, 42, 0.14)"
+                : "0 1px 2px rgba(15, 23, 42, 0.16)",
+            }}
+            className="text-slate-900 leading-tight tracking-tight truncate w-full mt-0.5"
           >
             {slide.neighborhood || "...... Mahallesi"}
           </div>
@@ -1661,6 +1691,89 @@ export default function PresentationsPage() {
               </div>
             )}
 
+            {/* Başlık Alanı Yazı Ayarları (Başlık kutusu olan şablonlarda) */}
+            {activeLayout.titleBox && (
+              <div className="p-3.5 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <span className="text-xs font-bold text-slate-700 flex items-center gap-1.5">
+                    <Type className="w-3.5 h-3.5 text-indigo-600" />
+                    Başlık Alanı (Adı Soyadı & Mahalle)
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    <button
+                      type="button"
+                      onClick={() => updateCurrentSlide({ titleBold: true })}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                        activeSlide.titleBold !== false
+                          ? "bg-indigo-600 text-white"
+                          : "bg-white border border-slate-200 text-slate-700"
+                      }`}
+                    >
+                      Çok Kalın
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => updateCurrentSlide({ titleBold: false })}
+                      className={`px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-colors ${
+                        activeSlide.titleBold === false
+                          ? "bg-indigo-600 text-white"
+                          : "bg-white border border-slate-200 text-slate-700"
+                      }`}
+                    >
+                      Normal
+                    </button>
+                  </div>
+                </div>
+
+                <div className="flex items-center justify-between gap-2 pt-1 border-t border-slate-200/70">
+                  <span className="text-[11px] text-slate-500">
+                    Başlık Puntosu (Açıklama puntosundan büyük olmalı)
+                  </span>
+                  <div className="flex items-center gap-1.5">
+                    {(() => {
+                      const minTitlePt =
+                        activeSlide.fontSize && activeSlide.fontSize !== "auto"
+                          ? Number(activeSlide.fontSize) + 1
+                          : 14;
+                      const currentTitlePt = Math.min(
+                        36,
+                        Math.max(minTitlePt, Number(activeSlide.titleFontSize ?? 20))
+                      );
+                      return (
+                        <>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateCurrentSlide({
+                                titleFontSize: Math.max(minTitlePt, currentTitlePt - 1),
+                              })
+                            }
+                            className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100"
+                          >
+                            -
+                          </button>
+                          <span className="text-xs font-bold w-12 text-center text-slate-800">
+                            {currentTitlePt} pt
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              updateCurrentSlide({
+                                titleFontSize: Math.min(36, currentTitlePt + 1),
+                              })
+                            }
+                            className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100"
+                          >
+                            +
+                          </button>
+                        </>
+                      );
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Punto ve Açıklama Alanı Boyut Ayarları (Sadece açıklama alanı olan şablonlarda) */}
             {hasDescBox && (
               <>
@@ -1707,7 +1820,14 @@ export default function PresentationsPage() {
                             activeSlide.fontSize && activeSlide.fontSize !== "auto"
                               ? Number(activeSlide.fontSize)
                               : 12;
-                          updateCurrentSlide({ fontSize: Math.min(20, base + 0.5) });
+                          const nextDesc = Math.min(20, base + 0.5);
+                          const currentTitle = Number(activeSlide.titleFontSize ?? 20);
+                          updateCurrentSlide({
+                            fontSize: nextDesc,
+                            ...(currentTitle <= nextDesc
+                              ? { titleFontSize: Math.min(36, Math.ceil(nextDesc) + 1) }
+                              : {}),
+                          });
                         }}
                         className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100"
                       >
