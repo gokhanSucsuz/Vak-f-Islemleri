@@ -3,9 +3,10 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import PetitionTemplate from "@/models/PetitionTemplate";
+import Petition from "@/models/Petition";
 import Log from "@/models/Log";
 import { convertDocxBufferToStyledHtml } from "@/lib/docxToHtml";
-import { gzipSync } from "zlib";
+import { gzipSync, gunzipSync } from "zlib";
 
 export async function GET() {
   try {
@@ -43,6 +44,53 @@ export async function POST(req: Request) {
         { error: "Şablon yükleme yetkisi sadece Müdür, Süper Admin ve yetkili personel içindir." },
         { status: 403 }
       );
+    }
+
+    const contentType = req.headers.get("content-type") || "";
+    if (contentType.includes("application/json")) {
+      const body = await req.json();
+      if (body?.action === "setFromPetition" && body?.petitionId) {
+        await dbConnect();
+        const petition = await Petition.findById(body.petitionId);
+        if (!petition) {
+          return NextResponse.json({ error: "Dilekçe bulunamadı." }, { status: 404 });
+        }
+        const targetType =
+          body.type === "detayli" || body.type === "matbu" ? body.type : petition.petitionType;
+        let htmlContent = "<p></p>";
+        if (petition.contentCompressed) {
+          try {
+            htmlContent = gunzipSync(petition.contentCompressed).toString("utf8");
+          } catch {
+            htmlContent = petition.contentCompressed.toString("utf8");
+          }
+        }
+        const safeName = (petition.citizenName || "dilekce").trim().replace(/\s+/g, "_");
+        const fileName = `${safeName}_varsayilan.html`;
+        const template = await PetitionTemplate.findOneAndUpdate(
+          { type: targetType },
+          {
+            type: targetType,
+            fileName,
+            fileSize: Buffer.byteLength(htmlContent, "utf8"),
+            htmlContent,
+            $unset: { docxCompressed: 1 },
+            uploadedBy: (session.user as any).id,
+          },
+          { upsert: true, new: true }
+        )
+          .select("-docxCompressed")
+          .populate("uploadedBy", "name email");
+
+        await Log.create({
+          userId: (session.user as any).id,
+          action: "DİLEKÇE VARSAYILAN ŞABLON YAPILDI",
+          details: `${targetType === "detayli" ? "Detaylı" : "Matbu"} varsayılan şablon güncellendi: ${petition.citizenName}`,
+        });
+
+        return NextResponse.json({ template });
+      }
+      return NextResponse.json({ error: "Geçersiz istek." }, { status: 400 });
     }
 
     const formData = await req.formData();

@@ -272,7 +272,10 @@ export default function PetitionsPage() {
     }
   };
 
-  const normalizePetitionTableHtml = (html: string): string => {
+  const normalizePetitionTableHtml = (
+    html: string,
+    type?: "detayli" | "matbu"
+  ): string => {
     if (typeof window === "undefined" || !html) return html;
     try {
       const doc = new DOMParser().parseFromString(html, "text/html");
@@ -282,6 +285,9 @@ export default function PetitionsPage() {
       });
       doc.querySelectorAll<HTMLElement>("td, th").forEach((cell) => {
         cell.style.removeProperty("height");
+        if (type === "matbu") {
+          cell.style.border = "none";
+        }
         if (!cell.getAttribute("style")?.trim()) cell.removeAttribute("style");
         const paragraphs = Array.from(cell.querySelectorAll("p"));
         if (paragraphs.length > 0) {
@@ -299,6 +305,25 @@ export default function PetitionsPage() {
           }
         }
       });
+
+      if (type === "matbu") {
+        doc.querySelectorAll<HTMLElement>("table").forEach((tbl) => {
+          tbl.setAttribute("data-borderless", "true");
+          tbl.style.border = "none";
+        });
+        doc.querySelectorAll<HTMLElement>("p").forEach((p) => {
+          const txt = (p.textContent || "").replace(/\u00a0/g, " ").trim();
+          if (!txt) return;
+          if (/BAŞKANLIĞINA|^EDİRNE$/i.test(txt)) return;
+          if (/(talep|arz\s*ederim|arz\s*olunur|\barz\b)/i.test(txt)) {
+            p.innerHTML = p.innerHTML.replace(/^(?:&emsp;|&ensp;|&nbsp;|\u00a0|\u2003|\s)+/gi, "");
+            p.style.textIndent = "35.4pt";
+            p.style.marginLeft = "0";
+            p.style.paddingLeft = "0";
+          }
+        });
+      }
+
       return doc.body.innerHTML;
     } catch {
       return html;
@@ -327,19 +352,24 @@ export default function PetitionsPage() {
       /\(\s*tar[iİıI]h\s*\)|\[\s*tar[iİıI]h\s*\]|\{\{\s*tar[iİıI]h\s*\}\}/gi,
       todayStr
     );
-    filledHtml = filledHtml
-      .replace(
-        /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<\/p>\s*<p[^>]*>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
-        (_m, titleText, cityText) =>
-          `<div style="width:fit-content;margin:0 auto 6pt auto;text-align:center;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
-      )
-      .replace(
-        /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<br\s*\/?>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
-        (_m, titleText, cityText) =>
-          `<div style="width:fit-content;margin:0 auto 6pt auto;text-align:center;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
-      );
 
-    filledHtml = normalizePetitionTableHtml(filledHtml);
+    const isDirectHtmlTemplate = (tpl.fileName || "").toLowerCase().endsWith(".html");
+    if (!isDirectHtmlTemplate) {
+      filledHtml = filledHtml
+        .replace(
+          /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<\/p>\s*<p[^>]*>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
+          (_m, titleText, cityText) =>
+            `<div style="width:fit-content;margin:0 auto 6pt auto;text-align:center;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+        )
+        .replace(
+          /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<br\s*\/?>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
+          (_m, titleText, cityText) =>
+            `<div style="width:fit-content;margin:0 auto 6pt auto;text-align:center;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+        );
+      filledHtml = normalizePetitionTableHtml(filledHtml, type);
+    } else if (type === "matbu") {
+      filledHtml = normalizePetitionTableHtml(filledHtml, "matbu");
+    }
 
     setEditingId(null);
     setEditorType(type);
@@ -398,10 +428,37 @@ export default function PetitionsPage() {
         setCitizenName("");
         setTcNo("");
         setSubject(full.subject || "");
-        setEditorInitialHtml(normalizePetitionTableHtml(full.htmlContent || "<p></p>"));
+        setEditorInitialHtml(normalizePetitionTableHtml(full.htmlContent || "<p></p>", full.petitionType));
         setEditorMode(true);
         toast.success("Kayıtlı dilekçe şablon olarak açıldı. Bilgileri güncelleyip kaydedebilirsiniz.");
       }
+    } catch (err: any) {
+      toast.error(err.message || "İşlem başarısız");
+    } finally {
+      setLoadingContentId(null);
+    }
+  };
+
+  const handleSetAsDefaultTemplate = async (rec: { _id: string; citizenName: string; petitionType: "detayli" | "matbu" }) => {
+    setLoadingContentId(rec._id);
+    try {
+      const res = await fetch("/api/petitions/templates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "setFromPetition",
+          petitionId: rec._id,
+          type: rec.petitionType,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Varsayılan şablon güncellenemedi");
+      toast.success(
+        `"${rec.citizenName}" dilekçesi ${
+          rec.petitionType === "matbu" ? "Matbu" : "Detaylı"
+        } varsayılan şablonu olarak kaydedildi.`
+      );
+      await fetchTemplates();
     } catch (err: any) {
       toast.error(err.message || "İşlem başarısız");
     } finally {
@@ -767,7 +824,11 @@ export default function PetitionsPage() {
               ref={editorRef}
               contentEditable
               suppressContentEditableWarning
-              className="w-full min-h-[250mm] print:min-h-0 text-slate-900 text-[13.5px] leading-snug focus:outline-none [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:border [&_td]:border-black [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:border [&_th]:border-black [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6"
+              className={`w-full min-h-[250mm] print:min-h-0 text-slate-900 text-[13.5px] leading-snug focus:outline-none [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${
+                editorType === "matbu"
+                  ? "[&_td]:!border-0 [&_th]:!border-0"
+                  : "[&_td]:border [&_td]:border-black [&_th]:border [&_th]:border-black"
+              }`}
             />
           </div>
         </div>
@@ -1075,6 +1136,18 @@ export default function PetitionsPage() {
                             <CopyPlus className="w-3.5 h-3.5" />
                             Şablon Kullan
                           </button>
+                          {isManager && (
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => handleSetAsDefaultTemplate(rec)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors flex items-center gap-1"
+                              title="Bu dilekçeyi tüm özellikleri ile varsayılan şablon yap"
+                            >
+                              <Sparkles className="w-3.5 h-3.5" />
+                              Varsayılan Yap
+                            </button>
+                          )}
                           {canEdit && (
                             <button
                               type="button"
@@ -1299,6 +1372,16 @@ export default function PetitionsPage() {
                   <Sparkles className="w-3.5 h-3.5" />
                   Şablon Olarak Kullan
                 </button>
+                {isManager && (
+                  <button
+                    type="button"
+                    onClick={() => handleSetAsDefaultTemplate(previewPetition)}
+                    className="px-3.5 py-2 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-700 border border-indigo-200 text-xs font-bold flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    Varsayılan Şablon Yap
+                  </button>
+                )}
                 <button
                   type="button"
                   onClick={handlePrintCurrent}
@@ -1342,7 +1425,11 @@ export default function PetitionsPage() {
                   />
                 </div>
                 <div
-                  className="text-slate-900 text-[13.5px] leading-snug [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:border [&_td]:border-black [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:border [&_th]:border-black [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6"
+                  className={`text-slate-900 text-[13.5px] leading-snug [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${
+                    previewPetition.petitionType === "matbu"
+                      ? "[&_td]:!border-0 [&_th]:!border-0"
+                      : "[&_td]:border [&_td]:border-black [&_th]:border [&_th]:border-black"
+                  }`}
                   dangerouslySetInnerHTML={{ __html: previewPetition.htmlContent }}
                 />
               </div>

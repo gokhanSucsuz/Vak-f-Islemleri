@@ -65,6 +65,28 @@ function collectTextRuns(node: Node, style: RunStyle = {}): TextRun[] {
   return runs;
 }
 
+function cssLengthToTwips(val: string | undefined): number | undefined {
+  if (!val) return undefined;
+  const trimmed = val.trim().toLowerCase();
+  const num = parseFloat(trimmed);
+  if (isNaN(num) || num <= 0) return undefined;
+  if (trimmed.endsWith("cm")) return Math.round(num * 567);
+  if (trimmed.endsWith("mm")) return Math.round(num * 56.7);
+  if (trimmed.endsWith("in")) return Math.round(num * 1440);
+  if (trimmed.endsWith("px")) return Math.round(num * 15);
+  return Math.round(num * 20); // pt default
+}
+
+function getParagraphIndent(el: HTMLElement) {
+  const firstLine = cssLengthToTwips(el.style.textIndent);
+  const left = cssLengthToTwips(el.style.paddingLeft || el.style.marginLeft);
+  if (!firstLine && !left) return undefined;
+  return {
+    ...(firstLine ? { firstLine } : {}),
+    ...(left ? { left } : {}),
+  };
+}
+
 function getAlignment(el: HTMLElement) {
   const align = (el.style.textAlign || el.getAttribute("align") || "").toLowerCase();
   if (align === "center") return AlignmentType.CENTER;
@@ -97,11 +119,25 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
     const tag = el.tagName.toLowerCase();
 
     if (tag === "table") {
+      const tableBorderless =
+        el.getAttribute("data-borderless") === "true" ||
+        el.style.borderStyle === "none" ||
+        el.style.border === "none" ||
+        el.style.borderWidth === "0px";
       const rows = Array.from(el.querySelectorAll("tr")).map((tr) => {
         const cells = Array.from(tr.querySelectorAll("th, td")).map((td) => {
+          const tdEl = td as HTMLElement;
+          const cellBorderless =
+            tableBorderless ||
+            tdEl.style.borderStyle === "none" ||
+            tdEl.style.border === "none" ||
+            tdEl.style.borderWidth === "0px";
           const runs = collectTextRuns(td, {
             bold: td.tagName.toLowerCase() === "th",
           });
+          const borderDef = cellBorderless
+            ? { style: BorderStyle.NONE, size: 0, color: "FFFFFF" }
+            : { style: BorderStyle.SINGLE, size: 4, color: "94A3B8" };
           return new TableCell({
             children: [
               new Paragraph({
@@ -109,10 +145,10 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
               }),
             ],
             borders: {
-              top: { style: BorderStyle.SINGLE, size: 4, color: "94A3B8" },
-              bottom: { style: BorderStyle.SINGLE, size: 4, color: "94A3B8" },
-              left: { style: BorderStyle.SINGLE, size: 4, color: "94A3B8" },
-              right: { style: BorderStyle.SINGLE, size: 4, color: "94A3B8" },
+              top: borderDef,
+              bottom: borderDef,
+              left: borderDef,
+              right: borderDef,
             },
           });
         });
@@ -184,6 +220,7 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
       blocks.push(
         new Paragraph({
           alignment: getAlignment(el),
+          indent: getParagraphIndent(el),
           children: runs.length ? runs : [new TextRun("")],
           spacing: { after: 100 },
         })

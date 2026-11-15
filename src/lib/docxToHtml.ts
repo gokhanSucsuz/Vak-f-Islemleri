@@ -178,16 +178,37 @@ function renderParagraph(pNode: XmlNode, inTable = false): string {
   return `<p style="${styles.join(";")}">${content}</p>`;
 }
 
+function hasVisibleBorders(bordersNode?: XmlNode): boolean | null {
+  if (!bordersNode) return null;
+  const sides = ["w:top", "w:bottom", "w:left", "w:right", "w:insideH", "w:insideV"];
+  let foundAny = false;
+  for (const side of sides) {
+    const b = findChild(bordersNode, side);
+    if (b) {
+      foundAny = true;
+      const val = (getAttr(b.attrs, "val") || "").toLowerCase();
+      if (val && val !== "none" && val !== "nil") {
+        return true;
+      }
+    }
+  }
+  return foundAny ? false : null;
+}
+
 function renderTable(tblNode: XmlNode): string {
   const rows = findChildren(tblNode, "w:tr");
   if (rows.length === 0) return "";
+
+  const tblPr = findChild(tblNode, "w:tblPr");
+  const tblBorders = tblPr ? findChild(tblPr, "w:tblBorders") : undefined;
+  const tableHasBorders = hasVisibleBorders(tblBorders);
 
   const tblGrid = findChild(tblNode, "w:tblGrid");
   const gridCols = tblGrid ? findChildren(tblGrid, "w:gridCol") : [];
   const colWidths = gridCols.map((c) => parseInt(getAttr(c.attrs, "w") || "0", 10));
   const totalGridW = colWidths.reduce((a, b) => a + b, 0);
 
-  let html = `<table style="width:100%;border-collapse:collapse;margin:8pt 0;table-layout:fixed">`;
+  let html = `<table${tableHasBorders === false ? ' data-borderless="true"' : ""} style="width:100%;border-collapse:collapse;margin:8pt 0;table-layout:fixed">`;
 
   for (const tr of rows) {
     html += `<tr>`;
@@ -248,7 +269,11 @@ function renderTable(tblNode: XmlNode): string {
       const cellInner =
         nonEmptyParts.length > 0 ? nonEmptyParts.join("") : cellParts[0] || "<p>&nbsp;</p>";
 
-      html += `<td${colspan > 1 ? ` colspan="${colspan}"` : ""} style="border:1.5px solid #000;padding:5pt 7pt;vertical-align:${vAlign};${widthStyle}">${cellInner}</td>`;
+      const cellBorders = tcPr ? hasVisibleBorders(findChild(tcPr, "w:tcBorders")) : null;
+      const showCellBorder = cellBorders !== null ? cellBorders : tableHasBorders !== false;
+      const borderStyle = showCellBorder ? "border:1.5px solid #000;" : "border:none;";
+
+      html += `<td${colspan > 1 ? ` colspan="${colspan}"` : ""} style="${borderStyle}padding:5pt 7pt;vertical-align:${vAlign};${widthStyle}">${cellInner}</td>`;
     }
 
     html += `</tr>`;
