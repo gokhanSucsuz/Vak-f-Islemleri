@@ -563,7 +563,7 @@ export default function PetitionsPage() {
             !targetCell.querySelector("table") &&
             !targetCell.querySelector('[data-live-field="citizenName"]')
           ) {
-            targetCell.innerHTML = `<p><span data-live-field="citizenName">\u00a0</span> — T.C. Kimlik No: <span data-live-field="tcNo">\u00a0</span></p>`;
+            targetCell.innerHTML = `<p><span data-live-field="citizenName">\u00a0</span> — <span data-live-field="tcNo">\u00a0</span></p>`;
           }
         }
       });
