@@ -329,6 +329,7 @@ function SlidePreviewCard({
   meetingBackgroundPreset?: string;
   onReorderPhotos?: (newPhotos: string[]) => void;
 }) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
   const descBoxRef = useRef<HTMLDivElement>(null);
   const descListRef = useRef<HTMLUListElement>(null);
@@ -426,31 +427,40 @@ function SlidePreviewCard({
       : Math.min(98, defaultDescBottom);
   const heightPct = bottomPct - topPct;
 
-  const [fittedPx, setFittedPx] = useState(12);
+  const [fittedPx, setFittedPx] = useState(12.5);
   const [cardScale, setCardScale] = useState(1);
 
   useLayoutEffect(() => {
-    const card = cardRef.current;
-    if (!card) return;
-    const scale = card.clientWidth / 720;
-    setCardScale(scale);
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const updateScale = () => {
+      if (wrapper.clientWidth > 0) {
+        setCardScale(wrapper.clientWidth / 720);
+      }
+    };
+    updateScale();
+    const ro = new ResizeObserver(updateScale);
+    ro.observe(wrapper);
+    return () => ro.disconnect();
+  }, []);
 
+  useLayoutEffect(() => {
     if (!hasDescBox) return;
     const box = descBoxRef.current;
     const list = descListRef.current;
     if (!box) return;
 
     if (slide.fontSize && slide.fontSize !== "auto") {
-      setFittedPx(Math.max(5.5, Number(slide.fontSize) * scale));
+      setFittedPx(Math.max(5.5, Number(slide.fontSize)));
       return;
     }
 
     if (!list || displayLines.length === 0) {
-      setFittedPx(Math.max(8, 12.5 * scale));
+      setFittedPx(12.5);
       return;
     }
 
-    let size = Math.max(8, 13 * scale);
+    let size = 13;
     list.style.fontSize = `${size}px`;
     list.style.lineHeight = "1.28";
 
@@ -464,14 +474,12 @@ function SlidePreviewCard({
   const effectiveDescPt =
     slide.fontSize && slide.fontSize !== "auto"
       ? Number(slide.fontSize)
-      : cardScale > 0
-        ? Math.round(fittedPx / cardScale)
-        : 13;
+      : Math.round(fittedPx);
   const effectiveTitlePt = Math.min(
     26,
     Math.max(effectiveDescPt + 1, Number(slide.titleFontSize ?? 20))
   );
-  const titleFontPx = Math.max(10, effectiveTitlePt * cardScale);
+  const titleFontPx = effectiveTitlePt;
   const isTitleBold = slide.titleBold !== false;
 
   const optionalPhotoArea = layout.titleBox
@@ -493,19 +501,26 @@ function SlidePreviewCard({
 
   return (
     <div
-      ref={cardRef}
+      ref={wrapperRef}
       className="relative w-full aspect-[4/3] rounded-xl overflow-hidden border border-slate-300 shadow-md select-none bg-gradient-to-br from-slate-200 via-slate-100 to-slate-300"
-      style={{
-        fontFamily,
-        ...(activeBgImage
-          ? {
-              backgroundImage: `url(${activeBgImage})`,
-              backgroundSize: "cover",
-              backgroundPosition: "center",
-            }
-          : {}),
-      }}
     >
+      <div
+        ref={cardRef}
+        className="relative origin-top-left"
+        style={{
+          width: "720px",
+          height: "540px",
+          transform: `scale(${cardScale})`,
+          fontFamily,
+          ...(activeBgImage
+            ? {
+                backgroundImage: `url(${activeBgImage})`,
+                backgroundSize: "cover",
+                backgroundPosition: "center",
+              }
+            : {}),
+        }}
+      >
       {/* 1. FOTOĞRAF ALANLARI (Şablon moduna göre) */}
       {(layout.mode === "classic" ||
         ((layout.mode === "blank_text" || layout.mode === "title_only") &&
@@ -748,6 +763,7 @@ function SlidePreviewCard({
           )}
         </div>
       )}
+      </div>
     </div>
   );
 }
