@@ -26,7 +26,7 @@ export async function POST(req: Request) {
     const userAny = session?.user as any;
     const { getEffectivePermissions } = await import("@/lib/permissions");
     const perms = await getEffectivePermissions(session);
-    if (!session || !session.user || !perms.canManageSystem) {
+    if (!session || !session.user || !perms.canManageBabyFood) {
       return NextResponse.json({ error: "Bu işlem için yetkiniz yok" }, { status: 403 });
     }
 
@@ -57,7 +57,7 @@ export async function DELETE(req: Request) {
     const userAny = session?.user as any;
     const { getEffectivePermissions } = await import("@/lib/permissions");
     const perms = await getEffectivePermissions(session);
-    if (!session || !session.user || !perms.canManageSystem) {
+    if (!session || !session.user || !perms.canManageBabyFood) {
       return NextResponse.json({ error: "Bu işlem için yetkiniz yok" }, { status: 403 });
     }
 

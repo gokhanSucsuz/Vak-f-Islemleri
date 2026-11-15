@@ -87,7 +87,7 @@ export async function POST(req: NextRequest) {
     const perms = await getEffectivePermissions(session);
     const userId = perms.userId;
 
-    if (!session?.user || !perms.canManageSystem) {
+    if (!session?.user || !perms.canManagePresentations) {
       return NextResponse.json(
         { error: "Şablon yükleme yetkisi sadece yöneticilere ve yetkili personele aittir." },
         { status: 403 }
@@ -196,7 +196,7 @@ export async function DELETE(req: NextRequest) {
     const perms = await getEffectivePermissions(session);
     const userId = perms.userId;
 
-    if (!session?.user || !perms.canManageSystem) {
+    if (!session?.user || !perms.canManagePresentations) {
       return NextResponse.json(
         { error: "Şablon silme yetkisi sadece yöneticilere ve yetkili personele aittir." },
         { status: 403 }

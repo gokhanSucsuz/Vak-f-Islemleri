@@ -93,7 +93,7 @@ export default function PetitionsPage() {
   const isManager =
     userRole === "superadmin" ||
     userRole === "manager" ||
-    Boolean((session?.user as any)?.canManageSystem);
+    Boolean((session?.user as any)?.authorizedModules?.includes("petitions"));
 
   // Templates
   const [templates, setTemplates] = useState<{

@@ -82,7 +82,7 @@ export async function POST(req: NextRequest) {
     const perms = await getEffectivePermissions(session);
     const userId = perms.userId;
 
-    if (!session?.user || !perms.canManageSystem) {
+    if (!session?.user || !perms.canManagePresentations) {
       return NextResponse.json(
         { error: "Toplantı açma yetkisi sadece yöneticilere ve yetkili personele aittir." },
         { status: 403 }

@@ -125,21 +125,35 @@ export const authOptions: NextAuthOptions = {
         try {
           await dbConnect();
           const dbUser = (await User.findById(token.id)
-            .select("role canManageApplications")
-            .lean()) as { role?: string; canManageApplications?: boolean } | null;
+            .select("role canManageApplications authorizedModules")
+            .lean()) as {
+            role?: string;
+            canManageApplications?: boolean;
+            authorizedModules?: string[];
+          } | null;
           if (dbUser) {
+            const { ALL_PERMISSION_MODULE_KEYS, resolveUserAuthorizedModules } = await import(
+              "@/lib/permissions"
+            );
             const liveRole = dbUser.role || (token.role as string);
-            const isAuthorized = Boolean(dbUser.canManageApplications);
+            const authorizedModules =
+              liveRole === "superadmin"
+                ? [...ALL_PERMISSION_MODULE_KEYS]
+                : resolveUserAuthorizedModules(dbUser);
+            const isAuthorized = liveRole === "superadmin" || authorizedModules.length > 0;
             session.user.role = liveRole;
-            session.user.isAuthorized = liveRole === "superadmin" || isAuthorized;
+            session.user.authorizedModules = authorizedModules;
+            session.user.isAuthorized = isAuthorized;
             session.user.canManageSystem =
               liveRole === "superadmin" || liveRole === "manager" || isAuthorized;
           } else {
+            session.user.authorizedModules = [];
             session.user.isAuthorized = token.role === "superadmin";
             session.user.canManageSystem =
               token.role === "superadmin" || token.role === "manager";
           }
         } catch {
+          session.user.authorizedModules = [];
           session.user.isAuthorized = token.role === "superadmin";
           session.user.canManageSystem =
             token.role === "superadmin" || token.role === "manager";

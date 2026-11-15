@@ -97,9 +97,9 @@ export async function PUT(
 
     const { getEffectivePermissions } = await import("@/lib/permissions");
     const perms = await getEffectivePermissions(session);
-    const isManager = perms.canManageSystem;
+    const isManager = perms.canManagePresentations;
     const isAuthorizedStaff =
-      perms.isAuthorized ||
+      perms.canManagePresentations ||
       (Boolean(meeting?.authorizedUserId) &&
         String(meeting?.authorizedUserId) === String(userId));
 
@@ -230,9 +230,9 @@ export async function DELETE(
 
     const { getEffectivePermissions } = await import("@/lib/permissions");
     const perms = await getEffectivePermissions(session);
-    const isManager = perms.canManageSystem;
+    const isManager = perms.canManagePresentations;
     const isAuthorizedStaff =
-      perms.isAuthorized ||
+      perms.canManagePresentations ||
       (Boolean(meeting?.authorizedUserId) &&
         String(meeting?.authorizedUserId) === String(userId));
 

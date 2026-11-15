@@ -43,7 +43,7 @@ export default function Sidebar() {
   const filteredItems = navItems.filter(
     (item) =>
       item.roles.includes(session?.user?.role as string) ||
-      (item.allowAuthorized && Boolean(session?.user?.canManageSystem))
+      (item.allowAuthorized && Boolean(session?.user?.authorizedModules?.includes("helpTypes")))
   );
 
   return (

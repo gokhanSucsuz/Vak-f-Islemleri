@@ -25,6 +25,10 @@ const UserSchema = new mongoose.Schema(
       type: Boolean,
       default: false,
     },
+    authorizedModules: {
+      type: [String],
+      default: [],
+    },
   },
   { timestamps: true }
 );

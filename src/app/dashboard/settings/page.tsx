@@ -4,6 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import { CheckCircle2, KeyRound, Save, ShieldCheck, UserCheck } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { PERMISSION_MODULES, type PermissionModuleKey } from "@/lib/permissions";
 
 interface UserPermission {
   _id: string;
@@ -11,6 +12,7 @@ interface UserPermission {
   email: string;
   role: string;
   canManageApplications: boolean;
+  authorizedModules: PermissionModuleKey[];
 }
 
 export default function SettingsPage() {
@@ -57,18 +59,29 @@ export default function SettingsPage() {
     }
   }, [session, fetchUserPermissions]);
 
-  const handleToggleUserPermission = async (userId: string, currentVal: boolean) => {
+  const handleUpdateUserModules = async (
+    userId: string,
+    nextModules: PermissionModuleKey[]
+  ) => {
     setTogglingUserId(userId);
     try {
       const res = await fetch("/api/settings/permissions", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, canManageApplications: !currentVal }),
+        body: JSON.stringify({ userId, authorizedModules: nextModules }),
       });
       if (res.ok) {
-        toast.success("Genel sistem yetkisi güncellendi.");
+        toast.success("Kullanıcı sayfa yetkileri güncellendi.");
         setUserList((prev) =>
-          prev.map((u) => (u._id === userId ? { ...u, canManageApplications: !currentVal } : u))
+          prev.map((u) =>
+            u._id === userId
+              ? {
+                  ...u,
+                  authorizedModules: nextModules,
+                  canManageApplications: nextModules.length > 0,
+                }
+              : u
+          )
         );
       } else {
         const data = await res.json();
@@ -79,6 +92,24 @@ export default function SettingsPage() {
     } finally {
       setTogglingUserId(null);
     }
+  };
+
+  const handleToggleSingleModule = (
+    user: UserPermission,
+    moduleKey: PermissionModuleKey
+  ) => {
+    const current = user.authorizedModules || [];
+    const exists = current.includes(moduleKey);
+    const next = exists
+      ? current.filter((k) => k !== moduleKey)
+      : [...current, moduleKey];
+    handleUpdateUserModules(user._id, next);
+  };
+
+  const handleToggleAllModules = (user: UserPermission) => {
+    const allKeys = PERMISSION_MODULES.map((m) => m.key);
+    const hasAll = allKeys.every((k) => (user.authorizedModules || []).includes(k));
+    handleUpdateUserModules(user._id, hasAll ? [] : allKeys);
   };
 
   const handleSystemSubmit = async (e: React.FormEvent) => {
@@ -202,10 +233,10 @@ export default function SettingsPage() {
           <div className="p-6 md:p-8">
             <h2 className="text-lg font-bold text-slate-800 mb-2 flex items-center">
               <UserCheck className="w-5 h-5 mr-2 text-emerald-600" />
-              Yetkili Personel Belirleme (Genel Sistem Yetkisi)
+              Yetkili Personel Belirleme (Sayfa Bazlı Yetki)
             </h2>
             <p className="text-xs text-slate-500 mb-6 pb-4 border-b border-slate-100">
-              Yetki verilen personeller; Başvuru Dosyaları, Dilekçe İşlemleri, Sunular, Yardım Türleri, Bebek Maması ve Ayni Yardım dahil tüm Vakıf İşlemleri sisteminde tam yetkili olarak işlem yapabilir.
+              Her kullanıcı için hangi sayfalarda yetkili olacağını ayrı ayrı seçebilir veya tek tıkla tüm sayfalarda yetki verebilirsiniz.
             </p>
 
             {loadingUsers ? (
@@ -217,47 +248,87 @@ export default function SettingsPage() {
                 Yetkilendirilebilecek personel veya müdür bulunamadı.
               </div>
             ) : (
-              <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
-                {userList.map((u) => (
-                  <div
-                    key={u._id}
-                    className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between gap-3 hover:bg-slate-100/60 transition-colors"
-                  >
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm">{u.name}</p>
-                      <p className="text-xs text-slate-500 font-mono">{u.email}</p>
-                      <span
-                        className={`inline-block mt-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                          u.role === "manager"
-                            ? "bg-purple-100 text-purple-800"
-                            : "bg-blue-100 text-blue-800"
-                        }`}
-                      >
-                        {u.role === "manager" ? "Müdür" : "Personel"}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      disabled={togglingUserId === u._id}
-                      onClick={() => handleToggleUserPermission(u._id, u.canManageApplications)}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-60 ${
-                        u.canManageApplications
-                          ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20"
-                          : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
-                      }`}
+              <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
+                {userList.map((u) => {
+                  const mods = u.authorizedModules || [];
+                  const hasAll = PERMISSION_MODULES.every((m) => mods.includes(m.key));
+                  const isBusy = togglingUserId === u._id;
+                  return (
+                    <div
+                      key={u._id}
+                      className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-3"
                     >
-                      {u.canManageApplications ? (
-                        <>
-                          <CheckCircle2 className="w-4 h-4" />
-                          Yetkili (Aktif)
-                        </>
-                      ) : (
-                        "Yetki Ver"
-                      )}
-                    </button>
-                  </div>
-                ))}
+                      <div className="flex flex-wrap items-center justify-between gap-3">
+                        <div>
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className="font-bold text-slate-800 text-sm">{u.name}</p>
+                            <span
+                              className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                                u.role === "manager"
+                                  ? "bg-purple-100 text-purple-800"
+                                  : "bg-blue-100 text-blue-800"
+                              }`}
+                            >
+                              {u.role === "manager" ? "Müdür" : "Personel"}
+                            </span>
+                            {mods.length > 0 && (
+                              <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                                {hasAll
+                                  ? "Tüm Sayfalarda Yetkili"
+                                  : `${mods.length}/${PERMISSION_MODULES.length} Sayfa Yetkili`}
+                              </span>
+                            )}
+                          </div>
+                          <p className="text-xs text-slate-500 font-mono mt-0.5">{u.email}</p>
+                        </div>
+
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleToggleAllModules(u)}
+                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-60 ${
+                            hasAll
+                              ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20"
+                              : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
+                          }`}
+                        >
+                          <CheckCircle2 className="w-3.5 h-3.5" />
+                          {hasAll ? "Tüm Yetkileri Kaldır" : "Tüm Sayfalarda Yetkilendir"}
+                        </button>
+                      </div>
+
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-200/60">
+                        {PERMISSION_MODULES.map((mod) => {
+                          const active = mods.includes(mod.key);
+                          return (
+                            <button
+                              key={mod.key}
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => handleToggleSingleModule(u, mod.key)}
+                              className={`px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-2 text-left disabled:opacity-60 ${
+                                active
+                                  ? "bg-emerald-50 border-emerald-300 text-emerald-800 shadow-xs"
+                                  : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
+                              }`}
+                            >
+                              <span
+                                className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 border ${
+                                  active
+                                    ? "bg-emerald-600 border-emerald-600 text-white"
+                                    : "bg-slate-50 border-slate-300"
+                                }`}
+                              >
+                                {active && <CheckCircle2 className="w-3 h-3" />}
+                              </span>
+                              <span className="truncate">{mod.label}</span>
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
             )}
           </div>

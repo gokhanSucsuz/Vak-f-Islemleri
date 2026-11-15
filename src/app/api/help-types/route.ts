@@ -27,7 +27,7 @@ export async function POST(req: Request) {
   const { getEffectivePermissions } = await import("@/lib/permissions");
   const perms = await getEffectivePermissions(session);
 
-  if (!session || !perms.canManageSystem) {
+  if (!session || !perms.canManageHelpTypes) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

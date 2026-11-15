@@ -137,7 +137,7 @@ export async function PUT(req: Request) {
 
     const { getEffectivePermissions } = await import("@/lib/permissions");
     const perms = await getEffectivePermissions(session);
-    if (!perms.canManageSystem && record.createdBy.toString() !== userAny.id) {
+    if (!perms.canManageInKindAid && record.createdBy.toString() !== userAny.id) {
       return NextResponse.json({ error: "Bu kaydı düzenleme yetkiniz yok" }, { status: 403 });
     }
 
@@ -192,7 +192,7 @@ export async function DELETE(req: Request) {
 
     const { getEffectivePermissions } = await import("@/lib/permissions");
     const perms = await getEffectivePermissions(session);
-    if (!perms.canManageSystem && record.createdBy.toString() !== userAny.id) {
+    if (!perms.canManageInKindAid && record.createdBy.toString() !== userAny.id) {
       return NextResponse.json({ error: "Bu kaydı silme yetkiniz yok" }, { status: 403 });
     }
 

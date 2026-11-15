@@ -141,7 +141,7 @@ export async function DELETE(
     const userId = perms.userId;
     const isOwner = String(existing.createdBy) === String(userId);
 
-    if (!perms.canManageSystem && !isOwner) {
+    if (!perms.canManagePetitions && !isOwner) {
       return NextResponse.json(
         { error: "Bu dilekçeyi silme yetkiniz bulunmamaktadır." },
         { status: 403 }

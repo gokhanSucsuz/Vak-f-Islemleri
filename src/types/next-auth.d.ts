@@ -7,6 +7,7 @@ declare module "next-auth" {
       role?: string;
       isAuthorized?: boolean;
       canManageSystem?: boolean;
+      authorizedModules?: string[];
     } & DefaultSession["user"];
   }
 

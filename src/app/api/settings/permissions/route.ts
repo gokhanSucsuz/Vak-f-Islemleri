@@ -4,6 +4,11 @@ import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import User from "@/models/User";
 import Log from "@/models/Log";
+import {
+  ALL_PERMISSION_MODULE_KEYS,
+  PERMISSION_MODULES,
+  resolveUserAuthorizedModules,
+} from "@/lib/permissions";
 
 export async function GET() {
   try {
@@ -16,10 +21,22 @@ export async function GET() {
     }
 
     await dbConnect();
-    const users = await User.find({ role: { $in: ["personnel", "manager"] } })
-      .select("name email role canManageApplications")
+    const rawUsers = await User.find({ role: { $in: ["personnel", "manager"] } })
+      .select("name email role canManageApplications authorizedModules")
       .sort({ name: 1 })
       .lean();
+
+    const users = rawUsers.map((u: any) => {
+      const authorizedModules = resolveUserAuthorizedModules(u);
+      return {
+        _id: u._id,
+        name: u.name,
+        email: u.email,
+        role: u.role,
+        canManageApplications: authorizedModules.length > 0,
+        authorizedModules,
+      };
+    });
 
     return NextResponse.json({ users });
   } catch (error: any) {
@@ -40,9 +57,24 @@ export async function POST(req: Request) {
 
     await dbConnect();
     const body = await req.json();
-    const { userId, canManageApplications } = body;
+    const { userId, authorizedModules, canManageApplications } = body;
 
-    if (!userId || typeof canManageApplications !== "boolean") {
+    if (!userId) {
+      return NextResponse.json({ error: "Kullanıcı ID zorunludur." }, { status: 400 });
+    }
+
+    let cleanModules: string[] = [];
+    if (Array.isArray(authorizedModules)) {
+      cleanModules = Array.from(
+        new Set(
+          authorizedModules.filter((k) =>
+            (ALL_PERMISSION_MODULE_KEYS as readonly string[]).includes(String(k))
+          )
+        )
+      );
+    } else if (typeof canManageApplications === "boolean") {
+      cleanModules = canManageApplications ? [...ALL_PERMISSION_MODULE_KEYS] : [];
+    } else {
       return NextResponse.json({ error: "Geçersiz istek parametreleri." }, { status: 400 });
     }
 
@@ -51,15 +83,20 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Kullanıcı bulunamadı." }, { status: 404 });
     }
 
-    targetUser.canManageApplications = canManageApplications;
+    targetUser.authorizedModules = cleanModules;
+    targetUser.canManageApplications = cleanModules.length > 0;
     await targetUser.save();
+
+    const grantedLabels = PERMISSION_MODULES.filter((m) =>
+      cleanModules.includes(m.key)
+    ).map((m) => m.label);
 
     try {
       await Log.create({
         userId: session.user.id,
-        action: "Genel Sistem Yetkisi Değiştirildi",
-        details: `${targetUser.name} (${targetUser.email}) için Genel Sistem Yetkisi: ${
-          canManageApplications ? "VERİLDİ" : "KALDIRILDI"
+        action: "Sayfa Bazlı Yetki Değiştirildi",
+        details: `${targetUser.name} (${targetUser.email}) için yetkili sayfalar: ${
+          grantedLabels.length > 0 ? grantedLabels.join(", ") : "YETKİ YOK"
         }`,
       });
     } catch (err) {
@@ -75,6 +112,7 @@ export async function POST(req: Request) {
         email: targetUser.email,
         role: targetUser.role,
         canManageApplications: targetUser.canManageApplications,
+        authorizedModules: targetUser.authorizedModules,
       },
     });
   } catch (error: any) {

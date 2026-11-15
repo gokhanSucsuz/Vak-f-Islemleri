@@ -38,7 +38,7 @@ export async function POST(req: Request) {
 
     const { getEffectivePermissions } = await import("@/lib/permissions");
     const perms = await getEffectivePermissions(session);
-    if (!perms.canManageSystem) {
+    if (!perms.canManagePetitions) {
       return NextResponse.json(
         { error: "Şablon yükleme yetkisi sadece Müdür, Süper Admin ve yetkili personel içindir." },
         { status: 403 }

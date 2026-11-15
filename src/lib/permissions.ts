@@ -1,22 +1,55 @@
 import dbConnect from "@/lib/db";
 import User from "@/models/User";
 
+export const PERMISSION_MODULES = [
+  { key: "applications", label: "Başvuru Dosyaları" },
+  { key: "petitions", label: "Dilekçe İşlemleri" },
+  { key: "presentations", label: "Sunular" },
+  { key: "helpTypes", label: "Yardım Türleri" },
+  { key: "babyFood", label: "Bebek Maması" },
+  { key: "inKindAid", label: "Ayni Yardım" },
+] as const;
+
+export type PermissionModuleKey = (typeof PERMISSION_MODULES)[number]["key"];
+
+export const ALL_PERMISSION_MODULE_KEYS: PermissionModuleKey[] = PERMISSION_MODULES.map(
+  (m) => m.key
+);
+
+export function resolveUserAuthorizedModules(dbUser?: {
+  canManageApplications?: boolean;
+  authorizedModules?: string[];
+} | null): PermissionModuleKey[] {
+  if (!dbUser) return [];
+  const raw = Array.isArray(dbUser.authorizedModules) ? dbUser.authorizedModules : [];
+  const valid = raw.filter((k): k is PermissionModuleKey =>
+    (ALL_PERMISSION_MODULE_KEYS as readonly string[]).includes(k)
+  );
+  if (valid.length > 0) return valid;
+  // Geriye dönük uyumluluk: eski sistemde genel yetki verilenler tüm modüllerde yetkili sayılır
+  if (dbUser.canManageApplications) return [...ALL_PERMISSION_MODULE_KEYS];
+  return [];
+}
+
 export interface EffectivePermissions {
   userId: string;
   role: string;
   isSuperAdmin: boolean;
   isManager: boolean;
-  /** Ayarlar sayfasından genel sistem yetkisi (canManageApplications) verilmiş mi */
   isAuthorized: boolean;
-  /** Tüm sistem modüllerinde (dilekçe, sunu, yardım türleri, mama/ayni yardım vb.) yönetim yetkisi */
+  authorizedModules: PermissionModuleKey[];
   canManageSystem: boolean;
-  /** Başvuru dosyaları Excel içe aktarma / silme / düzenleme yetkisi */
   canManageApplications: boolean;
+  canManagePetitions: boolean;
+  canManagePresentations: boolean;
+  canManageHelpTypes: boolean;
+  canManageBabyFood: boolean;
+  canManageInKindAid: boolean;
 }
 
 /**
  * Tek merkezli sunucu tarafı yetki kontrolü.
- * Oturumdaki kullanıcıyı veritabanından tazeleyerek rol ve genel yetkili (canManageApplications) durumunu döner.
+ * Kullanıcının rolünü ve Ayarlar'dan tanımlanan sayfa bazlı yetkilerini veritabanından döner.
  */
 export async function getEffectivePermissions(session: any): Promise<EffectivePermissions> {
   const userId = String(session?.user?.id || "");
@@ -29,8 +62,14 @@ export async function getEffectivePermissions(session: any): Promise<EffectivePe
       isSuperAdmin: false,
       isManager: false,
       isAuthorized: false,
+      authorizedModules: [],
       canManageSystem: false,
       canManageApplications: false,
+      canManagePetitions: false,
+      canManagePresentations: false,
+      canManageHelpTypes: false,
+      canManageBabyFood: false,
+      canManageInKindAid: false,
     };
   }
 
@@ -41,20 +80,34 @@ export async function getEffectivePermissions(session: any): Promise<EffectivePe
       isSuperAdmin: true,
       isManager: true,
       isAuthorized: true,
+      authorizedModules: [...ALL_PERMISSION_MODULE_KEYS],
       canManageSystem: true,
       canManageApplications: true,
+      canManagePetitions: true,
+      canManagePresentations: true,
+      canManageHelpTypes: true,
+      canManageBabyFood: true,
+      canManageInKindAid: true,
     };
   }
 
   await dbConnect();
   const dbUser = (await User.findById(userId)
-    .select("role canManageApplications")
-    .lean()) as { role?: string; canManageApplications?: boolean } | null;
+    .select("role canManageApplications authorizedModules")
+    .lean()) as {
+    role?: string;
+    canManageApplications?: boolean;
+    authorizedModules?: string[];
+  } | null;
 
   const role = String(dbUser?.role || fallbackRole);
   const isSuperAdmin = role === "superadmin";
   const isManager = isSuperAdmin || role === "manager";
-  const isAuthorized = Boolean(dbUser?.canManageApplications);
+  const authorizedModules = isSuperAdmin
+    ? [...ALL_PERMISSION_MODULE_KEYS]
+    : resolveUserAuthorizedModules(dbUser);
+  const isAuthorized = isSuperAdmin || authorizedModules.length > 0;
+  const hasMod = (k: PermissionModuleKey) => isSuperAdmin || authorizedModules.includes(k);
 
   return {
     userId,
@@ -62,7 +115,13 @@ export async function getEffectivePermissions(session: any): Promise<EffectivePe
     isSuperAdmin,
     isManager,
     isAuthorized,
+    authorizedModules,
     canManageSystem: isSuperAdmin || isManager || isAuthorized,
-    canManageApplications: isSuperAdmin || isAuthorized,
+    canManageApplications: hasMod("applications"),
+    canManagePetitions: isManager || hasMod("petitions"),
+    canManagePresentations: isManager || hasMod("presentations"),
+    canManageHelpTypes: isManager || hasMod("helpTypes"),
+    canManageBabyFood: isManager || hasMod("babyFood"),
+    canManageInKindAid: isManager || hasMod("inKindAid"),
   };
 }

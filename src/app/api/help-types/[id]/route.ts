@@ -11,7 +11,7 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
   const { getEffectivePermissions } = await import("@/lib/permissions");
   const perms = await getEffectivePermissions(session);
 
-  if (!session || !perms.canManageSystem) {
+  if (!session || !perms.canManageHelpTypes) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
