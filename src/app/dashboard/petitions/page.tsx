@@ -211,6 +211,28 @@ export default function PetitionsPage() {
     }
   }, [editorMode, editorInitialHtml]);
 
+  const exitEditorMode = useCallback(() => {
+    setEditorMode(false);
+    setEditingId(null);
+    setPreviewPetition(null);
+    setEditorInitialHtml("");
+  }, []);
+
+  // Tarayıcı geri tuşuna basıldığında da düzenleme/önizleme modundan temiz çıkış yap
+  useEffect(() => {
+    if (!editorMode) return;
+    if (typeof window !== "undefined" && !window.history.state?.petitionEditor) {
+      window.history.pushState({ petitionEditor: true }, "");
+    }
+    const onPopState = () => {
+      exitEditorMode();
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => {
+      window.removeEventListener("popstate", onPopState);
+    };
+  }, [editorMode, exitEditorMode]);
+
   const handleUploadTemplate = async (type: "detayli" | "matbu", file?: File) => {
     if (!file) return;
     if (!file.name.toLowerCase().endsWith(".docx")) {
@@ -302,6 +324,7 @@ export default function PetitionsPage() {
       if (action === "preview") {
         setPreviewPetition(full);
       } else if (action === "edit") {
+        setPreviewPetition(null);
         setEditingId(full._id);
         setEditorType(full.petitionType);
         setCitizenName(full.citizenName);
@@ -310,6 +333,7 @@ export default function PetitionsPage() {
         setEditorInitialHtml(full.htmlContent || "<p></p>");
         setEditorMode(true);
       } else if (action === "useAsTemplate") {
+        setPreviewPetition(null);
         setEditingId(null); // Yeni kayıt olarak kaydedilecek
         setEditorType(full.petitionType);
         setCitizenName("");
@@ -362,7 +386,11 @@ export default function PetitionsPage() {
       toast.success(
         editingId ? "Dilekçe başarıyla güncellendi." : "Dilekçe sisteme başarıyla kaydedildi."
       );
-      setEditorMode(false);
+      if (typeof window !== "undefined" && window.history.state?.petitionEditor) {
+        window.history.back();
+      } else {
+        exitEditorMode();
+      }
       fetchPetitions();
     } catch (err: any) {
       toast.error(err.message || "Kaydetme hatası");
@@ -428,7 +456,13 @@ export default function PetitionsPage() {
             <div className="flex items-center gap-3">
               <button
                 type="button"
-                onClick={() => setEditorMode(false)}
+                onClick={() => {
+                  if (typeof window !== "undefined" && window.history.state?.petitionEditor) {
+                    window.history.back();
+                  } else {
+                    exitEditorMode();
+                  }
+                }}
                 className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
                 title="Listeye Dön"
               >
