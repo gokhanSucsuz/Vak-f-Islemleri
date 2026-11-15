@@ -306,6 +306,69 @@ export default function PetitionsPage() {
         }
       });
 
+      if (type !== "matbu") {
+        const isCellEmpty = (cell: HTMLElement) =>
+          (cell.textContent || "").replace(/\u00a0/g, " ").trim().length === 0 &&
+          !cell.querySelector("table");
+
+        const fillEmptyCellLines = (cell: HTMLElement, count: number) => {
+          cell.innerHTML = Array.from({ length: count }, () => "<p>&nbsp;</p>").join("");
+        };
+
+        const ensureTrailingBlankLines = (cell: HTMLElement, count: number) => {
+          const existingEmpty = Array.from(cell.querySelectorAll("p")).filter(
+            (p) => (p.textContent || "").replace(/\u00a0/g, " ").trim().length === 0
+          ).length;
+          for (let k = existingEmpty; k < count; k++) {
+            const p = doc.createElement("p");
+            p.innerHTML = "&nbsp;";
+            cell.appendChild(p);
+          }
+        };
+
+        doc.querySelectorAll<HTMLTableRowElement>("tr").forEach((tr) => {
+          const cells = Array.from(tr.children).filter(
+            (c): c is HTMLElement => c.tagName === "TD" || c.tagName === "TH"
+          );
+          cells.forEach((cell, idx) => {
+            const txt = (cell.textContent || "")
+              .replace(/\u00a0/g, " ")
+              .trim()
+              .toLocaleUpperCase("tr-TR");
+            if (!txt) return;
+
+            let targetLines = 0;
+            if (/MEDEN[İI]\s*HAL[İI]|ÇOCUKLARI|SOSYAL\s*DURUMU/.test(txt)) {
+              targetLines = 6;
+            } else if (/\bADRES[İI]?\b|\b[İI]MZA\b/.test(txt)) {
+              targetLines = 3;
+            }
+            if (!targetLines) return;
+
+            const nextCell = cells[idx + 1];
+            if (nextCell && isCellEmpty(nextCell)) {
+              fillEmptyCellLines(nextCell, targetLines);
+              return;
+            }
+
+            if (cells.length === 1) {
+              const nextTr = tr.nextElementSibling as HTMLTableRowElement | null;
+              if (nextTr) {
+                const nextRowCells = Array.from(nextTr.children).filter(
+                  (c): c is HTMLElement => c.tagName === "TD" || c.tagName === "TH"
+                );
+                if (nextRowCells.length > 0 && nextRowCells.every(isCellEmpty)) {
+                  nextRowCells.forEach((nc) => fillEmptyCellLines(nc, targetLines));
+                  return;
+                }
+              }
+            }
+
+            ensureTrailingBlankLines(cell, targetLines);
+          });
+        });
+      }
+
       if (type === "matbu") {
         doc.querySelectorAll<HTMLElement>("table").forEach((tbl) => {
           tbl.setAttribute("data-borderless", "true");

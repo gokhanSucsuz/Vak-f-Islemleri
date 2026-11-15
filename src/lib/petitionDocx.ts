@@ -132,18 +132,30 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
             tdEl.style.borderStyle === "none" ||
             tdEl.style.border === "none" ||
             tdEl.style.borderWidth === "0px";
-          const runs = collectTextRuns(td, {
-            bold: td.tagName.toLowerCase() === "th",
-          });
+          const isHeaderCell = td.tagName.toLowerCase() === "th";
+          const cellParagraphs = Array.from(td.querySelectorAll("p"));
+          const childrenParagraphs =
+            cellParagraphs.length > 0
+              ? cellParagraphs.map((pEl) => {
+                  const pRuns = collectTextRuns(pEl, { bold: isHeaderCell });
+                  return new Paragraph({
+                    alignment: getAlignment(pEl as HTMLElement),
+                    children: pRuns.length ? pRuns : [new TextRun("")],
+                  });
+                })
+              : [
+                  (() => {
+                    const runs = collectTextRuns(td, { bold: isHeaderCell });
+                    return new Paragraph({
+                      children: runs.length ? runs : [new TextRun("")],
+                    });
+                  })(),
+                ];
           const borderDef = cellBorderless
             ? { style: BorderStyle.NONE, size: 0, color: "FFFFFF" }
             : { style: BorderStyle.SINGLE, size: 4, color: "94A3B8" };
           return new TableCell({
-            children: [
-              new Paragraph({
-                children: runs.length ? runs : [new TextRun("")],
-              }),
-            ],
+            children: childrenParagraphs,
             borders: {
               top: borderDef,
               bottom: borderDef,
