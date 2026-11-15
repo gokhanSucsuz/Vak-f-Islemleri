@@ -533,38 +533,100 @@ export default function PetitionsPage() {
     const root = editorRef.current;
     if (!root) return;
 
+    const normTr = (s: string) =>
+      s
+        .replace(/[\u00a0\u2003\u2002]/g, " ")
+        .replace(/\s+/g, " ")
+        .trim()
+        .toLocaleUpperCase("tr-TR");
+
+    const getTargetCell = (cells: HTMLElement[], idx: number): HTMLElement | undefined => {
+      const next = cells[idx + 1];
+      if (!next) return undefined;
+      if (normTr(next.textContent || "") === ":") {
+        return cells[idx + 2];
+      }
+      return next;
+    };
+
+    // 0. "MÜRACAATÇININ ADI SOYADI" satırında yan hücreye Adı Soyadı + T.C. Kimlik No birlikte yazılır
+    root.querySelectorAll("tr").forEach((tr) => {
+      const cells = Array.from(tr.children).filter(
+        (c): c is HTMLElement => c.tagName === "TD" || c.tagName === "TH"
+      );
+      cells.forEach((cell, idx) => {
+        const txt = normTr(cell.textContent || "");
+        if (/^(?:MÜRACAATÇININ|BAŞVURUCUNUN)\s+(?:ADI\s*SOYADI|AD\s*SOYAD)\s*:?$/.test(txt)) {
+          const targetCell = getTargetCell(cells, idx);
+          if (
+            targetCell &&
+            !targetCell.querySelector("table") &&
+            !targetCell.querySelector('[data-live-field="citizenName"]')
+          ) {
+            targetCell.innerHTML = `<p><span data-live-field="citizenName">\u00a0</span> — T.C. Kimlik No: <span data-live-field="tcNo">\u00a0</span></p>`;
+          }
+        }
+      });
+    });
+
     const ensureFieldTargets = (
       field: "citizenName" | "tcNo" | "subject",
       labelRegex: RegExp,
       inlineRegex: RegExp
     ) => {
-      if (root.querySelector(`[data-live-field="${field}"]`)) return;
-
       // 1. Tablo satırlarında etiket hücresinin hemen sağındaki hücreyi hedefle
       root.querySelectorAll("tr").forEach((tr) => {
         const cells = Array.from(tr.children).filter(
           (c): c is HTMLElement => c.tagName === "TD" || c.tagName === "TH"
         );
         cells.forEach((cell, idx) => {
-          const txt = (cell.textContent || "").replace(/\u00a0/g, " ").trim();
+          const txt = normTr(cell.textContent || "");
           if (labelRegex.test(txt)) {
-            const targetCell = cells[idx + 1];
-            if (targetCell && !targetCell.querySelector("table")) {
+            const targetCell = getTargetCell(cells, idx);
+            if (
+              targetCell &&
+              !targetCell.querySelector("table") &&
+              !targetCell.querySelector(`[data-live-field="${field}"]`)
+            ) {
               targetCell.innerHTML = `<p><span data-live-field="${field}">\u00a0</span></p>`;
             }
           }
         });
       });
 
-      if (root.querySelector(`[data-live-field="${field}"]`)) return;
-
       // 2. Aynı satır/hücre içinde "Adı Soyadı :" veya "T.C. Kimlik No :" şeklinde yazılmışsa
       root.querySelectorAll<HTMLElement>("p, td, th").forEach((el) => {
         if (el.querySelector("p, table")) return;
-        const txt = (el.textContent || "").replace(/\u00a0/g, " ").trim();
-        const m = txt.match(inlineRegex);
-        if (m) {
-          const labelPart = m[1];
+        if (el.querySelector(`[data-live-field="${field}"]`)) return;
+
+        // İçinde <br> ile birden fazla satır varsa satır satır kontrol et
+        if (/<br\s*\/?>/i.test(el.innerHTML)) {
+          const parts = el.innerHTML.split(/<br\s*\/?>/i);
+          let changed = false;
+          const nextParts = parts.map((partHtml) => {
+            const tmp = document.createElement("div");
+            tmp.innerHTML = partHtml;
+            const rawLine = (tmp.textContent || "").replace(/[\u00a0\u2003\u2002]/g, " ").trim();
+            const upperLine = rawLine.toLocaleUpperCase("tr-TR");
+            if (inlineRegex.test(upperLine) && !tmp.querySelector(`[data-live-field="${field}"]`)) {
+              const colonIdx = rawLine.indexOf(":");
+              const labelPart = colonIdx >= 0 ? rawLine.slice(0, colonIdx + 1).trim() : rawLine;
+              changed = true;
+              return `${labelPart} <span data-live-field="${field}">\u00a0</span>`;
+            }
+            return partHtml;
+          });
+          if (changed) {
+            el.innerHTML = nextParts.join("<br/>");
+          }
+          return;
+        }
+
+        const rawTxt = (el.textContent || "").replace(/[\u00a0\u2003\u2002]/g, " ").trim();
+        const upperTxt = rawTxt.toLocaleUpperCase("tr-TR");
+        if (inlineRegex.test(upperTxt)) {
+          const colonIdx = rawTxt.indexOf(":");
+          const labelPart = colonIdx >= 0 ? rawTxt.slice(0, colonIdx + 1).trim() : rawTxt;
           el.innerHTML = `${labelPart} <span data-live-field="${field}">\u00a0</span>`;
         }
       });
@@ -572,18 +634,18 @@ export default function PetitionsPage() {
 
     ensureFieldTargets(
       "citizenName",
-      /^(?:ADI\s*SOYADI|AD\s*SOYAD|AD\s*-\s*SOYAD|İSİM\s*SOYİSİM|DİLEKÇE\s*SAHİBİ(?:\s*ADI\s*SOYADI)?)\s*:?$/i,
-      /^((?:ADI\s*SOYADI|AD\s*SOYAD|AD\s*-\s*SOYAD|İSİM\s*SOYİSİM)\s*:)(?:[\s._]*)$/i
+      /^(?:ADI\s*SOYADI|AD\s*SOYAD|AD\s*-\s*SOYAD|İSİM\s*SOYİSİM|DİLEKÇE\s*SAHİBİ(?:\s*ADI\s*SOYADI)?)\s*:?$/,
+      /^(?:ADI\s*SOYADI|AD\s*SOYAD|AD\s*-\s*SOYAD|İSİM\s*SOYİSİM|DİLEKÇE\s*SAHİBİ(?:\s*ADI\s*SOYADI)?)\s*:(?:[\s._…-]*)$/
     );
     ensureFieldTargets(
       "tcNo",
-      /^(?:T\.?\s*C\.?\s*(?:KİMLİK)?\s*(?:NO|NUMARASI)?|KİMLİK\s*NO)\s*:?$/i,
-      /^((?:T\.?\s*C\.?\s*(?:KİMLİK)?\s*(?:NO|NUMARASI)?|KİMLİK\s*NO)\s*:)(?:[\s._]*)$/i
+      /^(?:T\.?\s*C\.?\s*(?:KİMLİK)?\s*(?:NO|NUMARASI)?|T\.?\s*C\.?\s*K\.?\s*N\.?|TCKN|KİMLİK\s*(?:NO|NUMARASI))\s*:?$/,
+      /^(?:T\.?\s*C\.?\s*(?:KİMLİK)?\s*(?:NO|NUMARASI)?|T\.?\s*C\.?\s*K\.?\s*N\.?|TCKN|KİMLİK\s*(?:NO|NUMARASI))\s*:(?:[\s._…-]*)$/
     );
     ensureFieldTargets(
       "subject",
-      /^(?:TALEP\s*ETTİĞİ\s*YARDIM(?:\s*TÜRÜ)?|YARDIM\s*TÜRÜ|DİLEKÇE\s*KONUSU|KONU(?:SU)?|TALEP\s*KONUSU)\s*:?$/i,
-      /^((?:TALEP\s*ETTİĞİ\s*YARDIM(?:\s*TÜRÜ)?|YARDIM\s*TÜRÜ|DİLEKÇE\s*KONUSU|KONU(?:SU)?|TALEP\s*KONUSU)\s*:)(?:[\s._]*)$/i
+      /^(?:TALEP\s*ETTİĞİ\s*YARDIM(?:\s*TÜRÜ)?|YARDIM\s*TÜRÜ|DİLEKÇE\s*KONUSU|KONU(?:SU)?|TALEP\s*KONUSU)\s*:?$/,
+      /^(?:TALEP\s*ETTİĞİ\s*YARDIM(?:\s*TÜRÜ)?|YARDIM\s*TÜRÜ|DİLEKÇE\s*KONUSU|KONU(?:SU)?|TALEP\s*KONUSU)\s*:(?:[\s._…-]*)$/
     );
 
     root.querySelectorAll<HTMLElement>('[data-live-field="citizenName"]').forEach((el) => {
