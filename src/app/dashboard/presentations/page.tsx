@@ -80,6 +80,8 @@ interface PresentationListItem {
   summaryTitle: string;
   slideCount: number;
   totalPhotos: number;
+  photoBytes?: number;
+  presentationBytes?: number;
   firstPhoto: string;
   createdBy?: { _id: string; name: string };
   lockedBy?: { _id: string; name: string } | null;
@@ -227,6 +229,15 @@ function RichDescriptionEditor({
       />
     </div>
   );
+}
+
+function formatBytesLabel(bytes?: number): string {
+  const b = Number(bytes || 0);
+  if (b <= 0) return "0 KB";
+  if (b < 1024) return `${b} B`;
+  const kb = b / 1024;
+  if (kb < 1024) return `${Math.round(kb)} KB`;
+  return `${(kb / 1024).toFixed(1)} MB`;
 }
 
 function splitHtmlToVisualLines(html: string): string[] {
@@ -2523,14 +2534,25 @@ export default function PresentationsPage() {
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between pt-2 border-t border-slate-100">
-                        <div className="flex items-center gap-1.5">
+                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
+                        <div className="flex flex-wrap items-center gap-1.5">
                           <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700">
                             {item.slideCount} Sayfa
                           </span>
                           <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600">
                             {item.totalPhotos} Fotoğraf
+                            {(item.photoBytes || 0) > 0
+                              ? ` (${formatBytesLabel(item.photoBytes)})`
+                              : ""}
                           </span>
+                          {typeof item.presentationBytes === "number" && (
+                            <span
+                              className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-50 text-sky-700"
+                              title="Sununun sistemdeki toplam boyutu"
+                            >
+                              Sunu: {formatBytesLabel(item.presentationBytes)}
+                            </span>
+                          )}
                           {item.lockedBy && String(item.lockedBy._id) !== String(userId) && (
                             <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
                               Düzenleniyor: {item.lockedBy.name}

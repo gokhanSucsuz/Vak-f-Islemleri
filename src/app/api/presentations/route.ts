@@ -39,6 +39,13 @@ export async function GET(req: NextRequest) {
 
     const LOCK_TTL_MS = 3 * 60 * 1000;
     const nowMs = Date.now();
+    const dataUriByteSize = (dataUri: string) => {
+      if (!dataUri) return 0;
+      const commaIdx = dataUri.indexOf(",");
+      const b64 = commaIdx >= 0 ? dataUri.slice(commaIdx + 1) : dataUri;
+      const padding = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+      return Math.max(0, Math.floor((b64.length * 3) / 4) - padding);
+    };
 
     const mapped = await Promise.all(
       records.map(async (r) => {
@@ -47,6 +54,15 @@ export async function GET(req: NextRequest) {
           (sum, s) => sum + (Array.isArray(s.photos) ? s.photos.length : 0),
           0
         );
+        const photoBytes = slides.reduce(
+          (sum, s) =>
+            sum +
+            (Array.isArray(s.photos)
+              ? s.photos.reduce((pSum, p) => pSum + dataUriByteSize(p), 0)
+              : 0),
+          0
+        );
+        const presentationBytes = r.slidesCompressed?.length || 0;
         const isLockActive =
           Boolean(r.lockedBy) &&
           Boolean(r.lockedAt) &&
@@ -59,6 +75,8 @@ export async function GET(req: NextRequest) {
           summaryTitle: r.summaryTitle,
           slideCount: r.slideCount || slides.length,
           totalPhotos,
+          photoBytes,
+          presentationBytes,
           firstPhoto: slides.find((s) => s.photos?.length > 0)?.photos?.[0] || "",
           createdBy: r.createdBy,
           lockedBy: isLockActive ? r.lockedBy : null,
