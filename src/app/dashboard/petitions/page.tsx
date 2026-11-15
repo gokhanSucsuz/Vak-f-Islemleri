@@ -212,6 +212,9 @@ export default function PetitionsPage() {
   }, [editorMode, editorInitialHtml]);
 
   const exitEditorMode = useCallback(() => {
+    if (editorRef.current) {
+      editorRef.current.innerHTML = "";
+    }
     setEditorMode(false);
     setEditingId(null);
     setPreviewPetition(null);
@@ -492,7 +495,7 @@ export default function PetitionsPage() {
   // =========================================================================
   if (editorMode) {
     return (
-      <div className="space-y-4">
+      <div key="petition-editor-view" className="space-y-4">
         {/* Üst Kontrol Çubuğu (Yazdırmada Gizli) */}
         <div className="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-slate-200/80 space-y-4 print:hidden">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -755,7 +758,7 @@ export default function PetitionsPage() {
   // ANA DİLEKÇE MERKEZİ & ARAMA LİSTESİ
   // =========================================================================
   return (
-    <div className="space-y-6">
+    <div key="petition-main-view" className="space-y-6">
       {/* Gizli Şablon File Inputları */}
       <input
         ref={detayliInputRef}
