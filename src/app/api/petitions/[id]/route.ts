@@ -136,11 +136,12 @@ export async function DELETE(
       return NextResponse.json({ error: "Dilekçe bulunamadı" }, { status: 404 });
     }
 
-    const role = (session.user as any).role;
-    const userId = (session.user as any).id;
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
+    const userId = perms.userId;
     const isOwner = String(existing.createdBy) === String(userId);
 
-    if (role !== "superadmin" && role !== "manager" && !isOwner) {
+    if (!perms.canManageSystem && !isOwner) {
       return NextResponse.json(
         { error: "Bu dilekçeyi silme yetkiniz bulunmamaktadır." },
         { status: 403 }

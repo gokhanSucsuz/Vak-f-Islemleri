@@ -138,10 +138,13 @@ export async function PATCH(
       return NextResponse.json({ error: "Toplantı bulunamadı." }, { status: 404 });
     }
 
-    const isManager = role === "superadmin" || role === "manager";
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
+    const isManager = perms.canManageSystem;
     const isAuthorizedStaff =
-      Boolean(meeting.authorizedUserId) &&
-      String(meeting.authorizedUserId) === String(userId);
+      perms.isAuthorized ||
+      (Boolean(meeting.authorizedUserId) &&
+        String(meeting.authorizedUserId) === String(userId));
 
     // İndirme zamanlayıcısı (kapatılmış toplantı da indirilebilir)
     if (action === "markDownloaded") {

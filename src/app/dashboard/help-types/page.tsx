@@ -69,7 +69,7 @@ export default function HelpTypesPage() {
     }
   };
 
-  if (session?.user?.role !== "manager" && session?.user?.role !== "superadmin") {
+  if (!session?.user?.canManageSystem) {
     return <div className="p-8 text-center">Bu sayfaya erişim yetkiniz yok.</div>;
   }
 

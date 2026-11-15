@@ -8,8 +8,10 @@ import Log from "@/models/Log";
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   await dbConnect();
   const session = await getServerSession(authOptions);
+  const { getEffectivePermissions } = await import("@/lib/permissions");
+  const perms = await getEffectivePermissions(session);
 
-  if (!session || (session.user.role !== "manager" && session.user.role !== "superadmin")) {
+  if (!session || !perms.canManageSystem) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 

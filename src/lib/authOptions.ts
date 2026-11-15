@@ -122,6 +122,28 @@ export const authOptions: NextAuthOptions = {
       if (token.role && session.user) {
         session.user.role = token.role as string;
         session.user.id = token.id as string;
+        try {
+          await dbConnect();
+          const dbUser = (await User.findById(token.id)
+            .select("role canManageApplications")
+            .lean()) as { role?: string; canManageApplications?: boolean } | null;
+          if (dbUser) {
+            const liveRole = dbUser.role || (token.role as string);
+            const isAuthorized = Boolean(dbUser.canManageApplications);
+            session.user.role = liveRole;
+            session.user.isAuthorized = liveRole === "superadmin" || isAuthorized;
+            session.user.canManageSystem =
+              liveRole === "superadmin" || liveRole === "manager" || isAuthorized;
+          } else {
+            session.user.isAuthorized = token.role === "superadmin";
+            session.user.canManageSystem =
+              token.role === "superadmin" || token.role === "manager";
+          }
+        } catch {
+          session.user.isAuthorized = token.role === "superadmin";
+          session.user.canManageSystem =
+            token.role === "superadmin" || token.role === "manager";
+        }
       }
       return session;
     },

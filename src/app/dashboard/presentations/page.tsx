@@ -712,7 +712,10 @@ export default function PresentationsPage() {
   const { data: session } = useSession();
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
-  const isManager = role === "superadmin" || role === "manager";
+  const isManager =
+    role === "superadmin" ||
+    role === "manager" ||
+    Boolean((session?.user as any)?.canManageSystem);
 
   const [templates, setTemplates] = useState<PresentationTemplateClient[]>([]);
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);

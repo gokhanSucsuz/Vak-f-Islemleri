@@ -88,14 +88,6 @@ interface SheetTabInfo {
   columnHeaders: string[];
 }
 
-interface UserPermission {
-  _id: string;
-  name: string;
-  email: string;
-  role: string;
-  canManageApplications: boolean;
-}
-
 interface ImportBatchInfo {
   _id: string;
   name: string;
@@ -372,11 +364,6 @@ export default function ApplicationsPage() {
     "HANE VE BAŞVURU DOSYALARI CETVELİ"
   );
 
-  // Permissions Modal State (Super Admin)
-  const [isPermModalOpen, setIsPermModalOpen] = useState(false);
-  const [userList, setUserList] = useState<UserPermission[]>([]);
-  const [loadingUsers, setLoadingUsers] = useState(false);
-
   const isSuperAdmin = session?.user?.role === "superadmin";
 
   // Önbellek Sıfırlama
@@ -616,44 +603,6 @@ export default function ApplicationsPage() {
         }
       },
     });
-  };
-
-  // Load User Permissions
-  const fetchUserPermissions = async () => {
-    if (!isSuperAdmin) return;
-    setLoadingUsers(true);
-    try {
-      const res = await fetch("/api/application-files/permissions");
-      if (res.ok) {
-        const data = await res.json();
-        setUserList(data.users || []);
-      }
-    } catch (e) {
-      console.error(e);
-    } finally {
-      setLoadingUsers(false);
-    }
-  };
-
-  const handleToggleUserPermission = async (userId: string, currentVal: boolean) => {
-    try {
-      const res = await fetch("/api/application-files/permissions", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ userId, canManageApplications: !currentVal }),
-      });
-      if (res.ok) {
-        toast.success("Yetki güncellendi.");
-        setUserList((prev) =>
-          prev.map((u) => (u._id === userId ? { ...u, canManageApplications: !currentVal } : u))
-        );
-      } else {
-        const data = await res.json();
-        toast.error(data.error || "Yetki güncellenemedi.");
-      }
-    } catch (e) {
-      toast.error("Bir hata oluştu.");
-    }
   };
 
   // Filtre Sıfırlama
@@ -1428,21 +1377,6 @@ export default function ApplicationsPage() {
 
         {/* Aksiyon Butonları (Tüm Kullanıcılar İçin Excel İndirme Açık) */}
         <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
-          {/* Süper Admin: Yetkilendirme */}
-          {isSuperAdmin && (
-            <button
-              onClick={() => {
-                fetchUserPermissions();
-                setIsPermModalOpen(true);
-              }}
-              className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-3.5 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-semibold transition-all shadow-sm"
-              title="Kullanıcı Yetkilendirme"
-            >
-              <UserCheck className="w-4 h-4 text-slate-600" />
-              Yetkili Kullanıcılar
-            </button>
-          )}
-
           {/* Excel Dosyalarını Yönet / Sil Butonu (Yetkili veya Süper Admin) */}
           {canManage && (
             <button
@@ -3092,100 +3026,6 @@ export default function ApplicationsPage() {
       )}
 
       {/* ========================================================= */}
-      {/* YETKİLENDİRME MODALI (SÜPER ADMİN)                        */}
-      {/* ========================================================= */}
-      {isPermModalOpen && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
-          <div
-            className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
-            onClick={() => setIsPermModalOpen(false)}
-          />
-
-          <div className="relative w-full max-w-xl bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 z-10 animate-in zoom-in-95 duration-200 max-h-[85vh] flex flex-col">
-            <div className="flex justify-between items-center pb-4 border-b border-slate-100">
-              <div className="flex items-center gap-2.5">
-                <div className="p-2.5 bg-blue-100 text-blue-600 rounded-2xl">
-                  <UserCheck className="w-5 h-5" />
-                </div>
-                <div>
-                  <h3 className="text-lg font-bold text-slate-800">Dosya İşlem Yetkilendirmesi</h3>
-                  <p className="text-xs text-slate-500">
-                    Süper Admin olarak, Excel yükleme ve manuel kayıt ekleme yetkisi verilecek kullanıcıları belirleyin.
-                  </p>
-                </div>
-              </div>
-              <button
-                onClick={() => setIsPermModalOpen(false)}
-                className="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl"
-              >
-                <X className="w-5 h-5" />
-              </button>
-            </div>
-
-            <div className="mt-4 flex-1 overflow-y-auto space-y-2.5 pr-1">
-              {loadingUsers ? (
-                <div className="py-8 text-center text-slate-500 text-sm">
-                  Kullanıcılar yükleniyor...
-                </div>
-              ) : userList.length === 0 ? (
-                <div className="py-8 text-center text-slate-400 text-sm">
-                  Yetkilendirilebilecek personel veya müdür bulunamadı.
-                </div>
-              ) : (
-                userList.map((u) => (
-                  <div
-                    key={u._id}
-                    className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200/80 flex items-center justify-between gap-3 hover:bg-slate-100/60 transition-colors"
-                  >
-                    <div>
-                      <p className="font-bold text-slate-800 text-sm">{u.name}</p>
-                      <p className="text-xs text-slate-500 font-mono">{u.email}</p>
-                      <span
-                        className={`inline-block mt-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${
-                          u.role === "manager"
-                            ? "bg-purple-100 text-purple-800"
-                            : "bg-blue-100 text-blue-800"
-                        }`}
-                      >
-                        {u.role === "manager" ? "Müdür" : "Personel"}
-                      </span>
-                    </div>
-
-                    <button
-                      type="button"
-                      onClick={() => handleToggleUserPermission(u._id, u.canManageApplications)}
-                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 ${
-                        u.canManageApplications
-                          ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20"
-                          : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
-                      }`}
-                    >
-                      {u.canManageApplications ? (
-                        <>
-                          <CheckCircle2 className="w-4 h-4" />
-                          Yetkili (Aktif)
-                        </>
-                      ) : (
-                        "Yetki Ver"
-                      )}
-                    </button>
-                  </div>
-                ))
-              )}
-            </div>
-
-            <div className="pt-4 border-t border-slate-100 flex justify-end">
-              <button
-                onClick={() => setIsPermModalOpen(false)}
-                className="px-5 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-semibold transition-colors"
-              >
-                Kapat
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Modern Dialog Bileşeni - En son render edilerek tüm pencerelerin ve modalların üstünde kalması garanti altına alındı */}
       <ModernConfirmDialog
         isOpen={dialogState.isOpen}

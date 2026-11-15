@@ -47,8 +47,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 
-    const userRole = (session.user as any).role;
-    if (userRole !== "manager" && userRole !== "superadmin") {
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
+    if (!perms.canManageSystem) {
       return NextResponse.json({ error: "Bu işlem için yetkiniz yok" }, { status: 403 });
     }
 
@@ -83,8 +84,9 @@ export async function DELETE(req: Request) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 
-    const userRole = (session.user as any).role;
-    if (userRole !== "manager" && userRole !== "superadmin") {
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
+    if (!perms.canManageSystem) {
       return NextResponse.json({ error: "Bu işlem için yetkiniz yok" }, { status: 403 });
     }
 

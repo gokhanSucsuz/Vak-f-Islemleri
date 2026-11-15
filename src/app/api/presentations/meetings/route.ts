@@ -78,12 +78,13 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    const role = (session?.user as any)?.role;
-    const userId = (session?.user as any)?.id;
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
+    const userId = perms.userId;
 
-    if (!session?.user || (role !== "superadmin" && role !== "manager")) {
+    if (!session?.user || !perms.canManageSystem) {
       return NextResponse.json(
-        { error: "Toplantı açma yetkisi sadece yöneticilere aittir." },
+        { error: "Toplantı açma yetkisi sadece yöneticilere ve yetkili personele aittir." },
         { status: 403 }
       );
     }

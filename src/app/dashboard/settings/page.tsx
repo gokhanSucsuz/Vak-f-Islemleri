@@ -1,21 +1,47 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
-import { KeyRound, Save, ShieldCheck } from "lucide-react";
+import { CheckCircle2, KeyRound, Save, ShieldCheck, UserCheck } from "lucide-react";
 import { useSession } from "next-auth/react";
+
+interface UserPermission {
+  _id: string;
+  name: string;
+  email: string;
+  role: string;
+  canManageApplications: boolean;
+}
 
 export default function SettingsPage() {
   const [loading, setLoading] = useState(false);
   const { data: session } = useSession();
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(false);
   const [savingSystem, setSavingSystem] = useState(false);
+  const [userList, setUserList] = useState<UserPermission[]>([]);
+  const [loadingUsers, setLoadingUsers] = useState(false);
+  const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
 
   const [passwords, setPasswords] = useState({
     currentPassword: "",
     newPassword: "",
     confirmPassword: "",
   });
+
+  const fetchUserPermissions = useCallback(async () => {
+    setLoadingUsers(true);
+    try {
+      const res = await fetch("/api/settings/permissions");
+      if (res.ok) {
+        const data = await res.json();
+        setUserList(data.users || []);
+      }
+    } catch {
+      /* ignore */
+    } finally {
+      setLoadingUsers(false);
+    }
+  }, []);
 
   useEffect(() => {
     if (session?.user?.role === "superadmin") {
@@ -27,8 +53,33 @@ export default function SettingsPage() {
           }
         })
         .catch(() => {});
+      fetchUserPermissions();
     }
-  }, [session]);
+  }, [session, fetchUserPermissions]);
+
+  const handleToggleUserPermission = async (userId: string, currentVal: boolean) => {
+    setTogglingUserId(userId);
+    try {
+      const res = await fetch("/api/settings/permissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, canManageApplications: !currentVal }),
+      });
+      if (res.ok) {
+        toast.success("Genel sistem yetkisi güncellendi.");
+        setUserList((prev) =>
+          prev.map((u) => (u._id === userId ? { ...u, canManageApplications: !currentVal } : u))
+        );
+      } else {
+        const data = await res.json();
+        toast.error(data.error || "Yetki güncellenemedi.");
+      }
+    } catch {
+      toast.error("Bir hata oluştu.");
+    } finally {
+      setTogglingUserId(null);
+    }
+  };
 
   const handleSystemSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -146,11 +197,78 @@ export default function SettingsPage() {
         </div>
       )}
 
+      {session?.user?.role === "superadmin" && (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6">
+          <div className="p-6 md:p-8">
+            <h2 className="text-lg font-bold text-slate-800 mb-2 flex items-center">
+              <UserCheck className="w-5 h-5 mr-2 text-emerald-600" />
+              Yetkili Personel Belirleme (Genel Sistem Yetkisi)
+            </h2>
+            <p className="text-xs text-slate-500 mb-6 pb-4 border-b border-slate-100">
+              Yetki verilen personeller; Başvuru Dosyaları, Dilekçe İşlemleri, Sunular, Yardım Türleri, Bebek Maması ve Ayni Yardım dahil tüm Vakıf İşlemleri sisteminde tam yetkili olarak işlem yapabilir.
+            </p>
+
+            {loadingUsers ? (
+              <div className="py-6 text-center text-slate-500 text-sm">
+                Kullanıcılar yükleniyor...
+              </div>
+            ) : userList.length === 0 ? (
+              <div className="py-6 text-center text-slate-400 text-sm">
+                Yetkilendirilebilecek personel veya müdür bulunamadı.
+              </div>
+            ) : (
+              <div className="space-y-2.5 max-h-[380px] overflow-y-auto pr-1">
+                {userList.map((u) => (
+                  <div
+                    key={u._id}
+                    className="p-3.5 bg-slate-50 rounded-xl border border-slate-200/80 flex items-center justify-between gap-3 hover:bg-slate-100/60 transition-colors"
+                  >
+                    <div>
+                      <p className="font-bold text-slate-800 text-sm">{u.name}</p>
+                      <p className="text-xs text-slate-500 font-mono">{u.email}</p>
+                      <span
+                        className={`inline-block mt-1 px-2 py-0.5 rounded-md text-[10px] font-bold ${
+                          u.role === "manager"
+                            ? "bg-purple-100 text-purple-800"
+                            : "bg-blue-100 text-blue-800"
+                        }`}
+                      >
+                        {u.role === "manager" ? "Müdür" : "Personel"}
+                      </span>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={togglingUserId === u._id}
+                      onClick={() => handleToggleUserPermission(u._id, u.canManageApplications)}
+                      className={`px-3.5 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-60 ${
+                        u.canManageApplications
+                          ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20"
+                          : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
+                      }`}
+                    >
+                      {u.canManageApplications ? (
+                        <>
+                          <CheckCircle2 className="w-4 h-4" />
+                          Yetkili (Aktif)
+                        </>
+                      ) : (
+                        "Yetki Ver"
+                      )}
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
         <div className="p-6 md:p-8">
           <h2 className="text-lg font-bold text-slate-800 mb-6 flex items-center border-b border-slate-100 pb-4">
             <KeyRound className="w-5 h-5 mr-2 text-blue-600" />
-            Şifre Değiştir
+            Şifre İşlemleri (Şifre Değiştir)
           </h2>
           
           <form onSubmit={handleSubmit} className="space-y-5">

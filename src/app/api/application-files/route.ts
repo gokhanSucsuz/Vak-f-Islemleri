@@ -61,11 +61,8 @@ function computeSearchRelevance(
 }
 
 async function checkManagePermission(session: any): Promise<boolean> {
-  if (!session?.user) return false;
-  if (session.user.role === "superadmin") return true;
-  await dbConnect();
-  const dbUser = await User.findById(session.user.id).select("canManageApplications role");
-  return Boolean(dbUser?.role === "superadmin" || dbUser?.canManageApplications);
+  const { getEffectivePermissions } = await import("@/lib/permissions");
+  return (await getEffectivePermissions(session)).canManageApplications;
 }
 
 export async function GET(req: Request) {

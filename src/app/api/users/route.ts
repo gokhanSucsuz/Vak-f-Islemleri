@@ -9,7 +9,9 @@ import bcrypt from "bcryptjs";
 export async function GET() {
   try {
     const session = await getServerSession(authOptions);
-    const hasRole = session?.user?.role === "superadmin" || session?.user?.role === "manager";
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = session ? await getEffectivePermissions(session) : null;
+    const hasRole = Boolean(perms?.canManageSystem);
     const isGoogleVerified = (session as any)?.googleVerified === true;
     
     await dbConnect();

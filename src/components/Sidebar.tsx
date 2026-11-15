@@ -34,13 +34,17 @@ export default function Sidebar() {
     { name: "Personel Yönetimi", href: "/dashboard/users", icon: Users, roles: ["superadmin"] },
     { name: "Sistem Logları", href: "/dashboard/logs", icon: Activity, roles: ["superadmin"] },
     { name: "Raporlar", href: "/dashboard/reports", icon: FileText, roles: ["superadmin", "manager", "personnel"] },
-    { name: "Yardım Türleri", href: "/dashboard/help-types", icon: FileText, roles: ["superadmin", "manager"] },
+    { name: "Yardım Türleri", href: "/dashboard/help-types", icon: FileText, roles: ["superadmin", "manager"], allowAuthorized: true },
     { name: "Bebek Maması", href: "/dashboard/baby-food", icon: Baby, roles: ["superadmin", "manager", "personnel"] },
     { name: "Ayni Yardım", href: "/dashboard/in-kind-aid", icon: Gift, roles: ["superadmin", "manager", "personnel"] },
-    { name: "Şifre Değiştir", href: "/dashboard/settings", icon: Settings, roles: ["superadmin", "manager", "personnel"] },
+    { name: "Ayarlar", href: "/dashboard/settings", icon: Settings, roles: ["superadmin", "manager", "personnel"] },
   ];
 
-  const filteredItems = navItems.filter(item => item.roles.includes(session?.user?.role as string));
+  const filteredItems = navItems.filter(
+    (item) =>
+      item.roles.includes(session?.user?.role as string) ||
+      (item.allowAuthorized && Boolean(session?.user?.canManageSystem))
+  );
 
   return (
     <>
@@ -65,8 +69,15 @@ export default function Sidebar() {
         <div className="p-4 border-b border-slate-800">
           <p className="text-sm text-slate-400">Hoş geldin,</p>
           <p className="font-semibold text-slate-100 truncate">{session?.user?.name}</p>
-          <div className="mt-2 inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-900/50 text-blue-300 border border-blue-800">
-            {session?.user?.role === 'superadmin' ? 'Süper Admin' : session?.user?.role === 'manager' ? 'Müdür' : 'Personel'}
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <div className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-900/50 text-blue-300 border border-blue-800">
+              {session?.user?.role === 'superadmin' ? 'Süper Admin' : session?.user?.role === 'manager' ? 'Müdür' : 'Personel'}
+            </div>
+            {session?.user?.isAuthorized && session?.user?.role !== 'superadmin' && (
+              <div className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-semibold bg-emerald-900/60 text-emerald-300 border border-emerald-700/80">
+                Yetkili
+              </div>
+            )}
           </div>
         </div>
 

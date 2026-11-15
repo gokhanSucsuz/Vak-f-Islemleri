@@ -95,10 +95,13 @@ export async function PUT(
       );
     }
 
-    const isManager = role === "superadmin" || role === "manager";
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
+    const isManager = perms.canManageSystem;
     const isAuthorizedStaff =
-      Boolean(meeting?.authorizedUserId) &&
-      String(meeting?.authorizedUserId) === String(userId);
+      perms.isAuthorized ||
+      (Boolean(meeting?.authorizedUserId) &&
+        String(meeting?.authorizedUserId) === String(userId));
 
     if (meeting?.isLocked && !isManager && !isAuthorizedStaff) {
       return NextResponse.json(
@@ -225,10 +228,13 @@ export async function DELETE(
       );
     }
 
-    const isManager = role === "superadmin" || role === "manager";
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
+    const isManager = perms.canManageSystem;
     const isAuthorizedStaff =
-      Boolean(meeting?.authorizedUserId) &&
-      String(meeting?.authorizedUserId) === String(userId);
+      perms.isAuthorized ||
+      (Boolean(meeting?.authorizedUserId) &&
+        String(meeting?.authorizedUserId) === String(userId));
 
     if (meeting?.isLocked && !isManager && !isAuthorizedStaff) {
       return NextResponse.json(

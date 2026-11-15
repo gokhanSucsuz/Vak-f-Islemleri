@@ -24,7 +24,9 @@ export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     const userAny = session?.user as any;
-    if (!session || !session.user || (userAny.role !== "manager" && userAny.role !== "superadmin")) {
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
+    if (!session || !session.user || !perms.canManageSystem) {
       return NextResponse.json({ error: "Bu işlem için yetkiniz yok" }, { status: 403 });
     }
 
@@ -53,7 +55,9 @@ export async function DELETE(req: Request) {
   try {
     const session = await getServerSession(authOptions);
     const userAny = session?.user as any;
-    if (!session || !session.user || (userAny.role !== "manager" && userAny.role !== "superadmin")) {
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
+    if (!session || !session.user || !perms.canManageSystem) {
       return NextResponse.json({ error: "Bu işlem için yetkiniz yok" }, { status: 403 });
     }
 
