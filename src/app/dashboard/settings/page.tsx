@@ -1,8 +1,18 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import toast from "react-hot-toast";
-import { CheckCircle2, KeyRound, Save, ShieldCheck, UserCheck } from "lucide-react";
+import {
+  CheckCircle2,
+  ChevronDown,
+  ChevronUp,
+  KeyRound,
+  Save,
+  Search,
+  Settings,
+  ShieldCheck,
+  UserCheck,
+} from "lucide-react";
 import { useSession } from "next-auth/react";
 import { PERMISSION_MODULES, type PermissionModuleKey } from "@/lib/permissionModules";
 
@@ -16,13 +26,19 @@ interface UserPermission {
 }
 
 export default function SettingsPage() {
-  const [loading, setLoading] = useState(false);
   const { data: session } = useSession();
+  const isSuperAdmin = session?.user?.role === "superadmin";
+
+  const [loading, setLoading] = useState(false);
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(false);
   const [savingSystem, setSavingSystem] = useState(false);
+
   const [userList, setUserList] = useState<UserPermission[]>([]);
   const [loadingUsers, setLoadingUsers] = useState(false);
   const [togglingUserId, setTogglingUserId] = useState<string | null>(null);
+  const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
+  const [userSearch, setUserSearch] = useState("");
+  const [permFilter, setPermFilter] = useState<"all" | "authorized" | "unauthorized">("all");
 
   const [passwords, setPasswords] = useState({
     currentPassword: "",
@@ -46,7 +62,7 @@ export default function SettingsPage() {
   }, []);
 
   useEffect(() => {
-    if (session?.user?.role === "superadmin") {
+    if (isSuperAdmin) {
       fetch("/api/settings/system")
         .then((res) => res.json())
         .then((data) => {
@@ -57,7 +73,7 @@ export default function SettingsPage() {
         .catch(() => {});
       fetchUserPermissions();
     }
-  }, [session, fetchUserPermissions]);
+  }, [isSuperAdmin, fetchUserPermissions]);
 
   const handleUpdateUserModules = async (
     userId: string,
@@ -129,7 +145,7 @@ export default function SettingsPage() {
         const data = await res.json();
         toast.error(data.error || "Güncelleme başarısız");
       }
-    } catch (error) {
+    } catch {
       toast.error("Bir hata oluştu");
     } finally {
       setSavingSystem(false);
@@ -138,7 +154,7 @@ export default function SettingsPage() {
 
   const handleChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const { name, value } = e.target;
-    setPasswords(prev => ({ ...prev, [name]: value }));
+    setPasswords((prev) => ({ ...prev, [name]: value }));
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -150,7 +166,7 @@ export default function SettingsPage() {
       setLoading(false);
       return;
     }
-    
+
     if (passwords.newPassword.length < 6) {
       toast.error("Şifre en az 6 karakter olmalıdır!");
       setLoading(false);
@@ -174,94 +190,256 @@ export default function SettingsPage() {
         const data = await res.json();
         toast.error(data.error || "Şifre güncellenemedi");
       }
-    } catch (error) {
+    } catch {
       toast.error("Bir hata oluştu");
     } finally {
       setLoading(false);
     }
   };
 
+  const authorizedCount = useMemo(
+    () => userList.filter((u) => (u.authorizedModules || []).length > 0).length,
+    [userList]
+  );
+
+  const filteredUsers = useMemo(() => {
+    const q = userSearch.trim().toLocaleLowerCase("tr-TR");
+    return userList.filter((u) => {
+      const hasMods = (u.authorizedModules || []).length > 0;
+      if (permFilter === "authorized" && !hasMods) return false;
+      if (permFilter === "unauthorized" && hasMods) return false;
+      if (!q) return true;
+      return (
+        u.name.toLocaleLowerCase("tr-TR").includes(q) ||
+        u.email.toLocaleLowerCase("tr-TR").includes(q)
+      );
+    });
+  }, [userList, userSearch, permFilter]);
+
   return (
-    <div className="space-y-6 max-w-2xl">
-      <div>
-        <h1 className="text-2xl font-bold text-slate-800">Ayarlar</h1>
-        <p className="text-slate-500 text-sm mt-1">Hesap ayarlarınızı ve şifrenizi buradan yönetebilirsiniz.</p>
+    <div className={`space-y-6 mx-auto ${isSuperAdmin ? "max-w-5xl" : "max-w-2xl"}`}>
+      {/* Sayfa Başlığı */}
+      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-200/80 flex items-center gap-4">
+        <div className="p-3.5 bg-gradient-to-tr from-slate-800 to-slate-700 text-white rounded-2xl shadow-md">
+          <Settings className="w-6 h-6" />
+        </div>
+        <div>
+          <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">Ayarlar</h1>
+          <p className="text-slate-500 text-sm mt-0.5">
+            {isSuperAdmin
+              ? "Sistem güvenliğini, personel sayfa yetkilerini ve hesap şifrenizi tek yerden yönetin."
+              : "Hesap ayarlarınızı ve şifre işlemlerinizi buradan yönetebilirsiniz."}
+          </p>
+        </div>
       </div>
 
-      {session?.user?.role === "superadmin" && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6">
-          <div className="p-6 md:p-8">
-            <h2 className="text-lg font-bold text-slate-800 mb-6 flex items-center border-b border-slate-100 pb-4">
-              <ShieldCheck className="w-5 h-5 mr-2 text-red-600" />
-              Sistem Ayarları (Süper Admin)
-            </h2>
-            
-            <form onSubmit={handleSystemSubmit} className="space-y-5">
-              <div className="flex items-center justify-between p-4 border border-slate-200 rounded-xl bg-slate-50">
-                <div>
-                  <h3 className="text-sm font-bold text-slate-800">Google İle Giriş</h3>
-                  <p className="text-xs text-slate-500 mt-1">Personellerin sisteme girişte Google hesabı doğrulamasını zorunlu kılar.</p>
+      {/* Üst Kartlar: Sistem Ayarları + Şifre İşlemleri */}
+      <div className={`grid gap-6 ${isSuperAdmin ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1"}`}>
+        {isSuperAdmin && (
+          <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6 flex flex-col justify-between">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800 mb-1 flex items-center">
+                <ShieldCheck className="w-5 h-5 mr-2 text-red-600" />
+                Sistem Ayarları
+              </h2>
+              <p className="text-xs text-slate-500 mb-5 pb-4 border-b border-slate-100">
+                Yalnızca Süper Admin tarafından değiştirilebilen genel güvenlik tercihleri.
+              </p>
+
+              <form id="system-settings-form" onSubmit={handleSystemSubmit} className="space-y-4">
+                <div className="flex items-center justify-between gap-4 p-4 border border-slate-200 rounded-2xl bg-slate-50">
+                  <div>
+                    <h3 className="text-sm font-bold text-slate-800">Google İle Giriş</h3>
+                    <p className="text-xs text-slate-500 mt-1">
+                      Personellerin sisteme girişte Google hesabı doğrulamasını zorunlu kılar.
+                    </p>
+                  </div>
+                  <label className="relative inline-flex items-center cursor-pointer shrink-0">
+                    <input
+                      type="checkbox"
+                      className="sr-only peer"
+                      checked={googleLoginEnabled}
+                      onChange={(e) => setGoogleLoginEnabled(e.target.checked)}
+                    />
+                    <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
+                  </label>
                 </div>
-                <label className="relative inline-flex items-center cursor-pointer">
-                  <input 
-                    type="checkbox" 
-                    className="sr-only peer" 
-                    checked={googleLoginEnabled}
-                    onChange={(e) => setGoogleLoginEnabled(e.target.checked)}
-                  />
-                  <div className="w-11 h-6 bg-slate-300 peer-focus:outline-none peer-focus:ring-4 peer-focus:ring-blue-300 rounded-full peer peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-5 after:w-5 after:transition-all peer-checked:bg-blue-600"></div>
-                </label>
-              </div>
+              </form>
+            </div>
 
-              <div className="pt-2">
-                <button
-                  type="submit"
-                  disabled={savingSystem}
-                  className="flex items-center justify-center px-6 py-3 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-red-600 hover:bg-red-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-red-500 transition-all disabled:opacity-70"
-                >
-                  <Save className="w-4 h-4 mr-2" />
-                  {savingSystem ? "Kaydediliyor..." : "Sistem Ayarlarını Kaydet"}
-                </button>
-              </div>
-            </form>
+            <div className="pt-5 mt-5 border-t border-slate-100">
+              <button
+                type="submit"
+                form="system-settings-form"
+                disabled={savingSystem}
+                className="w-full sm:w-auto flex items-center justify-center px-5 py-2.5 rounded-xl shadow-sm text-sm font-bold text-white bg-red-600 hover:bg-red-700 transition-all disabled:opacity-70"
+              >
+                <Save className="w-4 h-4 mr-2" />
+                {savingSystem ? "Kaydediliyor..." : "Sistem Ayarlarını Kaydet"}
+              </button>
+            </div>
           </div>
+        )}
+
+        {/* Şifre İşlemleri Kartı */}
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6">
+          <h2 className="text-lg font-bold text-slate-800 mb-1 flex items-center">
+            <KeyRound className="w-5 h-5 mr-2 text-blue-600" />
+            Şifre İşlemleri
+          </h2>
+          <p className="text-xs text-slate-500 mb-5 pb-4 border-b border-slate-100">
+            Mevcut şifrenizi doğrulayarak yeni giriş şifresi belirleyin.
+          </p>
+
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                Mevcut Şifre
+              </label>
+              <input
+                type="password"
+                name="currentPassword"
+                required
+                value={passwords.currentPassword}
+                onChange={handleChange}
+                className="block w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+              />
+            </div>
+
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Yeni Şifre
+                </label>
+                <input
+                  type="password"
+                  name="newPassword"
+                  required
+                  value={passwords.newPassword}
+                  onChange={handleChange}
+                  className="block w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+              </div>
+
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  Yeni Şifre (Tekrar)
+                </label>
+                <input
+                  type="password"
+                  name="confirmPassword"
+                  required
+                  value={passwords.confirmPassword}
+                  onChange={handleChange}
+                  className="block w-full px-3.5 py-2.5 text-sm border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+                />
+              </div>
+            </div>
+
+            <div className="pt-2">
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full sm:w-auto flex items-center justify-center px-5 py-2.5 rounded-xl shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 transition-all disabled:opacity-70"
+              >
+                <Save className="w-4 h-4 mr-2" />
+                {loading ? "Güncelleniyor..." : "Şifreyi Güncelle"}
+              </button>
+            </div>
+          </form>
         </div>
-      )}
+      </div>
 
-      {session?.user?.role === "superadmin" && (
-        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden mb-6">
-          <div className="p-6 md:p-8">
-            <h2 className="text-lg font-bold text-slate-800 mb-2 flex items-center">
-              <UserCheck className="w-5 h-5 mr-2 text-emerald-600" />
-              Yetkili Personel Belirleme (Sayfa Bazlı Yetki)
-            </h2>
-            <p className="text-xs text-slate-500 mb-6 pb-4 border-b border-slate-100">
-              Her kullanıcı için hangi sayfalarda yetkili olacağını ayrı ayrı seçebilir veya tek tıkla tüm sayfalarda yetki verebilirsiniz.
-            </p>
+      {/* Alt Bölüm: Sayfa Bazlı Yetkili Personel Belirleme */}
+      {isSuperAdmin && (
+        <div className="bg-white rounded-3xl shadow-sm border border-slate-200/80 p-6">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-5 border-b border-slate-100">
+            <div>
+              <h2 className="text-lg font-bold text-slate-800 flex items-center">
+                <UserCheck className="w-5 h-5 mr-2 text-emerald-600" />
+                Yetkili Personel Belirleme (Sayfa Bazlı Yetki)
+              </h2>
+              <p className="text-xs text-slate-500 mt-1">
+                Kullanıcı satırından yetki verilecek sayfaları tek tek seçebilir veya tüm sayfalarda yetkilendirebilirsiniz.
+              </p>
+            </div>
 
-            {loadingUsers ? (
-              <div className="py-6 text-center text-slate-500 text-sm">
-                Kullanıcılar yükleniyor...
-              </div>
-            ) : userList.length === 0 ? (
-              <div className="py-6 text-center text-slate-400 text-sm">
-                Yetkilendirilebilecek personel veya müdür bulunamadı.
-              </div>
-            ) : (
-              <div className="space-y-3 max-h-[520px] overflow-y-auto pr-1">
-                {userList.map((u) => {
-                  const mods = u.authorizedModules || [];
-                  const hasAll = PERMISSION_MODULES.every((m) => mods.includes(m.key));
-                  const isBusy = togglingUserId === u._id;
-                  return (
-                    <div
-                      key={u._id}
-                      className="p-4 bg-slate-50 rounded-2xl border border-slate-200/80 space-y-3"
-                    >
-                      <div className="flex flex-wrap items-center justify-between gap-3">
-                        <div>
+            <div className="flex flex-wrap items-center gap-2">
+              <button
+                type="button"
+                onClick={() => setPermFilter("all")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                  permFilter === "all"
+                    ? "bg-slate-800 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Tümü ({userList.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setPermFilter("authorized")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                  permFilter === "authorized"
+                    ? "bg-emerald-600 text-white"
+                    : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
+                }`}
+              >
+                Yetkili ({authorizedCount})
+              </button>
+              <button
+                type="button"
+                onClick={() => setPermFilter("unauthorized")}
+                className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-colors ${
+                  permFilter === "unauthorized"
+                    ? "bg-amber-600 text-white"
+                    : "bg-slate-100 text-slate-600 hover:bg-slate-200"
+                }`}
+              >
+                Yetkisiz ({Math.max(0, userList.length - authorizedCount)})
+              </button>
+            </div>
+          </div>
+
+          {/* Arama Kutusu */}
+          <div className="mt-4 mb-4 relative">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={userSearch}
+              onChange={(e) => setUserSearch(e.target.value)}
+              placeholder="Personel adı veya e-posta adresi ile ara..."
+              className="w-full pl-10 pr-4 py-2.5 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-emerald-500 focus:border-emerald-500 outline-none"
+            />
+          </div>
+
+          {loadingUsers ? (
+            <div className="py-10 text-center text-slate-500 text-sm">
+              Kullanıcılar yükleniyor...
+            </div>
+          ) : filteredUsers.length === 0 ? (
+            <div className="py-10 text-center text-slate-400 text-sm bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+              Eşleşen personel veya müdür bulunamadı.
+            </div>
+          ) : (
+            <div className="divide-y divide-slate-100 border border-slate-200 rounded-2xl overflow-hidden">
+              {filteredUsers.map((u) => {
+                const mods = u.authorizedModules || [];
+                const hasAll = PERMISSION_MODULES.every((m) => mods.includes(m.key));
+                const isBusy = togglingUserId === u._id;
+                const isExpanded = expandedUserId === u._id;
+                const activeLabels = PERMISSION_MODULES.filter((m) => mods.includes(m.key));
+
+                return (
+                  <div key={u._id} className="bg-white hover:bg-slate-50/60 transition-colors">
+                    <div className="p-4 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                      <div className="flex items-start gap-3 min-w-0">
+                        <div className="w-9 h-9 rounded-xl bg-slate-100 text-slate-700 font-bold text-sm flex items-center justify-center shrink-0">
+                          {u.name?.charAt(0)?.toUpperCase() || "?"}
+                        </div>
+                        <div className="min-w-0">
                           <div className="flex items-center gap-2 flex-wrap">
-                            <p className="font-bold text-slate-800 text-sm">{u.name}</p>
+                            <p className="font-bold text-slate-900 text-sm">{u.name}</p>
                             <span
                               className={`px-2 py-0.5 rounded-md text-[10px] font-bold ${
                                 u.role === "manager"
@@ -274,124 +452,103 @@ export default function SettingsPage() {
                             {mods.length > 0 && (
                               <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-emerald-100 text-emerald-800">
                                 {hasAll
-                                  ? "Tüm Sayfalarda Yetkili"
-                                  : `${mods.length}/${PERMISSION_MODULES.length} Sayfa Yetkili`}
+                                  ? "Tüm Sayfalar"
+                                  : `${mods.length}/${PERMISSION_MODULES.length} Sayfa`}
                               </span>
                             )}
                           </div>
-                          <p className="text-xs text-slate-500 font-mono mt-0.5">{u.email}</p>
+                          <p className="text-xs text-slate-500 font-mono truncate">{u.email}</p>
+
+                          {/* Aktif Sayfa Özet Etiketleri */}
+                          <div className="flex flex-wrap gap-1.5 mt-2">
+                            {activeLabels.length === 0 ? (
+                              <span className="text-[11px] text-slate-400">
+                                Tanımlı ek sayfa yetkisi yok
+                              </span>
+                            ) : (
+                              activeLabels.map((m) => (
+                                <span
+                                  key={m.key}
+                                  className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                >
+                                  {m.label}
+                                </span>
+                              ))
+                            )}
+                          </div>
                         </div>
+                      </div>
+
+                      <div className="flex flex-wrap items-center gap-2 shrink-0">
+                        <button
+                          type="button"
+                          onClick={() => setExpandedUserId(isExpanded ? null : u._id)}
+                          className="px-3 py-2 rounded-xl text-xs font-bold bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors flex items-center gap-1.5"
+                        >
+                          Sayfaları Seç
+                          {isExpanded ? (
+                            <ChevronUp className="w-3.5 h-3.5" />
+                          ) : (
+                            <ChevronDown className="w-3.5 h-3.5" />
+                          )}
+                        </button>
 
                         <button
                           type="button"
                           disabled={isBusy}
                           onClick={() => handleToggleAllModules(u)}
-                          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-60 ${
+                          className={`px-3 py-2 rounded-xl text-xs font-bold transition-all shadow-sm flex items-center gap-1.5 disabled:opacity-60 ${
                             hasAll
-                              ? "bg-emerald-600 hover:bg-emerald-700 text-white shadow-emerald-600/20"
+                              ? "bg-emerald-600 hover:bg-emerald-700 text-white"
                               : "bg-white hover:bg-slate-100 text-slate-700 border border-slate-200"
                           }`}
                         >
                           <CheckCircle2 className="w-3.5 h-3.5" />
-                          {hasAll ? "Tüm Yetkileri Kaldır" : "Tüm Sayfalarda Yetkilendir"}
+                          {hasAll ? "Tümünü Kaldır" : "Tümünü Yetkilendir"}
                         </button>
                       </div>
+                    </div>
 
-                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 pt-2 border-t border-slate-200/60">
-                        {PERMISSION_MODULES.map((mod) => {
-                          const active = mods.includes(mod.key);
-                          return (
-                            <button
-                              key={mod.key}
-                              type="button"
-                              disabled={isBusy}
-                              onClick={() => handleToggleSingleModule(u, mod.key)}
-                              className={`px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-2 text-left disabled:opacity-60 ${
-                                active
-                                  ? "bg-emerald-50 border-emerald-300 text-emerald-800 shadow-xs"
-                                  : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
-                              }`}
-                            >
-                              <span
-                                className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 border ${
+                    {isExpanded && (
+                      <div className="px-4 pb-4 pt-2 bg-slate-50/80 border-t border-slate-100">
+                        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2">
+                          {PERMISSION_MODULES.map((mod) => {
+                            const active = mods.includes(mod.key);
+                            return (
+                              <button
+                                key={mod.key}
+                                type="button"
+                                disabled={isBusy}
+                                onClick={() => handleToggleSingleModule(u, mod.key)}
+                                className={`px-2.5 py-2 rounded-xl text-xs font-semibold border transition-all flex items-center gap-2 text-left disabled:opacity-60 ${
                                   active
-                                    ? "bg-emerald-600 border-emerald-600 text-white"
-                                    : "bg-slate-50 border-slate-300"
+                                    ? "bg-emerald-50 border-emerald-300 text-emerald-800 shadow-xs"
+                                    : "bg-white border-slate-200 text-slate-600 hover:bg-slate-100"
                                 }`}
                               >
-                                {active && <CheckCircle2 className="w-3 h-3" />}
-                              </span>
-                              <span className="truncate">{mod.label}</span>
-                            </button>
-                          );
-                        })}
+                                <span
+                                  className={`w-4 h-4 rounded-md flex items-center justify-center shrink-0 border ${
+                                    active
+                                      ? "bg-emerald-600 border-emerald-600 text-white"
+                                      : "bg-slate-50 border-slate-300"
+                                  }`}
+                                >
+                                  {active && <CheckCircle2 className="w-3 h-3" />}
+                                </span>
+                                <span className="truncate">{mod.label}</span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
-                    </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          )}
         </div>
       )}
-
-      <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-6 md:p-8">
-          <h2 className="text-lg font-bold text-slate-800 mb-6 flex items-center border-b border-slate-100 pb-4">
-            <KeyRound className="w-5 h-5 mr-2 text-blue-600" />
-            Şifre İşlemleri (Şifre Değiştir)
-          </h2>
-          
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Mevcut Şifre</label>
-              <input
-                type="password"
-                name="currentPassword"
-                required
-                value={passwords.currentPassword}
-                onChange={handleChange}
-                className="block w-full px-4 py-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Yeni Şifre</label>
-              <input
-                type="password"
-                name="newPassword"
-                required
-                value={passwords.newPassword}
-                onChange={handleChange}
-                className="block w-full px-4 py-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-2">Yeni Şifre (Tekrar)</label>
-              <input
-                type="password"
-                name="confirmPassword"
-                required
-                value={passwords.confirmPassword}
-                onChange={handleChange}
-                className="block w-full px-4 py-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-              />
-            </div>
-
-            <div className="pt-2">
-              <button
-                type="submit"
-                disabled={loading}
-                className="flex items-center justify-center px-6 py-3 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all disabled:opacity-70"
-              >
-                <Save className="w-4 h-4 mr-2" />
-                {loading ? "Güncelleniyor..." : "Şifreyi Güncelle"}
-              </button>
-            </div>
-          </form>
-        </div>
-      </div>
     </div>
   );
 }

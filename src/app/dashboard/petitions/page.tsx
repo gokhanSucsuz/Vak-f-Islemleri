@@ -351,10 +351,28 @@ export default function PetitionsPage() {
   };
 
   // Kayıtlı Dilekçeyi Getir (Görüntüle / Düzenle / Şablon Olarak Kullan)
+  const isPetitionEditable = (rec: Pick<PetitionRecord, "createdAt" | "createdBy">) => {
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    if (Date.now() - new Date(rec.createdAt).getTime() >= ONE_DAY_MS) {
+      return false;
+    }
+    return isManager || String(rec.createdBy?._id || "") === String(userId || "");
+  };
+
   const handleOpenPetition = async (
     record: PetitionRecord,
     action: "preview" | "edit" | "useAsTemplate"
   ) => {
+    if (action === "edit" && !isPetitionEditable(record)) {
+      const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+      const isExpired = Date.now() - new Date(record.createdAt).getTime() >= ONE_DAY_MS;
+      toast.error(
+        isExpired
+          ? "Kaydedildikten 1 gün geçen dilekçeler düzenlenemez. Şablon olarak kullanabilirsiniz."
+          : "Başka bir personelin dilekçesini düzenleyemezsiniz."
+      );
+      return;
+    }
     setLoadingContentId(record._id);
     try {
       const res = await fetch(`/api/petitions/${record._id}`);
@@ -991,6 +1009,7 @@ export default function PetitionsPage() {
                 petitions.map((rec) => {
                   const canDelete =
                     isManager || String(rec.createdBy?._id || "") === String(userId || "");
+                  const canEdit = isPetitionEditable(rec);
                   const isBusy = loadingContentId === rec._id;
 
                   return (
@@ -1056,15 +1075,17 @@ export default function PetitionsPage() {
                             <CopyPlus className="w-3.5 h-3.5" />
                             Şablon Kullan
                           </button>
-                          <button
-                            type="button"
-                            disabled={isBusy}
-                            onClick={() => handleOpenPetition(rec, "edit")}
-                            className="p-2 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
-                            title="Düzenle"
-                          >
-                            <Edit3 className="w-4 h-4" />
-                          </button>
+                          {canEdit && (
+                            <button
+                              type="button"
+                              disabled={isBusy}
+                              onClick={() => handleOpenPetition(rec, "edit")}
+                              className="p-2 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                              title="Düzenle"
+                            >
+                              <Edit3 className="w-4 h-4" />
+                            </button>
+                          )}
                           {canDelete && (
                             <button
                               type="button"

@@ -78,6 +78,29 @@ export async function PUT(
 
     await dbConnect();
 
+    const existing: any = await Petition.findById(id).select("createdBy createdAt");
+    if (!existing) {
+      return NextResponse.json({ error: "Dilekçe bulunamadı" }, { status: 404 });
+    }
+
+    const ONE_DAY_MS = 24 * 60 * 60 * 1000;
+    if (Date.now() - new Date(existing.createdAt).getTime() >= ONE_DAY_MS) {
+      return NextResponse.json(
+        { error: "Sisteme kaydedildikten 1 gün geçen dilekçeler düzenlenemez. Sadece görüntüleyebilir veya şablon olarak kullanabilirsiniz." },
+        { status: 403 }
+      );
+    }
+
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
+    const isOwner = String(existing.createdBy) === String(perms.userId);
+    if (!perms.canManagePetitions && !isOwner) {
+      return NextResponse.json(
+        { error: "Başka bir personelin dilekçesini düzenleyemezsiniz. Sadece görüntüleyebilir veya şablon olarak kullanabilirsiniz." },
+        { status: 403 }
+      );
+    }
+
     const rawBuffer = Buffer.from(htmlContent, "utf8");
     const contentCompressed = gzipSync(rawBuffer);
 
