@@ -529,12 +529,12 @@ export default function PetitionsPage() {
     }
   };
 
-  const syncLiveFieldsToEditor = (nameVal: string, tcVal: string) => {
+  const syncLiveFieldsToEditor = (nameVal: string, tcVal: string, subjectVal: string) => {
     const root = editorRef.current;
     if (!root) return;
 
     const ensureFieldTargets = (
-      field: "citizenName" | "tcNo",
+      field: "citizenName" | "tcNo" | "subject",
       labelRegex: RegExp,
       inlineRegex: RegExp
     ) => {
@@ -580,12 +580,20 @@ export default function PetitionsPage() {
       /^(?:T\.?\s*C\.?\s*(?:KİMLİK)?\s*(?:NO|NUMARASI)?|KİMLİK\s*NO)\s*:?$/i,
       /^((?:T\.?\s*C\.?\s*(?:KİMLİK)?\s*(?:NO|NUMARASI)?|KİMLİK\s*NO)\s*:)(?:[\s._]*)$/i
     );
+    ensureFieldTargets(
+      "subject",
+      /^(?:TALEP\s*ETTİĞİ\s*YARDIM(?:\s*TÜRÜ)?|YARDIM\s*TÜRÜ|DİLEKÇE\s*KONUSU|KONU(?:SU)?|TALEP\s*KONUSU)\s*:?$/i,
+      /^((?:TALEP\s*ETTİĞİ\s*YARDIM(?:\s*TÜRÜ)?|YARDIM\s*TÜRÜ|DİLEKÇE\s*KONUSU|KONU(?:SU)?|TALEP\s*KONUSU)\s*:)(?:[\s._]*)$/i
+    );
 
     root.querySelectorAll<HTMLElement>('[data-live-field="citizenName"]').forEach((el) => {
       el.textContent = nameVal || "\u00a0";
     });
     root.querySelectorAll<HTMLElement>('[data-live-field="tcNo"]').forEach((el) => {
       el.textContent = tcVal || "\u00a0";
+    });
+    root.querySelectorAll<HTMLElement>('[data-live-field="subject"]').forEach((el) => {
+      el.textContent = subjectVal || "\u00a0";
     });
   };
 
@@ -791,7 +799,7 @@ export default function PetitionsPage() {
                 onChange={(e) => {
                   const val = e.target.value;
                   setCitizenName(val);
-                  syncLiveFieldsToEditor(val, tcNo);
+                  syncLiveFieldsToEditor(val, tcNo, subject);
                 }}
                 placeholder="Örn: Ahmet Yılmaz"
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:outline-none text-sm font-semibold text-slate-900"
@@ -808,7 +816,7 @@ export default function PetitionsPage() {
                 onChange={(e) => {
                   const val = e.target.value.replace(/\D/g, "");
                   setTcNo(val);
-                  syncLiveFieldsToEditor(citizenName, val);
+                  syncLiveFieldsToEditor(citizenName, val, subject);
                 }}
                 placeholder="11 haneli T.C. No"
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:outline-none text-sm font-mono font-bold text-slate-900"
@@ -821,7 +829,11 @@ export default function PetitionsPage() {
               <input
                 type="text"
                 value={subject}
-                onChange={(e) => setSubject(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setSubject(val);
+                  syncLiveFieldsToEditor(citizenName, tcNo, val);
+                }}
                 placeholder="Örn: Nakdi Yardım / Eğitim / Sağlık"
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:outline-none text-sm text-slate-900"
               />
