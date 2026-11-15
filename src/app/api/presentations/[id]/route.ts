@@ -120,6 +120,23 @@ export async function PUT(
       );
     }
 
+    const LOCK_TTL_MS = 3 * 60 * 1000;
+    if (
+      record.lockedBy &&
+      String(record.lockedBy) !== String(userId) &&
+      record.lockedAt &&
+      Date.now() - new Date(record.lockedAt).getTime() < LOCK_TTL_MS
+    ) {
+      const populatedLock = await Presentation.findById(id).populate("lockedBy", "name");
+      const lockerName = (populatedLock?.lockedBy as any)?.name || "başka bir kullanıcı";
+      return NextResponse.json(
+        {
+          error: `Bu sunu şu anda ${lockerName} tarafından düzenleniyor. Aynı anda yalnızca bir kişi düzenleme yapabilir.`,
+        },
+        { status: 423 }
+      );
+    }
+
     const sanitizedSlides: ISlideData[] = slides.map((s) => ({
       fullName: (s.fullName || "").trim(),
       neighborhood: (s.neighborhood || "").trim(),
@@ -183,6 +200,8 @@ export async function PUT(
       )
     ).join(" | ");
     record.updatedBy = userId;
+    record.lockedBy = null;
+    record.lockedAt = null;
     await record.save();
 
     await Log.create({
@@ -196,6 +215,123 @@ export async function PUT(
     console.error("PUT /api/presentations/[id] error:", error);
     return NextResponse.json(
       { error: error.message || "Sunu güncellenemedi." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    const userId = (session?.user as any)?.id;
+    if (!session?.user || !userId) {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
+    }
+
+    const { id } = await context.params;
+    const body = await req.json();
+    const action = body?.action as "lock" | "heartbeat" | "unlock";
+    const LOCK_TTL_MS = 3 * 60 * 1000;
+
+    await dbConnect();
+    const record = await Presentation.findById(id);
+    if (!record) {
+      return NextResponse.json({ error: "Sunu bulunamadı." }, { status: 404 });
+    }
+
+    if (action === "unlock") {
+      if (String(record.lockedBy || "") === String(userId)) {
+        await Presentation.updateOne(
+          { _id: id, lockedBy: userId },
+          { $set: { lockedBy: null, lockedAt: null } }
+        );
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "heartbeat") {
+      if (String(record.lockedBy || "") === String(userId)) {
+        await Presentation.updateOne(
+          { _id: id, lockedBy: userId },
+          { $set: { lockedAt: new Date() } }
+        );
+      }
+      return NextResponse.json({ success: true });
+    }
+
+    if (action === "lock") {
+      const meeting = await PresentationMeeting.findById(record.meetingId);
+      if (meeting?.status === "closed") {
+        return NextResponse.json(
+          { error: "Toplantı kapatıldığı için salt okunurdur; düzenleme yapılamaz." },
+          { status: 400 }
+        );
+      }
+
+      const { getEffectivePermissions } = await import("@/lib/permissions");
+      const perms = await getEffectivePermissions(session);
+      const isManager = perms.canManagePresentations;
+      const isAuthorizedStaff =
+        perms.canManagePresentations ||
+        (Boolean(meeting?.authorizedUserId) &&
+          String(meeting?.authorizedUserId) === String(userId));
+
+      if (meeting?.isLocked && !isManager && !isAuthorizedStaff) {
+        return NextResponse.json(
+          {
+            error:
+              "Toplantı slaytları sıralama/kapatma için kilitlendi. Sadece yönetici ve yetkili personel işlem yapabilir.",
+          },
+          { status: 403 }
+        );
+      }
+
+      if (!isManager && !isAuthorizedStaff && String(record.createdBy) !== String(userId)) {
+        return NextResponse.json(
+          { error: "Sadece kendi oluşturduğunuz sunuları düzenleyebilirsiniz." },
+          { status: 403 }
+        );
+      }
+
+      const staleCutoff = new Date(Date.now() - LOCK_TTL_MS);
+      const locked = await Presentation.findOneAndUpdate(
+        {
+          _id: id,
+          $or: [
+            { lockedBy: null },
+            { lockedBy: { $exists: false } },
+            { lockedBy: userId },
+            { lockedAt: { $lt: staleCutoff } },
+            { lockedAt: null },
+          ],
+        },
+        { $set: { lockedBy: userId, lockedAt: new Date() } },
+        { new: true }
+      );
+
+      if (!locked) {
+        const current = await Presentation.findById(id).populate("lockedBy", "name");
+        const lockerName = (current?.lockedBy as any)?.name || "başka bir kullanıcı";
+        return NextResponse.json(
+          {
+            error: `Bu sunu şu anda ${lockerName} tarafından düzenleniyor. Aynı anda yalnızca bir kişi düzenleme yapabilir.`,
+            lockedBy: current?.lockedBy || null,
+          },
+          { status: 423 }
+        );
+      }
+
+      return NextResponse.json({ success: true });
+    }
+
+    return NextResponse.json({ error: "Geçersiz kilit işlemi." }, { status: 400 });
+  } catch (error: any) {
+    console.error("PATCH /api/presentations/[id] error:", error);
+    return NextResponse.json(
+      { error: error.message || "Düzenleme kilidi işlemi başarısız." },
       { status: 500 }
     );
   }

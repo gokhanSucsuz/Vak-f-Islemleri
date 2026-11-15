@@ -32,9 +32,13 @@ export async function GET(req: NextRequest) {
 
     const records = await Presentation.find(query)
       .populate("createdBy", "name")
+      .populate("lockedBy", "name")
       .populate("meetingId", "title status")
       .sort({ createdAt: -1 })
       .limit(200);
+
+    const LOCK_TTL_MS = 3 * 60 * 1000;
+    const nowMs = Date.now();
 
     const mapped = await Promise.all(
       records.map(async (r) => {
@@ -43,6 +47,10 @@ export async function GET(req: NextRequest) {
           (sum, s) => sum + (Array.isArray(s.photos) ? s.photos.length : 0),
           0
         );
+        const isLockActive =
+          Boolean(r.lockedBy) &&
+          Boolean(r.lockedAt) &&
+          nowMs - new Date(r.lockedAt).getTime() < LOCK_TTL_MS;
         return {
           _id: r._id,
           meetingId: (r.meetingId as any)?._id || r.meetingId,
@@ -53,6 +61,7 @@ export async function GET(req: NextRequest) {
           totalPhotos,
           firstPhoto: slides.find((s) => s.photos?.length > 0)?.photos?.[0] || "",
           createdBy: r.createdBy,
+          lockedBy: isLockActive ? r.lockedBy : null,
           createdAt: r.createdAt,
           updatedAt: r.updatedAt,
         };

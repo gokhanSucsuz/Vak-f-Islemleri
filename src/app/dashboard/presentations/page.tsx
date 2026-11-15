@@ -82,6 +82,7 @@ interface PresentationListItem {
   totalPhotos: number;
   firstPhoto: string;
   createdBy?: { _id: string; name: string };
+  lockedBy?: { _id: string; name: string } | null;
   createdAt: string;
 }
 
@@ -1033,6 +1034,17 @@ export default function PresentationsPage() {
         });
         setPreviewSlideIdx(0);
       } else if (mode === "edit") {
+        const lockRes = await fetch(`/api/presentations/${item._id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ action: "lock" }),
+        });
+        const lockData = await lockRes.json().catch(() => ({}));
+        if (!lockRes.ok) {
+          toast.error(lockData.error || "Bu sunu şu anda başka bir kullanıcı tarafından düzenleniyor.");
+          await fetchPresentations();
+          return;
+        }
         setEditingId(item._id);
         setEditorMeetingId(data.presentation.meetingId);
         setSlides(loadedSlides.length > 0 ? loadedSlides : [emptySlide(templates[0]?._id)]);
@@ -1051,6 +1063,46 @@ export default function PresentationsPage() {
       toast.error(err.message);
     }
   };
+
+  const releaseEditLock = useCallback((id: string | null) => {
+    if (!id) return;
+    fetch(`/api/presentations/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ action: "unlock" }),
+      keepalive: true,
+    }).catch(() => {});
+  }, []);
+
+  const handleExitEditor = () => {
+    if (editingId) {
+      releaseEditLock(editingId);
+    }
+    setEditorMode(false);
+    setEditingId(null);
+    fetchPresentations();
+  };
+
+  useEffect(() => {
+    if (!editorMode || !editingId) return;
+    const currentId = editingId;
+    const interval = setInterval(() => {
+      fetch(`/api/presentations/${currentId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ action: "heartbeat" }),
+      }).catch(() => {});
+    }, 60 * 1000);
+
+    const handleBeforeUnload = () => {
+      releaseEditLock(currentId);
+    };
+    window.addEventListener("beforeunload", handleBeforeUnload);
+    return () => {
+      clearInterval(interval);
+      window.removeEventListener("beforeunload", handleBeforeUnload);
+    };
+  }, [editorMode, editingId, releaseEditLock]);
 
   // Fotoğraf Sıkıştırma & Ekleme
   const handleSlidePhotosUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -1439,7 +1491,7 @@ export default function PresentationsPage() {
         <div className="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
             <button
-              onClick={() => setEditorMode(false)}
+              onClick={handleExitEditor}
               className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
             >
               <ChevronLeft className="w-5 h-5" />
@@ -2528,6 +2580,11 @@ export default function PresentationsPage() {
                           <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600">
                             {item.totalPhotos} Fotoğraf
                           </span>
+                          {item.lockedBy && String(item.lockedBy._id) !== String(userId) && (
+                            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                              Düzenleniyor: {item.lockedBy.name}
+                            </span>
+                          )}
                         </div>
 
                         <div

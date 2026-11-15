@@ -28,6 +28,8 @@ export interface IPresentation extends Document {
   slidesCompressed: Buffer;
   createdBy: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
+  lockedBy?: mongoose.Types.ObjectId | null;
+  lockedAt?: Date | null;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -62,6 +64,15 @@ const PresentationSchema = new Schema<IPresentation>(
     updatedBy: {
       type: Schema.Types.ObjectId,
       ref: "User",
+    },
+    lockedBy: {
+      type: Schema.Types.ObjectId,
+      ref: "User",
+      default: null,
+    },
+    lockedAt: {
+      type: Date,
+      default: null,
     },
   },
   { timestamps: true }
