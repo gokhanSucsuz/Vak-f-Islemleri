@@ -266,6 +266,39 @@ export default function PetitionsPage() {
     }
   };
 
+  const normalizePetitionTableHtml = (html: string): string => {
+    if (typeof window === "undefined" || !html) return html;
+    try {
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      doc.querySelectorAll<HTMLElement>("tr").forEach((tr) => {
+        tr.style.removeProperty("height");
+        if (!tr.getAttribute("style")?.trim()) tr.removeAttribute("style");
+      });
+      doc.querySelectorAll<HTMLElement>("td, th").forEach((cell) => {
+        cell.style.removeProperty("height");
+        if (!cell.getAttribute("style")?.trim()) cell.removeAttribute("style");
+        const paragraphs = Array.from(cell.querySelectorAll("p"));
+        if (paragraphs.length > 0) {
+          const nonEmpty = paragraphs.filter(
+            (p) => (p.textContent || "").replace(/\u00a0/g, " ").trim().length > 0
+          );
+          if (nonEmpty.length === 0) {
+            cell.innerHTML = "<p>&nbsp;</p>";
+          } else {
+            paragraphs.forEach((p) => {
+              if ((p.textContent || "").replace(/\u00a0/g, " ").trim().length === 0) {
+                p.remove();
+              }
+            });
+          }
+        }
+      });
+      return doc.body.innerHTML;
+    } catch {
+      return html;
+    }
+  };
+
   // Şablondan Yeni Dilekçe Aç ("Dilekçe Al" veya "Matbu Dilekçe Al")
   const handleStartFromTemplate = (type: "detayli" | "matbu") => {
     const tpl = templates[type];
@@ -299,6 +332,8 @@ export default function PetitionsPage() {
         (_m, titleText, cityText) =>
           `<div style="width:fit-content;margin:0 auto 6pt auto;text-align:center;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
       );
+
+    filledHtml = normalizePetitionTableHtml(filledHtml);
 
     setEditingId(null);
     setEditorType(type);
@@ -339,7 +374,7 @@ export default function PetitionsPage() {
         setCitizenName("");
         setTcNo("");
         setSubject(full.subject || "");
-        setEditorInitialHtml(full.htmlContent || "<p></p>");
+        setEditorInitialHtml(normalizePetitionTableHtml(full.htmlContent || "<p></p>"));
         setEditorMode(true);
         toast.success("Kayıtlı dilekçe şablon olarak açıldı. Bilgileri güncelleyip kaydedebilirsiniz.");
       }
@@ -433,10 +468,18 @@ export default function PetitionsPage() {
   };
 
   const handlePrintCurrent = () => {
+    if (editorMode && !editingId) {
+      toast.error("Yazdırmak için önce dilekçeyi sisteme kaydedin.");
+      return;
+    }
     window.print();
   };
 
   const handleDownloadEditorDocx = async () => {
+    if (!editingId) {
+      toast.error("Word (.docx) olarak indirmek için önce dilekçeyi sisteme kaydedin.");
+      return;
+    }
     const html = editorRef.current?.innerHTML || "";
     const namePart = citizenName.trim() || "Dilekce";
     const typePart = editorType === "matbu" ? "Matbu" : "Detayli";
@@ -491,10 +534,19 @@ export default function PetitionsPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2">
+              {!editingId && (
+                <span className="px-2.5 py-1 rounded-lg bg-amber-50 border border-amber-200 text-amber-700 text-[11px] font-semibold">
+                  Yazdırma ve Word indirme kayıt sonrası aktif olur
+                </span>
+              )}
               <button
                 type="button"
                 onClick={handlePrintCurrent}
-                className="px-4 py-2.5 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm"
+                disabled={!editingId}
+                title={!editingId ? "Önce dilekçeyi sisteme kaydedin" : "Yazdır / PDF"}
+                className={`px-4 py-2.5 rounded-xl bg-slate-800 text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm ${
+                  !editingId ? "opacity-45 cursor-not-allowed" : "hover:bg-slate-900"
+                }`}
               >
                 <Printer className="w-4 h-4" />
                 Yazdır / PDF
@@ -502,7 +554,11 @@ export default function PetitionsPage() {
               <button
                 type="button"
                 onClick={handleDownloadEditorDocx}
-                className="px-4 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm"
+                disabled={!editingId}
+                title={!editingId ? "Önce dilekçeyi sisteme kaydedin" : "Word (.docx) İndir"}
+                className={`px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm ${
+                  !editingId ? "opacity-45 cursor-not-allowed" : "hover:bg-indigo-700"
+                }`}
               >
                 <Download className="w-4 h-4" />
                 Word (.docx) İndir
@@ -670,12 +726,12 @@ export default function PetitionsPage() {
           </div>
         </div>
 
-        {/* Yazdırmada tarayıcı üst/alt bilgi (tarih, başlık, site linki) gizlenir */}
-        <style>{`@media print { @page { size: A4; margin: 0; } html, body { background: #fff !important; } }`}</style>
+        {/* Yazdırmada tarayıcı üst/alt bilgi (tarih, başlık, site linki) ve fazladan boş sayfa engellenir */}
+        <style>{`@media print { @page { size: A4; margin: 10mm; } html, body { background: #fff !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; } body * { min-height: 0 !important; } }`}</style>
 
         {/* A4 Word Kağıt Alanı */}
-        <div className="bg-slate-200/70 p-4 sm:p-8 rounded-3xl overflow-x-auto print:bg-white print:p-0">
-          <div className="w-full max-w-[210mm] min-h-[297mm] mx-auto bg-white shadow-xl border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:px-[16mm] print:py-[14mm]">
+        <div className="bg-slate-200/70 p-4 sm:p-8 rounded-3xl overflow-x-auto print:bg-white print:p-0 print:overflow-visible">
+          <div className="w-full max-w-[210mm] min-h-[297mm] print:min-h-0 print:h-auto mx-auto bg-white shadow-xl border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:p-0">
             <div className="flex justify-center mb-3">
               <img
                 src="/logo-vakif.jpg"
@@ -687,7 +743,7 @@ export default function PetitionsPage() {
               ref={editorRef}
               contentEditable
               suppressContentEditableWarning
-              className="w-full min-h-[250mm] text-slate-900 text-[13.5px] leading-snug focus:outline-none [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-black [&_td]:p-1.5 [&_th]:border [&_th]:border-black [&_th]:p-1.5 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6"
+              className="w-full min-h-[250mm] print:min-h-0 text-slate-900 text-[13.5px] leading-snug focus:outline-none [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:border [&_td]:border-black [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:border [&_th]:border-black [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6"
             />
           </div>
         </div>
@@ -1249,8 +1305,8 @@ export default function PetitionsPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto bg-slate-100 p-4 sm:p-8 rounded-2xl mt-4 print:bg-white print:p-0 print:mt-0 print:overflow-visible">
-              <style>{`@media print { @page { size: A4; margin: 0; } html, body { background: #fff !important; } }`}</style>
-              <div className="w-full max-w-[210mm] min-h-[260mm] mx-auto bg-white shadow-md border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:px-[16mm] print:py-[14mm]">
+              <style>{`@media print { @page { size: A4; margin: 10mm; } html, body { background: #fff !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; } body * { min-height: 0 !important; } }`}</style>
+              <div className="w-full max-w-[210mm] min-h-[260mm] print:min-h-0 print:h-auto mx-auto bg-white shadow-md border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:p-0">
                 <div className="flex justify-center mb-3">
                   <img
                     src="/logo-vakif.jpg"
@@ -1259,7 +1315,7 @@ export default function PetitionsPage() {
                   />
                 </div>
                 <div
-                  className="text-slate-900 text-[13.5px] leading-snug [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_td]:border [&_td]:border-black [&_td]:p-1.5 [&_th]:border [&_th]:border-black [&_th]:p-1.5 [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6"
+                  className="text-slate-900 text-[13.5px] leading-snug [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:border [&_td]:border-black [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:border [&_th]:border-black [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6"
                   dangerouslySetInnerHTML={{ __html: previewPetition.htmlContent }}
                 />
               </div>

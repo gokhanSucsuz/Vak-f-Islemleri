@@ -190,19 +190,7 @@ function renderTable(tblNode: XmlNode): string {
   let html = `<table style="width:100%;border-collapse:collapse;margin:8pt 0;table-layout:fixed">`;
 
   for (const tr of rows) {
-    const trPr = findChild(tr, "w:trPr");
-    let rowHeightStyle = "";
-    if (trPr) {
-      const trHeight = findChild(trPr, "w:trHeight");
-      if (trHeight) {
-        const val = parseInt(getAttr(trHeight.attrs, "val") || "0", 10);
-        if (!isNaN(val) && val > 0) {
-          rowHeightStyle = `height:${(val / 20).toFixed(1)}pt;`;
-        }
-      }
-    }
-
-    html += `<tr style="${rowHeightStyle}">`;
+    html += `<tr>`;
     const cells = findChildren(tr, "w:tc");
     let colIdx = 0;
 
@@ -244,16 +232,23 @@ function renderTable(tblNode: XmlNode): string {
 
       colIdx += colspan;
 
-      let cellInner = "";
+      const cellParts: string[] = [];
       for (const ch of tc.children) {
         if (ch.tag === "w:p") {
-          cellInner += renderParagraph(ch, true);
+          cellParts.push(renderParagraph(ch, true));
         } else if (ch.tag === "w:tbl") {
-          cellInner += renderTable(ch);
+          cellParts.push(renderTable(ch));
         }
       }
 
-      html += `<td${colspan > 1 ? ` colspan="${colspan}"` : ""} style="border:1.5px solid #000;padding:5pt 7pt;vertical-align:${vAlign};${widthStyle}">${cellInner || "&nbsp;"}</td>`;
+      const nonEmptyParts = cellParts.filter((part) => {
+        const stripped = part.replace(/<[^>]+>/g, "").replace(/&nbsp;|\s/g, "");
+        return stripped.length > 0 || part.includes("<table");
+      });
+      const cellInner =
+        nonEmptyParts.length > 0 ? nonEmptyParts.join("") : cellParts[0] || "<p>&nbsp;</p>";
+
+      html += `<td${colspan > 1 ? ` colspan="${colspan}"` : ""} style="border:1.5px solid #000;padding:5pt 7pt;vertical-align:${vAlign};${widthStyle}">${cellInner}</td>`;
     }
 
     html += `</tr>`;
