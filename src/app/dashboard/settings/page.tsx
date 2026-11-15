@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback } from "react";
 import toast from "react-hot-toast";
 import { CheckCircle2, KeyRound, Save, ShieldCheck, UserCheck } from "lucide-react";
 import { useSession } from "next-auth/react";
-import { PERMISSION_MODULES, type PermissionModuleKey } from "@/lib/permissions";
+import { PERMISSION_MODULES, type PermissionModuleKey } from "@/lib/permissionModules";
 
 interface UserPermission {
   _id: string;
