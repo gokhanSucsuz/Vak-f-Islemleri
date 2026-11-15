@@ -233,39 +233,82 @@ function splitHtmlToVisualLines(html: string): string[] {
   const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
   const root = doc.body.firstElementChild;
   if (!root) return [];
+
+  const BLOCK_TAGS = new Set([
+    "P",
+    "DIV",
+    "LI",
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "BLOCKQUOTE",
+    "TR",
+    "UL",
+    "OL",
+  ]);
   const result: string[] = [];
   let buf = "";
 
-  const flush = () => {
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const flush = (wrappers: { open: string; close: string }[]) => {
+    const closing = [...wrappers].reverse().map((w) => w.close).join("");
+    const candidate = buf + closing;
     const tmp = document.createElement("div");
-    tmp.innerHTML = buf;
-    if ((tmp.textContent || "").trim()) result.push(buf);
-    buf = "";
+    tmp.innerHTML = candidate;
+    if ((tmp.textContent || "").replace(/\u00A0/g, " ").trim()) {
+      result.push(candidate);
+    }
+    buf = wrappers.map((w) => w.open).join("");
   };
 
-  root.childNodes.forEach((node) => {
+  const walk = (node: Node, wrappers: { open: string; close: string }[]) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      buf += node.textContent || "";
-    } else if (node.nodeType === Node.ELEMENT_NODE) {
-      const el = node as HTMLElement;
-      const tag = el.tagName.toUpperCase();
-      if (tag === "BR") {
-        flush();
-      } else if (["P", "DIV", "LI", "H1", "H2", "H3"].includes(tag)) {
-        flush();
-        const inner = el.innerHTML;
-        const parts = inner.split(/<br\s*\/?>/i);
-        parts.forEach((p) => {
-          const tmp = document.createElement("div");
-          tmp.innerHTML = p;
-          if ((tmp.textContent || "").trim()) result.push(p);
-        });
-      } else {
-        buf += el.outerHTML;
-      }
+      const parts = (node.textContent || "").split(/\r?\n/);
+      parts.forEach((part, idx) => {
+        if (idx > 0) flush(wrappers);
+        buf += escapeHtml(part);
+      });
+      return;
     }
-  });
-  flush();
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+
+    const el = node as HTMLElement;
+    const tag = el.tagName.toUpperCase();
+
+    if (tag === "BR") {
+      flush(wrappers);
+      return;
+    }
+
+    if (BLOCK_TAGS.has(tag)) {
+      flush(wrappers);
+      el.childNodes.forEach((child) => walk(child, wrappers));
+      flush(wrappers);
+      return;
+    }
+
+    const cloneShallow = el.cloneNode(false) as HTMLElement;
+    const outer = cloneShallow.outerHTML;
+    const gtIdx = outer.indexOf(">");
+    const closeTag = `</${tag.toLowerCase()}>`;
+    const openTag = gtIdx >= 0 ? outer.slice(0, gtIdx + 1) : "";
+    if (openTag && outer.endsWith(closeTag)) {
+      const nextWrappers = [...wrappers, { open: openTag, close: closeTag }];
+      buf += openTag;
+      el.childNodes.forEach((child) => walk(child, nextWrappers));
+      buf += closeTag;
+    } else {
+      el.childNodes.forEach((child) => walk(child, wrappers));
+    }
+  };
+
+  root.childNodes.forEach((child) => walk(child, []));
+  flush([]);
   return result;
 }
 

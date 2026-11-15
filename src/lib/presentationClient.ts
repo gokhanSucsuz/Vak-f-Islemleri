@@ -498,8 +498,12 @@ function htmlToLinesOfRuns(html: string): RichRun[][] {
     style: { bold?: boolean; italic?: boolean; underline?: boolean; color?: string }
   ) => {
     if (node.nodeType === Node.TEXT_NODE) {
-      const txt = (node.textContent || "").replace(/\u00A0/g, " ");
-      if (txt) currentLine.push({ text: txt, ...style });
+      const rawTxt = (node.textContent || "").replace(/\u00A0/g, " ");
+      const parts = rawTxt.split(/\r?\n/);
+      parts.forEach((part, idx) => {
+        if (idx > 0) flushLine();
+        if (part) currentLine.push({ text: part, ...style });
+      });
       return;
     }
     if (node.nodeType !== Node.ELEMENT_NODE) return;
@@ -526,7 +530,7 @@ function htmlToLinesOfRuns(html: string): RichRun[][] {
       if (hex) nextStyle.color = hex;
     }
 
-    const isBlock = ["P", "DIV", "LI", "H1", "H2", "H3"].includes(tag);
+    const isBlock = ["P", "DIV", "LI", "H1", "H2", "H3", "H4", "H5", "H6", "BLOCKQUOTE", "TR", "UL", "OL"].includes(tag);
     if (isBlock && currentLine.length > 0) flushLine();
 
     el.childNodes.forEach((child) => walk(child, nextStyle));
