@@ -529,6 +529,66 @@ export default function PetitionsPage() {
     }
   };
 
+  const syncLiveFieldsToEditor = (nameVal: string, tcVal: string) => {
+    const root = editorRef.current;
+    if (!root) return;
+
+    const ensureFieldTargets = (
+      field: "citizenName" | "tcNo",
+      labelRegex: RegExp,
+      inlineRegex: RegExp
+    ) => {
+      if (root.querySelector(`[data-live-field="${field}"]`)) return;
+
+      // 1. Tablo satırlarında etiket hücresinin hemen sağındaki hücreyi hedefle
+      root.querySelectorAll("tr").forEach((tr) => {
+        const cells = Array.from(tr.children).filter(
+          (c): c is HTMLElement => c.tagName === "TD" || c.tagName === "TH"
+        );
+        cells.forEach((cell, idx) => {
+          const txt = (cell.textContent || "").replace(/\u00a0/g, " ").trim();
+          if (labelRegex.test(txt)) {
+            const targetCell = cells[idx + 1];
+            if (targetCell && !targetCell.querySelector("table")) {
+              targetCell.innerHTML = `<p><span data-live-field="${field}">\u00a0</span></p>`;
+            }
+          }
+        });
+      });
+
+      if (root.querySelector(`[data-live-field="${field}"]`)) return;
+
+      // 2. Aynı satır/hücre içinde "Adı Soyadı :" veya "T.C. Kimlik No :" şeklinde yazılmışsa
+      root.querySelectorAll<HTMLElement>("p, td, th").forEach((el) => {
+        if (el.querySelector("p, table")) return;
+        const txt = (el.textContent || "").replace(/\u00a0/g, " ").trim();
+        const m = txt.match(inlineRegex);
+        if (m) {
+          const labelPart = m[1];
+          el.innerHTML = `${labelPart} <span data-live-field="${field}">\u00a0</span>`;
+        }
+      });
+    };
+
+    ensureFieldTargets(
+      "citizenName",
+      /^(?:ADI\s*SOYADI|AD\s*SOYAD|AD\s*-\s*SOYAD|İSİM\s*SOYİSİM|DİLEKÇE\s*SAHİBİ(?:\s*ADI\s*SOYADI)?)\s*:?$/i,
+      /^((?:ADI\s*SOYADI|AD\s*SOYAD|AD\s*-\s*SOYAD|İSİM\s*SOYİSİM)\s*:)(?:[\s._]*)$/i
+    );
+    ensureFieldTargets(
+      "tcNo",
+      /^(?:T\.?\s*C\.?\s*(?:KİMLİK)?\s*(?:NO|NUMARASI)?|KİMLİK\s*NO)\s*:?$/i,
+      /^((?:T\.?\s*C\.?\s*(?:KİMLİK)?\s*(?:NO|NUMARASI)?|KİMLİK\s*NO)\s*:)(?:[\s._]*)$/i
+    );
+
+    root.querySelectorAll<HTMLElement>('[data-live-field="citizenName"]').forEach((el) => {
+      el.textContent = nameVal || "\u00a0";
+    });
+    root.querySelectorAll<HTMLElement>('[data-live-field="tcNo"]').forEach((el) => {
+      el.textContent = tcVal || "\u00a0";
+    });
+  };
+
   const handleSavePetition = async () => {
     const cleanName = citizenName.trim();
     const cleanTc = tcNo.trim();
@@ -728,7 +788,11 @@ export default function PetitionsPage() {
               <input
                 type="text"
                 value={citizenName}
-                onChange={(e) => setCitizenName(e.target.value)}
+                onChange={(e) => {
+                  const val = e.target.value;
+                  setCitizenName(val);
+                  syncLiveFieldsToEditor(val, tcNo);
+                }}
                 placeholder="Örn: Ahmet Yılmaz"
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:outline-none text-sm font-semibold text-slate-900"
               />
@@ -741,7 +805,11 @@ export default function PetitionsPage() {
                 type="text"
                 maxLength={11}
                 value={tcNo}
-                onChange={(e) => setTcNo(e.target.value.replace(/\D/g, ""))}
+                onChange={(e) => {
+                  const val = e.target.value.replace(/\D/g, "");
+                  setTcNo(val);
+                  syncLiveFieldsToEditor(citizenName, val);
+                }}
                 placeholder="11 haneli T.C. No"
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 focus:bg-white focus:border-blue-500 focus:outline-none text-sm font-mono font-bold text-slate-900"
               />
