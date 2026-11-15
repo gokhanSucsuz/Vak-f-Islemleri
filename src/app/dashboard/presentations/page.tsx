@@ -1491,10 +1491,6 @@ export default function PresentationsPage() {
 
     const editorMeeting =
       meetings.find((m) => m._id === editorMeetingId) || selectedMeeting;
-    const canManageEditorMeeting =
-      isManager ||
-      (Boolean(editorMeeting?.authorizedUserId?._id) &&
-        String(editorMeeting?.authorizedUserId?._id) === String(userId));
     const editorBgPreset = editorMeeting?.backgroundPreset || "template";
     const currentTop = activeSlide.descTopPct ?? 46;
     const currentBottom = activeSlide.descBottomPct ?? 96.5;
@@ -1667,67 +1663,6 @@ export default function PresentationsPage() {
                 </select>
               </div>
             </div>
-
-            {/* Kurumsal Arka Plan Teması (Sadece Yönetici veya Yetkili Personel — Tüm Slaytlara Uygulanır) */}
-            {canManageEditorMeeting ? (
-              <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2">
-                <div className="flex items-center justify-between gap-2">
-                  <span className="text-xs font-semibold text-slate-700">
-                    Toplantı Arka Planı (Tüm Slaytlara Uygulanır)
-                  </span>
-                  <span className="text-[10px] font-semibold text-indigo-700 bg-indigo-50 px-2 py-0.5 rounded-full">
-                    Yönetici / Yetkili
-                  </span>
-                </div>
-                <div className="grid grid-cols-4 gap-1.5">
-                  {BACKGROUND_PRESETS.map((preset) => {
-                    const isActive = editorBgPreset === preset.id;
-                    return (
-                      <button
-                        key={preset.id}
-                        type="button"
-                        onClick={() =>
-                          editorMeetingId &&
-                          handleSetMeetingBackground(editorMeetingId, preset.id)
-                        }
-                        title={preset.label}
-                        className={`p-1.5 rounded-xl border text-left transition-all ${
-                          isActive
-                            ? "border-blue-600 ring-2 ring-blue-500/30 bg-white shadow-xs"
-                            : "border-slate-200 bg-white hover:border-slate-300"
-                        }`}
-                      >
-                        <div
-                          className="w-full aspect-[4/3] rounded-md border border-slate-200 relative overflow-hidden mb-1"
-                          style={{ background: preset.previewBg }}
-                        >
-                          <div
-                            className="absolute inset-x-0 top-0 h-1.5"
-                            style={{ backgroundColor: preset.accentColor }}
-                          />
-                        </div>
-                        <div className="text-[10px] font-semibold text-slate-700 truncate">
-                          {preset.label}
-                        </div>
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            ) : (
-              <div className="text-[11px] text-slate-600 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 flex items-center justify-between">
-                <span>
-                  Toplantı Arka Planı:{" "}
-                  <strong>
-                    {BACKGROUND_PRESETS.find((p) => p.id === editorBgPreset)?.label ||
-                      "Şablon Varsayılanı"}
-                  </strong>
-                </span>
-                <span className="text-[10px] text-slate-400">
-                  Sadece yönetici / yetkili değiştirebilir
-                </span>
-              </div>
-            )}
 
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <div>
