@@ -402,6 +402,68 @@ export default function PetitionsPage() {
     }
   };
 
+  const applyPetitionDateToHtml = (
+    rawHtml: string,
+    targetDate: Date,
+    isNewApplication: boolean
+  ): string => {
+    if (!rawHtml) return "<p></p>";
+    const d = isNaN(targetDate.getTime()) ? new Date() : targetDate;
+    const dateStr = `${String(d.getDate()).padStart(2, "0")}.${String(
+      d.getMonth() + 1
+    ).padStart(2, "0")}.${d.getFullYear()}`;
+    const dateSpan = `<span data-petition-date="true">${dateStr}</span>`;
+
+    let html = rawHtml
+      .replace(
+        /\(\s*(?:<[^>]+>\s*)*tar[iİıI]h(?:\s*<[^>]+>)*\s*\)|\[\s*(?:<[^>]+>\s*)*tar[iİıI]h(?:\s*<[^>]+>)*\s*\]|\{\{\s*(?:<[^>]+>\s*)*tar[iİıI]h(?:\s*<[^>]+>)*\s*\}\}/gi,
+        dateSpan
+      )
+      .replace(
+        /(?:[.…]|\s|<[^>]+>){2,}\/(?:[.…]|\s|<[^>]+>){2,}\/\s*(?:<[^>]+>\s*)*20\d{2}/g,
+        dateSpan
+      );
+
+    if (typeof window === "undefined") return html;
+    try {
+      const doc = new DOMParser().parseFromString(html, "text/html");
+      doc.querySelectorAll<HTMLElement>('[data-petition-date="true"]').forEach((el) => {
+        el.textContent = dateStr;
+      });
+
+      const firstTable = doc.querySelector("table");
+      doc.querySelectorAll<HTMLElement>("p, div").forEach((el) => {
+        if (el.querySelector("p, div, table")) return;
+        const txt = (el.textContent || "").replace(/[\u00a0\u2003\u2002]/g, " ").trim();
+        if (!txt) return;
+
+        // "…./……/2026" veya "(TARİH)" kalıbı hala metinde duruyorsa değiştir
+        if (/[.…]{2,}\s*\/\s*[.…]{2,}\s*\/\s*20\d{2}/.test(txt)) {
+          const replaced = txt.replace(
+            /[.…]{2,}\s*\/\s*[.…]{2,}\s*\/\s*20\d{2}/g,
+            dateStr
+          );
+          el.innerHTML = `<span data-petition-date="true" style="font-weight:bold;">${replaced}</span>`;
+          return;
+        }
+
+        // Yeni başvuru ise ve tablodan önceki tarih satırında eski bir tarih (örn. 14.11.2026) varsa bugünün tarihine güncelle
+        if (
+          isNewApplication &&
+          (!firstTable ||
+            Boolean(el.compareDocumentPosition(firstTable) & Node.DOCUMENT_POSITION_FOLLOWING)) &&
+          /^\d{2}[./]\d{2}[./]20\d{2}$/.test(txt)
+        ) {
+          el.innerHTML = `<span data-petition-date="true" style="font-weight:bold;">${dateStr}</span>`;
+        }
+      });
+
+      return doc.body.innerHTML;
+    } catch {
+      return html;
+    }
+  };
+
   // Şablondan Yeni Dilekçe Aç ("Dilekçe Al" veya "Matbu Dilekçe Al")
   const handleStartFromTemplate = (type: "detayli" | "matbu") => {
     const tpl = templates[type];
@@ -415,16 +477,7 @@ export default function PetitionsPage() {
       return;
     }
 
-    const now = new Date();
-    const todayStr = `${String(now.getDate()).padStart(2, "0")}.${String(
-      now.getMonth() + 1
-    ).padStart(2, "0")}.${now.getFullYear()}`;
-    let filledHtml = (tpl.htmlContent || "<p></p>")
-      .replace(
-        /\(\s*(?:<[^>]+>\s*)*tar[iİıI]h(?:\s*<[^>]+>)*\s*\)|\[\s*(?:<[^>]+>\s*)*tar[iİıI]h(?:\s*<[^>]+>)*\s*\]|\{\{\s*(?:<[^>]+>\s*)*tar[iİıI]h(?:\s*<[^>]+>)*\s*\}\}/gi,
-        todayStr
-      )
-      .replace(/\.{2,}\s*\/\s*\.{2,}\s*\/\s*\d{4}/g, todayStr);
+    let filledHtml = applyPetitionDateToHtml(tpl.htmlContent || "<p></p>", new Date(), true);
 
     const isDirectHtmlTemplate = (tpl.fileName || "").toLowerCase().endsWith(".html");
     if (!isDirectHtmlTemplate) {
@@ -487,8 +540,12 @@ export default function PetitionsPage() {
       if (!res.ok) throw new Error(data.error || "Dilekçe içeriği alınamadı");
 
       const full = data.petition;
+      const savedDate = full.createdAt ? new Date(full.createdAt) : new Date();
       if (action === "preview") {
-        setPreviewPetition(full);
+        setPreviewPetition({
+          ...full,
+          htmlContent: applyPetitionDateToHtml(full.htmlContent || "<p></p>", savedDate, false),
+        });
       } else if (action === "edit") {
         setPreviewPetition(null);
         setEditingId(full._id);
@@ -500,7 +557,9 @@ export default function PetitionsPage() {
           name: full.createdBy?.name || session?.user?.name || "Personel",
           title: full.createdBy?.title || "Personel",
         });
-        setEditorInitialHtml(full.htmlContent || "<p></p>");
+        setEditorInitialHtml(
+          applyPetitionDateToHtml(full.htmlContent || "<p></p>", savedDate, false)
+        );
         setEditorMode(true);
       } else if (action === "useAsTemplate") {
         setPreviewPetition(null);
@@ -513,7 +572,12 @@ export default function PetitionsPage() {
           name: session?.user?.name || "Personel",
           title: (session?.user as any)?.title || "Personel",
         });
-        setEditorInitialHtml(normalizePetitionTableHtml(full.htmlContent || "<p></p>", full.petitionType));
+        setEditorInitialHtml(
+          normalizePetitionTableHtml(
+            applyPetitionDateToHtml(full.htmlContent || "<p></p>", new Date(), true),
+            full.petitionType
+          )
+        );
         setEditorMode(true);
         toast.success("Kayıtlı dilekçe şablon olarak açıldı. Bilgileri güncelleyip kaydedebilirsiniz.");
       }
@@ -1607,7 +1671,16 @@ export default function PetitionsPage() {
                     setCitizenName("");
                     setTcNo("");
                     setSubject(rec.subject || "");
-                    setEditorInitialHtml(rec.htmlContent);
+                    setEditorStaffInfo({
+                      name: session?.user?.name || "Personel",
+                      title: (session?.user as any)?.title || "Personel",
+                    });
+                    setEditorInitialHtml(
+                      normalizePetitionTableHtml(
+                        applyPetitionDateToHtml(rec.htmlContent || "<p></p>", new Date(), true),
+                        rec.petitionType
+                      )
+                    );
                     setEditorMode(true);
                   }}
                   className="px-3.5 py-2 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200 text-xs font-bold flex items-center gap-1.5"

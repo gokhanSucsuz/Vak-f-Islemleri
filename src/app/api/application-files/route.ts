@@ -7,19 +7,19 @@ import User from "@/models/User";
 import Log from "@/models/Log";
 import { toTurkishRegexPattern, normalizeTurkish } from "@/lib/turkish";
 import { isEncryptionEnabled } from "@/lib/encryption";
+import {
+  getApplicationCache,
+  invalidateApplicationCache,
+  type CachedAppRecord,
+} from "@/lib/applicationCache";
 
-function computeSearchRelevance(
-  record: any,
+function computeCachedRelevance(
+  item: CachedAppRecord,
   normSearch: string,
   normTokens: string[]
 ): number {
-  const appNo = normalizeTurkish(String(record.applicationNo || "")).replace(/^#/, "");
-  const tc = normalizeTurkish(String(record.tcNo || ""));
-  const spouseTc = normalizeTurkish(String(record.spouseTcNo || ""));
-  const name = normalizeTurkish(String(record.applicantName || ""));
-  const spouse = normalizeTurkish(String(record.spouseName || ""));
+  const { _normAppNo: appNo, _normTc: tc, _normSpouseTc: spouseTc, _normName: name, _normSpouse: spouse } = item;
 
-  // 1. TC Kimlik No veya Dosya No birebir eşleşme
   if (
     (tc && tc === normSearch) ||
     (spouseTc && spouseTc === normSearch) ||
@@ -28,27 +28,21 @@ function computeSearchRelevance(
     return 1000;
   }
 
-  // 2. Başvuru sahibi Adı Soyadı tam ifade eşleşmesi ("ali kaya" -> "Ali Kaya")
   if (name === normSearch) return 900;
   if (name.startsWith(normSearch)) return 850;
   if (name.includes(normSearch)) return 800;
 
-  // 3. Eş Adı Soyadı tam ifade eşleşmesi
   if (spouse === normSearch) return 900;
   if (spouse.startsWith(normSearch)) return 820;
   if (spouse.includes(normSearch)) return 750;
 
-  // 4. Tüm kelimeler Ad Soyad içinde geçiyorsa ("Ali Mehmet Kaya" için "ali kaya")
   if (normTokens.length > 1 && normTokens.every((t) => name.includes(t))) {
     return 450;
   }
-
-  // 5. Tüm kelimeler Eş Adı içinde geçiyorsa
   if (normTokens.length > 1 && normTokens.every((t) => spouse.includes(t))) {
     return 300;
   }
 
-  // 6. TC veya Dosya No kısmi/başlangıç eşleşmesi
   if (
     (tc && tc.startsWith(normSearch)) ||
     (spouseTc && spouseTc.startsWith(normSearch)) ||
@@ -57,7 +51,6 @@ function computeSearchRelevance(
     return 150;
   }
 
-  // 7. Kelimeler farklı alanlara dağılmışsa (ör. ad + adres/not)
   return 50;
 }
 
@@ -88,136 +81,82 @@ export async function GET(req: Request) {
     const fetchAll = searchParams.get("all") === "true";
 
     const canManage = await checkManagePermission(session);
-
-    // Filtre Sorgusu (Her sekme tamamen ayrı ve bağımsız listelenir)
-    const query: any = {};
+    const cache = await getApplicationCache();
 
     let activeSheet = sheet && sheet !== "all" ? sheet : "";
-    if (!activeSheet) {
-      const distinctSheets = await ApplicationFile.distinct("sheetName");
-      if (distinctSheets && distinctSheets.length > 0) {
-        activeSheet = distinctSheets.includes("YENİ BAŞVURU KAYIT")
-          ? "YENİ BAŞVURU KAYIT"
-          : distinctSheets[0];
-      }
-    }
-    if (activeSheet) {
-      query.sheetName = activeSheet;
+    if (!activeSheet && cache.sheets.length > 0) {
+      const hasYeni = cache.sheets.some((s) => s.name === "YENİ BAŞVURU KAYIT");
+      activeSheet = hasYeni ? "YENİ BAŞVURU KAYIT" : cache.sheets[0].name;
     }
 
-    if (status === "empty") {
-      query.$or = [
-        { applicantName: { $in: ["", null] } },
-        { fileStatus: "Boş Dosya" },
-      ];
-    } else if (status === "active") {
-      query.applicantName = { $nin: ["", null] };
-      query.fileStatus = { $nin: ["Boş Dosya", "Pasif", "Arşiv"] };
-    } else if (status === "passive") {
-      query.fileStatus = "Pasif";
-    } else if (status === "archive") {
-      query.fileStatus = "Arşiv";
-    }
+    const startMs = dateStart ? new Date(dateStart).getTime() : null;
+    const endMs = dateEnd ? new Date(dateEnd).setHours(23, 59, 59, 999) : null;
 
-    // Tarih Filtresi
-    if (dateStart || dateEnd) {
-      query.createdAt = {};
-      if (dateStart) {
-        query.createdAt.$gte = new Date(dateStart);
-      }
-      if (dateEnd) {
-        const end = new Date(dateEnd);
-        end.setHours(23, 59, 59, 999);
-        query.createdAt.$lte = end;
-      }
-    }
+    let filteredItems = cache.items.filter((item) => {
+      const doc = item.doc;
+      if (activeSheet && doc.sheetName !== activeSheet) return false;
 
-    // Arama Filtresi (Şifreleme aktifse şifresiz alanlarda sorgulayıp JS'de Türkçe uyumlu filtreler)
-    const encryptedMode = isEncryptionEnabled();
-    if (search && !encryptedMode) {
-      const tokens = search.split(/\s+/).filter(Boolean);
-      const tokenConditions = tokens.map((token) => {
-        const pattern = toTurkishRegexPattern(token);
-        const tokenRegex = new RegExp(pattern, "i");
-        return {
-          $or: [
-            { applicationNo: tokenRegex },
-            { applicantName: tokenRegex },
-            { spouseName: tokenRegex },
-            { tcNo: tokenRegex },
-            { spouseTcNo: tokenRegex },
-            { helpType: tokenRegex },
-            { neighborhood: tokenRegex },
-            { phone: tokenRegex },
-            { address: tokenRegex },
-            { notes: tokenRegex },
-          ],
-        };
+      if (status === "empty") {
+        const isEmpty =
+          !doc.applicantName ||
+          String(doc.applicantName).trim() === "" ||
+          doc.fileStatus === "Boş Dosya";
+        if (!isEmpty) return false;
+      } else if (status === "active") {
+        const isEmpty = !doc.applicantName || String(doc.applicantName).trim() === "";
+        if (isEmpty || ["Boş Dosya", "Pasif", "Arşiv"].includes(doc.fileStatus)) return false;
+      } else if (status === "passive") {
+        if (doc.fileStatus !== "Pasif") return false;
+      } else if (status === "archive") {
+        if (doc.fileStatus !== "Arşiv") return false;
+      }
+
+      if (startMs !== null || endMs !== null) {
+        const cMs = doc.createdAt ? new Date(doc.createdAt).getTime() : 0;
+        if (startMs !== null && cMs < startMs) return false;
+        if (endMs !== null && cMs > endMs) return false;
+      }
+
+      return true;
+    });
+
+    if (sortBy !== "no_desc") {
+      filteredItems = [...filteredItems].sort((a, b) => {
+        const da = a.doc;
+        const db = b.doc;
+        if (sortBy === "no_asc") {
+          return (da.applicationNoSeq || 0) - (db.applicationNoSeq || 0);
+        }
+        if (sortBy === "date_desc") {
+          return new Date(db.createdAt || 0).getTime() - new Date(da.createdAt || 0).getTime();
+        }
+        if (sortBy === "date_asc") {
+          return new Date(da.createdAt || 0).getTime() - new Date(db.createdAt || 0).getTime();
+        }
+        if (sortBy === "name_asc") {
+          return String(da.applicantName || "").localeCompare(String(db.applicantName || ""), "tr");
+        }
+        if (sortBy === "name_desc") {
+          return String(db.applicantName || "").localeCompare(String(da.applicantName || ""), "tr");
+        }
+        return (db.applicationNoSeq || 0) - (da.applicationNoSeq || 0);
       });
-
-      if (query.$or) {
-        query.$and = [{ $or: query.$or }, ...tokenConditions];
-        delete query.$or;
-      } else {
-        query.$and = query.$and ? [...query.$and, ...tokenConditions] : tokenConditions;
-      }
     }
 
-    // Sıralama (Varsayılan: Son kayıttan ilk kayıta)
-    let sortOptions: any = { applicationNoSeq: -1, createdAt: -1 };
-    if (sortBy === "no_asc") {
-      sortOptions = { applicationNoSeq: 1, applicationNo: 1 };
-    } else if (sortBy === "no_desc") {
-      sortOptions = { applicationNoSeq: -1, applicationNo: -1 };
-    } else if (sortBy === "date_desc") {
-      sortOptions = { createdAt: -1 };
-    } else if (sortBy === "date_asc") {
-      sortOptions = { createdAt: 1 };
-    } else if (sortBy === "name_asc") {
-      sortOptions = { applicantName: 1 };
-    } else if (sortBy === "name_desc") {
-      sortOptions = { applicantName: -1 };
-    }
-
-    // Sayfalama & Arama Önceliklendirme (Pagination + Relevance)
     let records: any[] = [];
     let totalMatched = 0;
 
     if (search) {
-      const rawMatched = await ApplicationFile.find(query)
-        .populate("createdBy", "name email")
-        .populate("updatedBy", "name email")
-        .sort(sortOptions)
-        .lean();
-
       const normSearch = normalizeTurkish(search.replace(/\s+/g, " "));
       const normTokens = normSearch.split(/\s+/).filter(Boolean);
 
-      const allMatched = encryptedMode
-        ? rawMatched.filter((doc: any) => {
-            const haystack = normalizeTurkish(
-              [
-                doc.applicationNo,
-                doc.applicantName,
-                doc.spouseName,
-                doc.tcNo,
-                doc.spouseTcNo,
-                doc.helpType,
-                doc.neighborhood,
-                doc.phone,
-                doc.address,
-                doc.notes,
-              ]
-                .filter(Boolean)
-                .join(" ")
-            );
-            return normTokens.every((t) => haystack.includes(t));
-          })
-        : rawMatched;
+      const matchedItems = filteredItems.filter((item) =>
+        normTokens.every((t) => item._normHaystack.includes(t))
+      );
 
-      const scored = allMatched.map((doc: any) => ({
-        doc,
-        score: computeSearchRelevance(doc, normSearch, normTokens),
+      const scored = matchedItems.map((item) => ({
+        doc: item.doc,
+        score: computeCachedRelevance(item, normSearch, normTokens),
       }));
       scored.sort((a, b) => b.score - a.score);
 
@@ -242,36 +181,20 @@ export async function GET(req: Request) {
         records = ranked.slice(skip, skip + limit);
       }
     } else {
-      let queryExec = ApplicationFile.find(query)
-        .populate("createdBy", "name email")
-        .populate("updatedBy", "name email")
-        .sort(sortOptions);
-
-      if (!fetchAll) {
+      totalMatched = filteredItems.length;
+      if (fetchAll) {
+        records = filteredItems.map((i) => i.doc);
+      } else {
         const skip = (page - 1) * limit;
-        queryExec = queryExec.skip(skip).limit(limit);
+        records = filteredItems.slice(skip, skip + limit).map((i) => i.doc);
       }
-
-      records = await queryExec.lean();
-      totalMatched = await ApplicationFile.countDocuments(query);
     }
 
     const totalPages = fetchAll ? 1 : Math.ceil(totalMatched / limit) || 1;
-
-    // Genel İstatistikler
-    const totalCount = await ApplicationFile.countDocuments();
-    const emptyCount = await ApplicationFile.countDocuments({
-      $or: [{ applicantName: { $in: ["", null] } }, { fileStatus: "Boş Dosya" }],
-    });
-    const activeCount = totalCount - emptyCount;
-
-    // Aktif sekmeye göre sıradaki en yüksek numara ve sekme ön eki
-    const highestRecord = await ApplicationFile.findOne(
-      activeSheet ? { sheetName: activeSheet } : {}
-    )
-      .sort({ applicationNoSeq: -1 })
-      .select("applicationNoSeq applicationNo")
-      .lean();
+    const { totalCount, emptyCount, activeCount, sheets } = cache;
+    const highestRecord = activeSheet
+      ? cache.highestBySheet[activeSheet]
+      : cache.highestOverall;
 
     let sheetPrefix = "";
     let nextSeqNumber = 1;
@@ -290,35 +213,6 @@ export async function GET(req: Request) {
       nextSeqNumber = 1;
       fullNextApplicationNo = "102201-1";
     }
-
-    // Sistemde kayıtlı tüm sekmeleri ve kayıt sayılarını getir
-    const sheetsAgg = await ApplicationFile.aggregate([
-      {
-        $group: {
-          _id: "$sheetName",
-          count: { $sum: 1 },
-          columnHeaders: { $first: "$columnHeaders" },
-        },
-      },
-      { $sort: { _id: 1 } },
-    ]);
-
-    const sheets = sheetsAgg
-      .filter((s) => s._id)
-      .map((s) => ({
-        name: s._id as string,
-        count: s.count as number,
-        columnHeaders: ((s.columnHeaders || []) as string[])
-          .filter((c) => c && typeof c === "string" && !c.startsWith("__EMPTY") && c.trim() !== "")
-          .slice(0, 6),
-      }));
-
-    // YENİ BAŞVURU KAYIT sekmesi varsayılan olarak her zaman en başta yer alsın
-    sheets.sort((a, b) => {
-      if (a.name === "YENİ BAŞVURU KAYIT") return -1;
-      if (b.name === "YENİ BAŞVURU KAYIT") return 1;
-      return a.name.localeCompare(b.name, "tr");
-    });
 
     // Aktif sekmenin veya mevcut kayıtların Excel sütun başlıkları (En fazla 6 gerçek sütun)
     let activeColumns: string[] = [];
@@ -448,6 +342,7 @@ export async function POST(req: Request) {
       existing.updatedBy = session.user.id;
 
       await existing.save();
+      invalidateApplicationCache();
 
       try {
         await Log.create({
@@ -500,6 +395,7 @@ export async function POST(req: Request) {
     });
 
     await newRecord.save();
+    invalidateApplicationCache();
 
     try {
       await Log.create({

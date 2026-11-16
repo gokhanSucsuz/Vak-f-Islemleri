@@ -16,6 +16,7 @@ import {
 } from "@/lib/turkish";
 
 import { getEffectivePermissions } from "@/lib/permissions";
+import { invalidateApplicationCache } from "@/lib/applicationCache";
 
 async function checkManagePermission(session: any): Promise<boolean> {
   return (await getEffectivePermissions(session)).canManageApplications;
@@ -532,6 +533,7 @@ export async function POST(req: Request) {
       console.error("Log error:", err);
     }
 
+    invalidateApplicationCache();
     return NextResponse.json({
       success: true,
       batchId,
@@ -587,6 +589,7 @@ export async function DELETE(req: Request) {
 
       const count = await ApplicationFile.countDocuments();
       await ApplicationFile.deleteMany({});
+      invalidateApplicationCache();
 
       try {
         await Log.create({
@@ -608,6 +611,7 @@ export async function DELETE(req: Request) {
     if (batchId) {
       // Belirli bir Excel yüklemesini silme
       const result = await ApplicationFile.deleteMany({ importBatchId: batchId });
+      invalidateApplicationCache();
 
       try {
         await Log.create({

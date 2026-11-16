@@ -7,6 +7,7 @@ import User from "@/models/User";
 import Log from "@/models/Log";
 
 import { getEffectivePermissions } from "@/lib/permissions";
+import { invalidateApplicationCache } from "@/lib/applicationCache";
 
 async function checkManagePermission(session: any): Promise<boolean> {
   return (await getEffectivePermissions(session)).canManageApplications;
@@ -85,7 +86,7 @@ export async function PUT(
       console.error("Log error:", err);
     }
 
-    return NextResponse.json({ message: "Kayıt güncellendi.", record });
+    return NextResponse.json({ message: "Kayıt güncellendi.", record }, { headers: (() => { invalidateApplicationCache(); return {}; })() });
   } catch (error: any) {
     console.error("PUT /api/application-files/[id] error:", error);
     return NextResponse.json(
@@ -131,6 +132,7 @@ export async function DELETE(
       console.error("Log error:", err);
     }
 
+    invalidateApplicationCache();
     return NextResponse.json({ message: "Kayıt başarıyla silindi." });
   } catch (error: any) {
     console.error("DELETE /api/application-files/[id] error:", error);

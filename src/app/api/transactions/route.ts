@@ -86,14 +86,17 @@ export async function GET(req: Request) {
       .populate("helpType", "name")
       .sort({ createdAt: -1 });
       
-    // Apply in-memory text search because fields are encrypted in DB
+    // Apply in-memory Turkish-aware text search because fields are encrypted in DB
     let filteredTransactions = transactions;
     
     if (searchText && searchText.trim().length > 0) {
-      const lowerSearch = searchText.toLowerCase();
+      const { turkishIncludes } = await import("@/lib/turkish");
+      const cleanQ = searchText.trim();
       filteredTransactions = transactions.filter((t: any) => {
-        const infoMatch = t.citizenInfo && t.citizenInfo.toLowerCase().includes(lowerSearch);
-        return infoMatch;
+        const infoMatch = t.citizenInfo && turkishIncludes(t.citizenInfo, cleanQ);
+        const staffMatch = t.userId?.name && turkishIncludes(t.userId.name, cleanQ);
+        const typeMatch = t.helpType?.name && turkishIncludes(t.helpType.name, cleanQ);
+        return Boolean(infoMatch || staffMatch || typeMatch);
       });
     }
 

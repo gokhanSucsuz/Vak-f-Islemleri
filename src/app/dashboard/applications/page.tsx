@@ -231,11 +231,11 @@ export default function ApplicationsPage() {
   >("no_desc");
   const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
 
-  // Arama girdisini anlık ve kesintisiz 250ms gecikmeli tetikleme (Debounce)
+  // Arama girdisini anlık ve kesintisiz 80ms gecikmeli tetikleme (Debounce)
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchTerm);
-    }, 250);
+    }, 80);
     return () => clearTimeout(handler);
   }, [searchTerm]);
 
@@ -447,7 +447,7 @@ export default function ApplicationsPage() {
         cacheRef.current.set(cacheKey, {
           records: recs,
           pagination: data.pagination || { page: currentPage, limit: pageSize, totalRecords: recs.length, totalPages: 1 },
-          stats: data.stats || stats,
+          stats: data.stats || { totalCount: 0, emptyCount: 0, activeCount: 0, nextApplicationNo: "1", nextSeqNumber: 1, sheetPrefix: "" },
         });
       } else {
         toast.error("Dosya kayıtları yüklenemedi.");
@@ -458,7 +458,7 @@ export default function ApplicationsPage() {
     } finally {
       setLoading(false);
     }
-  }, [selectedSheet, currentPage, pageSize, filterTab, statusFilter, debouncedSearch, dateStart, dateEnd, minNo, maxNo, sortBy, stats]);
+  }, [selectedSheet, currentPage, pageSize, filterTab, statusFilter, debouncedSearch, dateStart, dateEnd, minNo, maxNo, sortBy]);
 
   // Sekme Seçimi Değiştiğinde (Her sekme tamamen bağımsız gösterilir)
   const handleSelectSheet = (sName: string) => {
@@ -1513,6 +1513,7 @@ export default function ApplicationsPage() {
           )}
           <input
             ref={searchInputRef}
+            autoFocus
             type="text"
             placeholder="Örn: Ahmet Yılmaz, 12345678901 veya 1452..."
             value={searchTerm}
@@ -1524,7 +1525,11 @@ export default function ApplicationsPage() {
                 setCurrentPage(1);
               }
             }}
-            className="w-full h-14 pl-12 pr-28 bg-slate-50/90 hover:bg-white focus:bg-white border-2 border-slate-200 focus:border-blue-500 rounded-2xl text-base sm:text-lg focus:outline-none transition-all font-semibold text-slate-900 placeholder:text-slate-400 placeholder:font-normal shadow-inner"
+            className={`w-full h-14 pl-12 pr-28 rounded-2xl text-base sm:text-lg focus:outline-none transition-all font-semibold text-slate-900 placeholder:text-slate-400 placeholder:font-normal ${
+              searchTerm.trim().length > 0
+                ? "bg-white border-2 border-blue-600 ring-4 ring-blue-500/20 shadow-lg"
+                : "bg-slate-50/90 hover:bg-white focus:bg-white border-2 border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/15 shadow-inner"
+            }`}
           />
           <div className="absolute right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
             {searchTerm ? (
@@ -1758,7 +1763,7 @@ export default function ApplicationsPage() {
       {/* ========================================================= */}
       {/* ARAMA SONUCU VİTRİNİ (DOSYA / ARŞİV NUMARASI ÖNE ÇIKARMA) */}
       {/* ========================================================= */}
-      {debouncedSearch.trim().length > 0 && !loading && records.length > 0 && (
+      {debouncedSearch.trim().length > 0 && records.length > 0 && (
         <div className="bg-gradient-to-br from-blue-50/90 via-indigo-50/60 to-white p-5 rounded-3xl border-2 border-blue-200/80 shadow-sm space-y-4">
           <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
             <div className="flex items-center gap-2.5">

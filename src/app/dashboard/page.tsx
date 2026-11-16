@@ -3,7 +3,7 @@
 import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
-import { Save, UserCircle, Activity, Clock, Trash2, Edit2, X, Check, AlertTriangle } from "lucide-react";
+import { Save, UserCircle, Activity, Clock, Trash2, Edit2, X, Check, AlertTriangle, Search } from "lucide-react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import { turkishIncludes, extractTC } from "@/lib/turkish";
@@ -19,6 +19,9 @@ export default function DashboardPage() {
   });
   
   const [transactions, setTransactions] = useState([]);
+  const [allSearchedTransactions, setAllSearchedTransactions] = useState<any[] | null>(null);
+  const [txSearch, setTxSearch] = useState("");
+  const [searchingAll, setSearchingAll] = useState(false);
   const [helpTypes, setHelpTypes] = useState([]);
   const [todayStats, setTodayStats] = useState(0);
   
@@ -48,28 +51,56 @@ export default function DashboardPage() {
   const fetchData = async () => {
     if (!session?.user?.id) return;
     try {
-      // Sadece bugünün kayıtlarını çek
-      const todayStart = new Date();
-      todayStart.setHours(0, 0, 0, 0);
+      // Son 30 günün tüm personel kayıtlarını çek
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+      thirtyDaysAgo.setHours(0, 0, 0, 0);
       
       const todayEnd = new Date();
       todayEnd.setHours(23, 59, 59, 999);
       
       const params = new URLSearchParams({
-        dateStart: todayStart.toISOString(),
+        dateStart: thirtyDaysAgo.toISOString(),
         dateEnd: todayEnd.toISOString()
       });
 
       const res = await fetch(`/api/transactions?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setTransactions(data.transactions);
-        setTodayStats(data.transactions.length);
+        const list = data.transactions || [];
+        setTransactions(list);
+        const todayStartMs = new Date().setHours(0, 0, 0, 0);
+        const todayCount = list.filter((t: any) => new Date(t.createdAt).getTime() >= todayStartMs).length;
+        setTodayStats(todayCount);
       }
     } catch (e) {
       console.error(e);
     }
   };
+
+  useEffect(() => {
+    const q = txSearch.trim();
+    if (!q) {
+      setAllSearchedTransactions(null);
+      setSearchingAll(false);
+      return;
+    }
+    const timer = setTimeout(async () => {
+      setSearchingAll(true);
+      try {
+        const res = await fetch(`/api/transactions?search=${encodeURIComponent(q)}`);
+        if (res.ok) {
+          const data = await res.json();
+          setAllSearchedTransactions(data.transactions || []);
+        }
+      } catch {
+        /* ignore */
+      } finally {
+        setSearchingAll(false);
+      }
+    }, 150);
+    return () => clearTimeout(timer);
+  }, [txSearch]);
 
   useEffect(() => {
     if (session?.user?.id) {
@@ -344,18 +375,18 @@ export default function DashboardPage() {
                     <div className="flex items-center gap-2 text-xs font-bold text-amber-800">
                       <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
                       <span>
-                        UYARI: Bugün bu kişi için zaten {matchingTodayTransactions.length} kayıt girilmiş!
+                        UYARI: Son 30 gün içinde bu kişi için {matchingTodayTransactions.length} işlem kaydı bulundu!
                       </span>
                     </div>
                     <div className="space-y-1">
-                      {matchingTodayTransactions.slice(0, 3).map((t: any) => (
+                      {matchingTodayTransactions.slice(0, 4).map((t: any) => (
                         <div
                           key={t._id}
-                          className="text-xs bg-white/90 px-3 py-1.5 rounded-lg border border-amber-200 flex items-center justify-between gap-2"
+                          className="text-xs bg-white/90 px-3 py-1.5 rounded-lg border border-amber-200 flex flex-wrap items-center justify-between gap-2"
                         >
                           <span className="font-semibold text-slate-800 truncate">{t.citizenInfo}</span>
-                          <span className="text-slate-500 whitespace-nowrap">
-                            {t.helpType?.name || "-"} ({format(new Date(t.createdAt), "HH:mm")})
+                          <span className="text-slate-600 whitespace-nowrap font-medium">
+                            {t.helpType?.name || "-"} • <strong className="text-slate-800">{t.userId?.name || "Personel"}</strong> • {format(new Date(t.createdAt), "dd.MM.yyyy HH:mm")}
                           </span>
                         </div>
                       ))}
@@ -406,10 +437,37 @@ export default function DashboardPage() {
 
       {/* Kayıtlar Listesi */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-4 sm:p-6 border-b border-slate-100">
-          <h2 className="text-lg font-bold text-slate-800">
-            Bugünkü Personel İşlemleri
-          </h2>
+        <div className="p-4 sm:p-6 border-b border-slate-100 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-lg font-bold text-slate-800">
+              {txSearch.trim() ? "Tüm İşlemlerde Arama Sonuçları" : "Son 30 Günün Personel İşlemleri"}
+            </h2>
+            <p className="text-xs text-slate-500 mt-0.5">
+              {txSearch.trim()
+                ? `${(allSearchedTransactions ?? []).length} eşleşen kayıt bulundu`
+                : `Son 30 günde yapılan toplam ${transactions.length} işlem listeleniyor`}
+            </p>
+          </div>
+
+          <div className="relative w-full sm:w-80">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
+            <input
+              type="text"
+              value={txSearch}
+              onChange={(e) => setTxSearch(e.target.value)}
+              placeholder="Tüm işlemlerde ad soyad, TC veya personel ara..."
+              className="w-full pl-9 pr-8 py-2 text-xs sm:text-sm bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none"
+            />
+            {txSearch && (
+              <button
+                type="button"
+                onClick={() => setTxSearch("")}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            )}
+          </div>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
@@ -425,18 +483,25 @@ export default function DashboardPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {transactions.length === 0 ? (
+              {searchingAll ? (
+                <tr>
+                  <td colSpan={session?.user?.role !== "manager" ? 5 : 4} className="py-8 text-center text-slate-500 text-sm">
+                    Tüm işlemlerde aranıyor...
+                  </td>
+                </tr>
+              ) : (allSearchedTransactions ?? transactions).length === 0 ? (
                 <tr>
                   <td colSpan={session?.user?.role !== "manager" ? 5 : 4} className="py-8 text-center text-slate-500">Henüz bir kayıt bulunmamaktadır.</td>
                 </tr>
               ) : (
-                transactions.map((t: any) => {
+                (allSearchedTransactions ?? transactions).map((t: any) => {
                   const isEditing = editingId === t._id;
                   const isOwner = String(t.userId?._id || t.userId || "") === String(session?.user?.id || "");
                   const canCrud = session?.user?.role === "superadmin" || (session?.user?.role === "personnel" && isOwner);
+                  const isSearchMatch = txSearch.trim().length > 0;
                   
                   return (
-                    <tr key={t._id} className="even:bg-slate-50/70 odd:bg-white hover:bg-slate-100 transition-colors">
+                    <tr key={t._id} className={`${isSearchMatch ? "bg-amber-50/70 hover:bg-amber-100/70" : "even:bg-slate-50/70 odd:bg-white hover:bg-slate-100"} transition-colors`}>
                       <td className="py-3.5 px-4 sm:px-6 text-xs sm:text-sm text-slate-500 whitespace-nowrap align-top border-t border-slate-100">
                         {format(new Date(t.createdAt), "dd/MM/yyyy HH:mm")}
                       </td>
