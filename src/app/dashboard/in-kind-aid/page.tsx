@@ -175,19 +175,62 @@ export default function InKindAidPage() {
       return;
     }
 
+    const effectiveExcludeId = excludeId || editingRecord?._id;
+    const nowMs = Date.now();
+    const thirtyDaysMs = 31 * 24 * 60 * 60 * 1000;
+
+    // 1. Önce bellekteki mevcut kayıtlardan 0ms gecikmeyle anlık kontrol et
+    const localMatches = records.filter((r) => {
+      if (effectiveExcludeId && r._id === effectiveExcludeId) return false;
+      const dMs = new Date(r.deliveryDate || r.createdAt).getTime();
+      if (nowMs - dMs > thirtyDaysMs) return false;
+      const recTc = String(r.tcNo || "").replace(/\D/g, "") || extractTC(r.citizenName || "") || "";
+      const recName = String(r.citizenName || "");
+      const recReceiver = String(r.receiver || "");
+      if (hasValidTc && (recTc === cleanTc || recName.includes(cleanTc))) return true;
+      if (hasValidName && (turkishIncludes(recName, cleanName) || turkishIncludes(recReceiver, cleanName))) {
+        return true;
+      }
+      return false;
+    });
+
+    if (localMatches.length > 0) {
+      const latest = localMatches[0];
+      const latestDate = latest.deliveryDate || latest.createdAt;
+      const daysAgo = Math.max(
+        0,
+        Math.floor((nowMs - new Date(latestDate).getTime()) / (24 * 60 * 60 * 1000))
+      );
+      setRecentWarning({
+        hasRecentDelivery: true,
+        count: localMatches.length,
+        daysAgo,
+        lastDeliveryDate: latestDate,
+        latestRecord: {
+          _id: latest._id,
+          tcNo: latest.tcNo,
+          citizenName: latest.citizenName,
+          receiver: latest.receiver,
+          items: latest.items,
+          deliveryDate: latestDate,
+          createdAt: latest.createdAt,
+          personnelName: latest.createdBy?.name || "Personel",
+        },
+      });
+    }
+
     setCheckingRecent(true);
     try {
       const params = new URLSearchParams();
       if (hasValidTc) params.append("tc", cleanTc);
       if (hasValidName) params.append("name", cleanName);
-      const effectiveExcludeId = excludeId || editingRecord?._id;
       if (effectiveExcludeId) params.append("excludeId", effectiveExcludeId);
       const res = await fetch(`/api/in-kind-aid/check-recent?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
         if (data.hasRecentDelivery) {
           setRecentWarning(data);
-        } else {
+        } else if (localMatches.length === 0) {
           setRecentWarning(null);
         }
       }

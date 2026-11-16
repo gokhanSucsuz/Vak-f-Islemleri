@@ -29,36 +29,28 @@ export async function GET(req: Request) {
     await dbConnect();
     if (!User) { }
 
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    thirtyDaysAgo.setHours(0, 0, 0, 0);
-
-    const conditions: any[] = [
-      {
-        $or: [
-          { deliveryDate: { $gte: thirtyDaysAgo } },
-          { deliveryDate: { $exists: false }, createdAt: { $gte: thirtyDaysAgo } },
-          { deliveryDate: null, createdAt: { $gte: thirtyDaysAgo } },
-        ],
-      },
-    ];
-
-    if (excludeId) {
-      conditions.push({ _id: { $ne: excludeId } });
-    }
+    const query = excludeId ? { _id: { $ne: excludeId } } : {};
 
     // Şifreli alanlar (tcNo, citizenName) çözüldükten sonra bellekte karşılaştırılır
-    const allRecent = await InKindAid.find({ $and: conditions })
+    const allRecords = await InKindAid.find(query)
       .populate("createdBy", "name")
-      .sort({ deliveryDate: -1, createdAt: -1 });
+      .sort({ deliveryDate: -1, createdAt: -1 })
+      .limit(1000);
 
-    const recentRecords = allRecent.filter((r: any) => {
-      const recTc = String(r.tcNo || "").trim() || extractTC(r.citizenName || "");
+    const recentRecords = allRecords.filter((r: any) => {
+      const effectiveDate = r.deliveryDate || r.createdAt;
+      const diffDays = getCalendarDaysDiff(effectiveDate);
+      if (diffDays > 30) return false;
+
+      const recTcDigits = String(r.tcNo || "").replace(/\D/g, "") || extractTC(r.citizenName || "") || "";
       const recName = String(r.citizenName || "").trim();
       const recReceiver = String(r.receiver || "").trim();
+      const recNotes = String(r.notes || "").trim();
 
       if (hasValidTc) {
-        if (recTc === tc || recName.includes(tc)) return true;
+        if (recTcDigits === tc || recName.includes(tc) || recReceiver.includes(tc) || recNotes.includes(tc)) {
+          return true;
+        }
       }
       if (hasValidName) {
         if (

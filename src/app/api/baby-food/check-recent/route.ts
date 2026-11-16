@@ -31,36 +31,28 @@ export async function GET(req: Request) {
       // noop
     }
 
-    const thirtyDaysAgo = new Date();
-    thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
-    thirtyDaysAgo.setHours(0, 0, 0, 0);
-
-    const conditions: any[] = [
-      {
-        $or: [
-          { deliveryDate: { $gte: thirtyDaysAgo } },
-          { deliveryDate: { $exists: false }, createdAt: { $gte: thirtyDaysAgo } },
-          { deliveryDate: null, createdAt: { $gte: thirtyDaysAgo } },
-        ],
-      },
-    ];
-
-    if (excludeId) {
-      conditions.push({ _id: { $ne: excludeId } });
-    }
+    const query = excludeId ? { _id: { $ne: excludeId } } : {};
 
     // Şifreli alanlar (tcNo, motherInfo) Mongoose post-find hook'u ile çözüldükten sonra bellekte karşılaştırılır
-    const allRecent = await BabyFood.find({ $and: conditions })
+    const allRecords = await BabyFood.find(query)
       .populate("createdBy", "name")
-      .sort({ deliveryDate: -1, createdAt: -1 });
+      .sort({ deliveryDate: -1, createdAt: -1 })
+      .limit(1000);
 
-    const recentRecords = allRecent.filter((r: any) => {
-      const recTc = String(r.tcNo || "").trim() || extractTC(r.motherInfo || "");
+    const recentRecords = allRecords.filter((r: any) => {
+      const effectiveDate = r.deliveryDate || r.createdAt;
+      const diffDays = getCalendarDaysDiff(effectiveDate);
+      if (diffDays > 30) return false;
+
+      const recTcDigits = String(r.tcNo || "").replace(/\D/g, "") || extractTC(r.motherInfo || "") || "";
       const recMother = String(r.motherInfo || "").trim();
       const recReceiver = String(r.receiver || "").trim();
+      const recNotes = String(r.notes || "").trim();
 
       if (hasValidTc) {
-        if (recTc === tc || recMother.includes(tc)) return true;
+        if (recTcDigits === tc || recMother.includes(tc) || recReceiver.includes(tc) || recNotes.includes(tc)) {
+          return true;
+        }
       }
       if (hasValidName) {
         if (

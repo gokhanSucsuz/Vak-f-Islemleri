@@ -47,6 +47,7 @@ import {
 } from "lucide-react";
 import {
   turkishIncludes,
+  toTurkishRegexPattern,
   cleanHeaderKey,
   exportStyledApplicationExcel,
   extractAndCleanTC,
@@ -122,14 +123,46 @@ function getPaginationPages(current: number, total: number, maxVisible = 5): num
 }
 
 /**
- * Arama terimini metin içinde vurgular (Türkçe büyük/küçük harf duyarlılığına dayanıklı)
+ * ISO tarih stringlerini veya Date nesnelerini GG.AA.YYYY (örn: 16.11.2026) formatına çevirir
  */
-function highlightText(text: string, query: string): React.ReactNode {
+function formatTurkishDate(val: any): string | null {
+  if (!val) return null;
+  if (val instanceof Date) {
+    if (isNaN(val.getTime())) return null;
+    return `${String(val.getDate()).padStart(2, "0")}.${String(val.getMonth() + 1).padStart(
+      2,
+      "0"
+    )}.${val.getFullYear()}`;
+  }
+  if (typeof val === "string") {
+    const trimmed = val.trim();
+    if (/^\d{4}-\d{2}-\d{2}(T|\s|$)/.test(trimmed)) {
+      const d = new Date(trimmed);
+      if (!isNaN(d.getTime())) {
+        return `${String(d.getDate()).padStart(2, "0")}.${String(d.getMonth() + 1).padStart(
+          2,
+          "0"
+        )}.${d.getFullYear()}`;
+      }
+    }
+  }
+  return null;
+}
+
+/**
+ * Arama terimini metin içinde vurgular (ISO tarihleri GG.AA.YYYY formatına çevirir ve Türkçe karakter duyarlı vurgular)
+ */
+function highlightText(rawText: string, query: string): React.ReactNode {
+  if (!rawText) return rawText;
+  const text = String(rawText).replace(
+    /\b\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z?\b/g,
+    (m) => formatTurkishDate(m) || m
+  );
   const cleanQuery = query.trim();
-  if (!cleanQuery || !text) return text;
-  const escaped = cleanQuery.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  if (!cleanQuery) return text;
+  const pattern = toTurkishRegexPattern(cleanQuery);
   try {
-    const regex = new RegExp(`(${escaped})`, "gi");
+    const regex = new RegExp(`(${pattern})`, "gi");
     const parts = text.split(regex);
     if (parts.length === 1) return text;
     return parts.map((part, i) =>
@@ -144,35 +177,6 @@ function highlightText(text: string, query: string): React.ReactNode {
   } catch {
     return text;
   }
-}
-
-/**
- * ISO tarih stringlerini veya Date nesnelerini GG.AA.YYYY formatına çevirir
- */
-function formatTurkishDate(val: any): string | null {
-  if (!val) return null;
-  if (val instanceof Date) {
-    if (isNaN(val.getTime())) return null;
-    return val.toLocaleDateString("tr-TR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-  }
-  if (typeof val === "string") {
-    const trimmed = val.trim();
-    if (/^\d{4}-\d{2}-\d{2}(T|\s|$)/.test(trimmed)) {
-      const d = new Date(trimmed);
-      if (!isNaN(d.getTime())) {
-        return d.toLocaleDateString("tr-TR", {
-          day: "2-digit",
-          month: "2-digit",
-          year: "numeric",
-        });
-      }
-    }
-  }
-  return null;
 }
 
 export default function ApplicationsPage() {
