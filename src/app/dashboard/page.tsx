@@ -469,16 +469,130 @@ export default function DashboardPage() {
             )}
           </div>
         </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-left">
+        {/* Mobil Kart Görünümü (md altı ekranlar için %100 uyumlu) */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {searchingAll ? (
+            <div className="py-8 text-center text-slate-500 text-sm">
+              Tüm işlemlerde aranıyor...
+            </div>
+          ) : (allSearchedTransactions ?? transactions).length === 0 ? (
+            <div className="py-8 text-center text-slate-500 text-sm">
+              Henüz bir kayıt bulunmamaktadır.
+            </div>
+          ) : (
+            (allSearchedTransactions ?? transactions).map((t: any) => {
+              const isEditing = editingId === t._id;
+              const isOwner = String(t.userId?._id || t.userId || "") === String(session?.user?.id || "");
+              const canCrud = session?.user?.role === "superadmin" || (session?.user?.role === "personnel" && isOwner);
+              const isSearchMatch = txSearch.trim().length > 0;
+
+              return (
+                <div
+                  key={t._id}
+                  className={`p-4 space-y-2.5 ${
+                    isSearchMatch ? "bg-amber-50/70" : "bg-white"
+                  }`}
+                >
+                  <div className="flex items-center justify-between gap-2 text-xs text-slate-500">
+                    <span className="font-semibold text-slate-700">
+                      {t.userId?.name || "-"}
+                    </span>
+                    <span className="font-mono">
+                      {format(new Date(t.createdAt), "dd/MM/yyyy HH:mm")}
+                    </span>
+                  </div>
+
+                  {isEditing ? (
+                    <div className="space-y-2">
+                      <input
+                        type="text"
+                        name="citizenInfo"
+                        value={editFormData.citizenInfo}
+                        onChange={handleEditChange}
+                        className="w-full p-2 border border-blue-300 rounded-lg text-sm"
+                      />
+                      <select
+                        name="helpType"
+                        value={editFormData.helpType}
+                        onChange={handleEditChange}
+                        className="w-full p-2 border border-blue-300 rounded-lg text-sm"
+                      >
+                        <option value="">Seçiniz...</option>
+                        {helpTypes.map((ht: any) => (
+                          <option key={ht._id} value={ht._id}>
+                            {ht.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : (
+                    <div className="text-sm font-bold text-slate-900 break-words">
+                      {t.citizenInfo}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-100 text-blue-800 break-words">
+                      {t.helpType?.name || "-"}
+                    </span>
+
+                    {session?.user?.role !== "manager" && (
+                      <div>
+                        {!canCrud ? (
+                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                            Salt Okunur
+                          </span>
+                        ) : isEditing ? (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => handleUpdate(t._id)}
+                              className="p-1.5 bg-green-100 text-green-700 rounded-lg"
+                            >
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => setEditingId(null)}
+                              className="p-1.5 bg-slate-100 text-slate-600 rounded-lg"
+                            >
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-1.5">
+                            <button
+                              onClick={() => startEditing(t)}
+                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                            >
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button
+                              onClick={() => handleDelete(t._id)}
+                              className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
+                            >
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        {/* Masaüstü Tablo Görünümü (Taşmayı engelleyen dengeli sütun genişlikleri) */}
+        <div className="hidden md:block w-full">
+          <table className="w-full table-fixed text-left">
             <thead>
               <tr className="bg-slate-50">
-                <th className="py-3 px-4 sm:px-6 font-semibold text-slate-600 text-xs sm:text-sm whitespace-nowrap">Tarih / Saat</th>
-                <th className="py-3 px-4 sm:px-6 font-semibold text-slate-600 text-xs sm:text-sm whitespace-nowrap">Personel</th>
-                <th className="py-3 px-4 sm:px-6 font-semibold text-slate-600 text-xs sm:text-sm">Vatandaş Bilgisi</th>
-                <th className="py-3 px-4 sm:px-6 font-semibold text-slate-600 text-xs sm:text-sm">Tür</th>
+                <th className="w-36 py-3 px-4 font-semibold text-slate-600 text-xs uppercase tracking-wider">Tarih / Saat</th>
+                <th className="w-40 py-3 px-4 font-semibold text-slate-600 text-xs uppercase tracking-wider">Personel</th>
+                <th className="py-3 px-4 font-semibold text-slate-600 text-xs uppercase tracking-wider">Vatandaş Bilgisi</th>
+                <th className="w-52 py-3 px-4 font-semibold text-slate-600 text-xs uppercase tracking-wider">Tür</th>
                 {session?.user?.role !== "manager" && (
-                  <th className="py-3 px-4 sm:px-6 font-semibold text-slate-600 text-xs sm:text-sm text-right">İşlemler</th>
+                  <th className="w-28 py-3 px-4 font-semibold text-slate-600 text-xs uppercase tracking-wider text-right">İşlemler</th>
                 )}
               </tr>
             </thead>
@@ -502,15 +616,15 @@ export default function DashboardPage() {
                   
                   return (
                     <tr key={t._id} className={`${isSearchMatch ? "bg-amber-50/70 hover:bg-amber-100/70" : "even:bg-slate-50/70 odd:bg-white hover:bg-slate-100"} transition-colors`}>
-                      <td className="py-3.5 px-4 sm:px-6 text-xs sm:text-sm text-slate-500 whitespace-nowrap align-top border-t border-slate-100">
+                      <td className="py-3 px-4 text-xs font-mono text-slate-500 align-middle border-t border-slate-100">
                         {format(new Date(t.createdAt), "dd/MM/yyyy HH:mm")}
                       </td>
 
-                      <td className="py-3.5 px-4 sm:px-6 text-xs sm:text-sm text-slate-800 font-medium align-top border-t border-slate-100 whitespace-nowrap">
+                      <td className="py-3 px-4 text-xs sm:text-sm text-slate-800 font-semibold align-middle border-t border-slate-100 truncate">
                         {t.userId?.name || "-"}
                       </td>
                       
-                      <td className="py-4 px-6 align-top border-t border-slate-100">
+                      <td className="py-3 px-4 align-middle border-t border-slate-100 break-words">
                         {isEditing ? (
                           <input 
                             type="text" 
@@ -520,11 +634,11 @@ export default function DashboardPage() {
                             className="w-full p-2 border border-blue-300 rounded focus:outline-none focus:ring-2 focus:ring-blue-500 text-sm"
                           />
                         ) : (
-                          <span className="text-sm font-medium text-slate-800">{t.citizenInfo}</span>
+                          <span className="text-sm font-medium text-slate-800 break-words">{t.citizenInfo}</span>
                         )}
                       </td>
 
-                      <td className="py-4 px-6 align-top border-t border-slate-100">
+                      <td className="py-3 px-4 align-middle border-t border-slate-100">
                         {isEditing ? (
                           <select
                             name="helpType"
@@ -538,14 +652,14 @@ export default function DashboardPage() {
                             ))}
                           </select>
                         ) : (
-                          <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                          <span className="inline-block max-w-full px-2.5 py-1 rounded-lg text-xs font-semibold bg-blue-100 text-blue-800 leading-snug break-words">
                             {t.helpType?.name || "-"}
                           </span>
                         )}
                       </td>
                       
                       {session?.user?.role !== "manager" && (
-                        <td className="py-3.5 px-4 sm:px-6 align-top text-right whitespace-nowrap border-t border-slate-100">
+                        <td className="py-3 px-4 align-middle text-right border-t border-slate-100">
                           {!canCrud ? (
                             <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
                               Salt Okunur

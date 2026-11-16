@@ -13,6 +13,8 @@ import PresentationMeeting from "@/models/PresentationMeeting";
 import PresentationTemplate from "@/models/PresentationTemplate";
 import Log from "@/models/Log";
 import User from "@/models/User";
+import Transaction from "@/models/Transaction";
+import { invalidateApplicationCache } from "@/lib/applicationCache";
 
 export async function POST() {
   try {
@@ -42,6 +44,7 @@ export async function POST() {
       { name: "PresentationTemplate", model: PresentationTemplate },
       { name: "Log", model: Log },
       { name: "User", model: User },
+      { name: "Transaction", model: Transaction },
     ];
 
     const summary: Record<string, number> = {};
@@ -56,6 +59,8 @@ export async function POST() {
       }
       summary[name] = count;
     }
+
+    invalidateApplicationCache();
 
     return NextResponse.json({
       success: true,

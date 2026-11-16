@@ -1,5 +1,5 @@
 import mongoose from 'mongoose';
-import { encryptData, decryptData } from '@/lib/encryption';
+import { encryptData, decryptData, applyFieldEncryption } from '@/lib/encryption';
 
 const TransactionSchema = new mongoose.Schema(
   {
@@ -26,5 +26,9 @@ const TransactionSchema = new mongoose.Schema(
     toObject: { getters: true }
   }
 );
+
+applyFieldEncryption(TransactionSchema, {
+  stringFields: ['citizenInfo'],
+});
 
 export default mongoose.models.Transaction || mongoose.model('Transaction', TransactionSchema);

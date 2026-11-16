@@ -1,15 +1,22 @@
 import crypto from "crypto";
+import CryptoJS from "crypto-js";
 import type { Schema } from "mongoose";
 
 const PREFIX = "enc:v1:";
+const LEGACY_CRYPTOJS_PREFIX = "U2FsdGVkX1";
 const BUF_MAGIC = Buffer.from("ENC1", "ascii");
 const SALT = "vakif-aes256gcm-v1-salt";
 
+export const LEGACY_ENCRYPTION_KEY =
+  "FDS%+6+^%+^&%+/&%RUFGbvddYTYgfde9878.,.,.,*YH&/y64gr6yuhjkjklsfds%+&__-?09786OOPPLJHN:bnhgvcf9Y%/%/&&978%+&%++^575687998//&+^popoxzaQW^+3asdASzZWQ";
+const DEFAULT_OLD_SECRET = "default-super-secret-key-1234567890";
+
 let cachedKey: Buffer | null = null;
 let cachedRawKey: string | undefined = undefined;
+let cachedLegacyScryptKey: Buffer | null = null;
 
 function getDerivedKey(): Buffer | null {
-  const raw = (process.env.DATA_ENCRYPTION_KEY || "").trim();
+  const raw = (process.env.DATA_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || "").trim();
   if (!raw) return null;
   if (cachedKey && cachedRawKey === raw) return cachedKey;
   cachedKey = crypto.scryptSync(raw, SALT, 32);
@@ -17,19 +24,90 @@ function getDerivedKey(): Buffer | null {
   return cachedKey;
 }
 
+function getLegacyScryptKey(): Buffer {
+  if (!cachedLegacyScryptKey) {
+    cachedLegacyScryptKey = crypto.scryptSync(LEGACY_ENCRYPTION_KEY, SALT, 32);
+  }
+  return cachedLegacyScryptKey;
+}
+
 export function isEncryptionEnabled(): boolean {
-  return Boolean((process.env.DATA_ENCRYPTION_KEY || "").trim());
+  return Boolean((process.env.DATA_ENCRYPTION_KEY || process.env.ENCRYPTION_KEY || "").trim());
 }
 
 export function isEncryptedString(val: unknown): val is string {
-  return typeof val === "string" && val.startsWith(PREFIX);
+  return (
+    typeof val === "string" &&
+    (val.startsWith(PREFIX) || val.startsWith(LEGACY_CRYPTOJS_PREFIX))
+  );
+}
+
+function decryptLegacyCryptoJs(cipherText: string): string {
+  if (!cipherText || !cipherText.startsWith(LEGACY_CRYPTOJS_PREFIX)) return cipherText;
+  const candidateKeys = Array.from(
+    new Set(
+      [
+        LEGACY_ENCRYPTION_KEY,
+        (process.env.ENCRYPTION_KEY || "").trim(),
+        (process.env.DATA_ENCRYPTION_KEY || "").trim(),
+        DEFAULT_OLD_SECRET,
+      ].filter(Boolean)
+    )
+  );
+
+  for (const secret of candidateKeys) {
+    try {
+      const bytes = CryptoJS.AES.decrypt(cipherText, secret);
+      const out = bytes.toString(CryptoJS.enc.Utf8);
+      if (out && out.trim().length > 0) {
+        return out;
+      }
+    } catch {
+      /* try next key */
+    }
+  }
+  return cipherText;
+}
+
+function tryAesGcmDecrypt(val: string, key: Buffer): string | null {
+  try {
+    const raw = Buffer.from(val.slice(PREFIX.length), "base64");
+    if (raw.length < 29) return null;
+    const iv = raw.subarray(0, 12);
+    const authTag = raw.subarray(12, 28);
+    const ciphertext = raw.subarray(28);
+
+    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
+    decipher.setAuthTag(authTag);
+    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
+    return decrypted.toString("utf8");
+  } catch {
+    return null;
+  }
 }
 
 export function encryptText(plain: unknown): any {
   if (plain === null || plain === undefined) return plain;
-  const str = String(plain);
+  let str = String(plain);
   if (str === "") return "";
-  if (str.startsWith(PREFIX)) return str;
+
+  // Eğer eski anahtar ile şifrelenmiş veya iç içe şifrelenmişse önce düz metne çöz
+  if (str.startsWith(PREFIX) || str.startsWith(LEGACY_CRYPTOJS_PREFIX)) {
+    const unwrapped = decryptText(str);
+    if (
+      typeof unwrapped === "string" &&
+      unwrapped !== str &&
+      !unwrapped.startsWith(PREFIX) &&
+      !unwrapped.startsWith(LEGACY_CRYPTOJS_PREFIX)
+    ) {
+      str = unwrapped;
+    } else if (str.startsWith(PREFIX)) {
+      const primaryKey = getDerivedKey();
+      if (primaryKey && tryAesGcmDecrypt(str, primaryKey) !== null) {
+        return str;
+      }
+    }
+  }
 
   const key = getDerivedKey();
   if (!key) return str;
@@ -43,25 +121,28 @@ export function encryptText(plain: unknown): any {
 }
 
 export function decryptText(val: unknown): any {
-  if (typeof val !== "string" || !val.startsWith(PREFIX)) return val;
+  if (typeof val !== "string") return val;
+  if (!val.startsWith(PREFIX) && !val.startsWith(LEGACY_CRYPTOJS_PREFIX)) return val;
 
-  const key = getDerivedKey();
-  if (!key) return val;
-
-  try {
-    const raw = Buffer.from(val.slice(PREFIX.length), "base64");
-    if (raw.length < 29) return val;
-    const iv = raw.subarray(0, 12);
-    const authTag = raw.subarray(12, 28);
-    const ciphertext = raw.subarray(28);
-
-    const decipher = crypto.createDecipheriv("aes-256-gcm", key, iv);
-    decipher.setAuthTag(authTag);
-    const decrypted = Buffer.concat([decipher.update(ciphertext), decipher.final()]);
-    return decrypted.toString("utf8");
-  } catch {
-    return val;
+  let current = val;
+  for (let depth = 0; depth < 3; depth++) {
+    if (current.startsWith(PREFIX)) {
+      const primaryKey = getDerivedKey();
+      let out = primaryKey ? tryAesGcmDecrypt(current, primaryKey) : null;
+      if (out === null) {
+        out = tryAesGcmDecrypt(current, getLegacyScryptKey());
+      }
+      if (out === null || out === current) break;
+      current = out;
+    } else if (current.startsWith(LEGACY_CRYPTOJS_PREFIX)) {
+      const out = decryptLegacyCryptoJs(current);
+      if (out === current) break;
+      current = out;
+    } else {
+      break;
+    }
   }
+  return current;
 }
 
 export const encryptData = encryptText;
@@ -161,7 +242,10 @@ function decryptTarget(target: any, opts: FieldEncryptionOptions) {
   if (!target || typeof target !== "object") return;
 
   for (const field of opts.stringFields || []) {
-    if (typeof target[field] === "string" && target[field].startsWith(PREFIX)) {
+    if (
+      typeof target[field] === "string" &&
+      (target[field].startsWith(PREFIX) || target[field].startsWith(LEGACY_CRYPTOJS_PREFIX))
+    ) {
       target[field] = decryptText(target[field]);
     }
   }

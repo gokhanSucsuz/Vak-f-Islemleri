@@ -4,6 +4,48 @@ import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import Transaction from "@/models/Transaction";
 import User from "@/models/User";
+import { isEncryptionEnabled } from "@/lib/encryption";
+
+const g = globalThis as unknown as { __legacyReEncryptTriggered?: boolean };
+
+async function runLegacyReEncryptInBackground() {
+  if (g.__legacyReEncryptTriggered || !isEncryptionEnabled()) return;
+  g.__legacyReEncryptTriggered = true;
+  try {
+    const [
+      { default: ApplicationFile },
+      { default: BabyFood },
+      { default: InKindAid },
+      { default: Petition },
+      { default: Log },
+      { invalidateApplicationCache },
+    ] = await Promise.all([
+      import("@/models/ApplicationFile"),
+      import("@/models/BabyFood"),
+      import("@/models/InKindAid"),
+      import("@/models/Petition"),
+      import("@/models/Log"),
+      import("@/lib/applicationCache"),
+    ]);
+
+    const models = [Transaction, ApplicationFile, BabyFood, InKindAid, Petition, Log, User];
+    for (const model of models) {
+      const docs = await (model as any).find({});
+      for (const doc of docs) {
+        if ((doc as any).extraData !== undefined) {
+          doc.markModified("extraData");
+        }
+        if ((doc as any).citizenInfo !== undefined) {
+          doc.markModified("citizenInfo");
+        }
+        await doc.save();
+      }
+    }
+    invalidateApplicationCache();
+  } catch (err) {
+    console.error("Background legacy re-encryption warning:", err);
+  }
+}
 
 export async function POST(req: Request) {
   try {
@@ -61,6 +103,7 @@ export async function GET(req: Request) {
     const filterHelpType = searchParams.get("helpType");
 
     await dbConnect();
+    void runLegacyReEncryptInBackground();
     const HelpType = (await import("@/models/HelpType")).default; // ensure model is registered
 
     let query: any = {};
