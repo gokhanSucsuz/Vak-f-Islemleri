@@ -173,16 +173,25 @@ export default function BabyFoodPage() {
     }
   }, [session]);
 
-  const checkRecentDelivery = async (tc: string, excludeId?: string) => {
-    const cleanTc = tc?.trim();
-    if (!cleanTc || cleanTc.length !== 11 || !/^\d{11}$/.test(cleanTc)) {
+  const checkRecentDelivery = async (tc: string, excludeId?: string, nameVal?: string) => {
+    const cleanTc = tc?.trim() || "";
+    const cleanName = (nameVal ?? formData.motherInfo ?? "")
+      .replace(/\b\d{11}\b/g, "")
+      .replace(/[-–—]/g, " ")
+      .trim();
+    const hasValidTc = cleanTc.length === 11 && /^\d{11}$/.test(cleanTc);
+    const hasValidName = cleanName.length >= 3;
+
+    if (!hasValidTc && !hasValidName) {
       setRecentWarning(null);
       return;
     }
 
     setCheckingRecent(true);
     try {
-      const params = new URLSearchParams({ tc: cleanTc });
+      const params = new URLSearchParams();
+      if (hasValidTc) params.append("tc", cleanTc);
+      if (hasValidName) params.append("name", cleanName);
       const effectiveExcludeId = excludeId || editingRecord?._id;
       if (effectiveExcludeId) params.append("excludeId", effectiveExcludeId);
       const res = await fetch(`/api/baby-food/check-recent?${params.toString()}`);
@@ -204,8 +213,8 @@ export default function BabyFoodPage() {
   const handleTcChange = (val: string) => {
     const numeric = val.replace(/\D/g, "").slice(0, 11);
     setFormData((prev) => ({ ...prev, tcNo: numeric }));
-    if (numeric.length === 11) {
-      checkRecentDelivery(numeric);
+    if (numeric.length === 11 || formData.motherInfo.trim().length >= 3) {
+      checkRecentDelivery(numeric, undefined, formData.motherInfo);
     } else {
       setRecentWarning(null);
     }
@@ -213,12 +222,15 @@ export default function BabyFoodPage() {
 
   const handleMotherInfoChange = (val: string) => {
     setFormData((prev) => ({ ...prev, motherInfo: val }));
-    if (!formData.tcNo) {
-      const extracted = extractTC(val);
-      if (extracted && extracted.length === 11) {
-        setFormData((prev) => ({ ...prev, tcNo: extracted }));
-        checkRecentDelivery(extracted);
-      }
+    const extracted = extractTC(val);
+    const nextTc = !formData.tcNo && extracted && extracted.length === 11 ? extracted : formData.tcNo;
+    if (!formData.tcNo && extracted && extracted.length === 11) {
+      setFormData((prev) => ({ ...prev, tcNo: extracted }));
+    }
+    if ((nextTc && nextTc.length === 11) || val.trim().length >= 3) {
+      checkRecentDelivery(nextTc, undefined, val);
+    } else {
+      setRecentWarning(null);
     }
   };
 

@@ -5,6 +5,7 @@ import dbConnect from "@/lib/db";
 import InKindAid from "@/models/InKindAid";
 import User from "@/models/User";
 import { getCalendarDaysDiff } from "@/lib/date";
+import { extractTC, turkishIncludes } from "@/lib/turkish";
 
 export async function GET(req: Request) {
   try {
@@ -14,15 +15,18 @@ export async function GET(req: Request) {
     }
 
     const { searchParams } = new URL(req.url);
-    const tc = searchParams.get("tc")?.trim();
+    const tc = searchParams.get("tc")?.trim() || "";
+    const name = searchParams.get("name")?.trim() || "";
     const excludeId = searchParams.get("excludeId")?.trim();
 
-    if (!tc || tc.length !== 11 || !/^\d{11}$/.test(tc)) {
-      return NextResponse.json({ hasRecentDelivery: false, message: "Geçersiz TC" });
+    const hasValidTc = tc.length === 11 && /^\d{11}$/.test(tc);
+    const hasValidName = name.length >= 3;
+
+    if (!hasValidTc && !hasValidName) {
+      return NextResponse.json({ hasRecentDelivery: false, message: "Geçersiz parametre" });
     }
 
     await dbConnect();
-    // ensure User model is loaded
     if (!User) { }
 
     const thirtyDaysAgo = new Date();
@@ -37,21 +41,35 @@ export async function GET(req: Request) {
           { deliveryDate: null, createdAt: { $gte: thirtyDaysAgo } },
         ],
       },
-      {
-        $or: [
-          { tcNo: tc },
-          { citizenName: { $regex: tc, $options: "i" } },
-        ],
-      },
     ];
 
     if (excludeId) {
       conditions.push({ _id: { $ne: excludeId } });
     }
 
-    const recentRecords = await InKindAid.find({ $and: conditions })
+    // Şifreli alanlar (tcNo, citizenName) çözüldükten sonra bellekte karşılaştırılır
+    const allRecent = await InKindAid.find({ $and: conditions })
       .populate("createdBy", "name")
       .sort({ deliveryDate: -1, createdAt: -1 });
+
+    const recentRecords = allRecent.filter((r: any) => {
+      const recTc = String(r.tcNo || "").trim() || extractTC(r.citizenName || "");
+      const recName = String(r.citizenName || "").trim();
+      const recReceiver = String(r.receiver || "").trim();
+
+      if (hasValidTc) {
+        if (recTc === tc || recName.includes(tc)) return true;
+      }
+      if (hasValidName) {
+        if (
+          (recName && turkishIncludes(recName, name)) ||
+          (recReceiver && turkishIncludes(recReceiver, name))
+        ) {
+          return true;
+        }
+      }
+      return false;
+    });
 
     if (!recentRecords || recentRecords.length === 0) {
       return NextResponse.json({ hasRecentDelivery: false });

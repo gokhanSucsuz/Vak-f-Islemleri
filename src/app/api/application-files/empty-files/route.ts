@@ -1,8 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
-import dbConnect from "@/lib/db";
-import ApplicationFile from "@/models/ApplicationFile";
+import { getApplicationCache } from "@/lib/applicationCache";
 
 export async function GET(req: Request) {
   try {
@@ -11,20 +10,22 @@ export async function GET(req: Request) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 
-    await dbConnect();
-
     const { searchParams } = new URL(req.url);
     const limit = parseInt(searchParams.get("limit") || "10", 10);
 
-    const emptyFiles = await ApplicationFile.find({
-      $or: [
-        { applicantName: { $in: ["", null] } },
-        { fileStatus: "Boş Dosya" },
-      ],
-    })
-      .sort({ applicationNoSeq: 1, applicationNo: 1 })
-      .limit(limit)
-      .lean();
+    const cache = await getApplicationCache();
+    const emptyFiles = cache.items
+      .filter((item) => {
+        const doc = item.doc;
+        return (
+          !doc.applicantName ||
+          String(doc.applicantName).trim() === "" ||
+          doc.fileStatus === "Boş Dosya"
+        );
+      })
+      .map((item) => item.doc)
+      .sort((a, b) => (a.applicationNoSeq || 0) - (b.applicationNoSeq || 0))
+      .slice(0, limit);
 
     return NextResponse.json({
       count: emptyFiles.length,

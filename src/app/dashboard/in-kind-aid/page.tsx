@@ -27,6 +27,7 @@ import {
 import { turkishIncludes, extractTC, exportToExcel } from "@/lib/turkish";
 import { toLocalDateInputValue, toLocalDayStartISO, toLocalDayEndISO } from "@/lib/date";
 import { registerTurkishFont } from "@/lib/pdfFont";
+import ModernConfirmDialog, { DialogType } from "@/components/ModernConfirmDialog";
 
 type InKindAidType = {
   _id: string;
@@ -106,6 +107,21 @@ export default function InKindAidPage() {
   );
   const [isGeneratingPdf, setIsGeneratingPdf] = useState(false);
 
+  const [dialogState, setDialogState] = useState<{
+    isOpen: boolean;
+    title: string;
+    message: React.ReactNode;
+    type: DialogType;
+    confirmText?: string;
+    cancelText?: string;
+    onConfirm?: () => void;
+  }>({
+    isOpen: false,
+    title: "",
+    message: null,
+    type: "warning",
+  });
+
   const userRole = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
 
@@ -145,16 +161,25 @@ export default function InKindAidPage() {
     }
   }, [session]);
 
-  const checkRecentDelivery = async (tc: string, excludeId?: string) => {
-    const cleanTc = tc?.trim();
-    if (!cleanTc || cleanTc.length !== 11 || !/^\d{11}$/.test(cleanTc)) {
+  const checkRecentDelivery = async (tc: string, excludeId?: string, nameVal?: string) => {
+    const cleanTc = tc?.trim() || "";
+    const cleanName = (nameVal ?? formData.citizenName ?? "")
+      .replace(/\b\d{11}\b/g, "")
+      .replace(/[-–—]/g, " ")
+      .trim();
+    const hasValidTc = cleanTc.length === 11 && /^\d{11}$/.test(cleanTc);
+    const hasValidName = cleanName.length >= 3;
+
+    if (!hasValidTc && !hasValidName) {
       setRecentWarning(null);
       return;
     }
 
     setCheckingRecent(true);
     try {
-      const params = new URLSearchParams({ tc: cleanTc });
+      const params = new URLSearchParams();
+      if (hasValidTc) params.append("tc", cleanTc);
+      if (hasValidName) params.append("name", cleanName);
       const effectiveExcludeId = excludeId || editingRecord?._id;
       if (effectiveExcludeId) params.append("excludeId", effectiveExcludeId);
       const res = await fetch(`/api/in-kind-aid/check-recent?${params.toString()}`);
@@ -176,8 +201,8 @@ export default function InKindAidPage() {
   const handleTcChange = (val: string) => {
     const numeric = val.replace(/\D/g, "").slice(0, 11);
     setFormData((prev) => ({ ...prev, tcNo: numeric }));
-    if (numeric.length === 11) {
-      checkRecentDelivery(numeric);
+    if (numeric.length === 11 || formData.citizenName.trim().length >= 3) {
+      checkRecentDelivery(numeric, undefined, formData.citizenName);
     } else {
       setRecentWarning(null);
     }
@@ -185,12 +210,15 @@ export default function InKindAidPage() {
 
   const handleCitizenNameChange = (val: string) => {
     setFormData((prev) => ({ ...prev, citizenName: val }));
-    if (!formData.tcNo) {
-      const extracted = extractTC(val);
-      if (extracted && extracted.length === 11) {
-        setFormData((prev) => ({ ...prev, tcNo: extracted }));
-        checkRecentDelivery(extracted);
-      }
+    const extracted = extractTC(val);
+    const nextTc = !formData.tcNo && extracted && extracted.length === 11 ? extracted : formData.tcNo;
+    if (!formData.tcNo && extracted && extracted.length === 11) {
+      setFormData((prev) => ({ ...prev, tcNo: extracted }));
+    }
+    if ((nextTc && nextTc.length === 11) || val.trim().length >= 3) {
+      checkRecentDelivery(nextTc, undefined, val);
+    } else {
+      setRecentWarning(null);
     }
   };
 
@@ -223,16 +251,26 @@ export default function InKindAidPage() {
     }
   };
 
-  const handleDeleteType = async (id: string) => {
-    if (!confirm("Bu tanımı silmek istediğinize emin misiniz?")) return;
-    try {
-      const res = await fetch(`/api/in-kind-aid-types?id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Silme başarısız");
-      toast.success("Tanım silindi");
-      fetchAidTypes();
-    } catch (error: any) {
-      toast.error(error.message || "Bir hata oluştu");
-    }
+  const handleDeleteType = (id: string) => {
+    setDialogState({
+      isOpen: true,
+      type: "danger",
+      title: "Yardım Türünü Sil",
+      message: "Bu ayni yardım tanımını silmek istediğinize emin misiniz?",
+      confirmText: "Evet, Sil",
+      cancelText: "Vazgeç",
+      onConfirm: async () => {
+        setDialogState((prev) => ({ ...prev, isOpen: false }));
+        try {
+          const res = await fetch(`/api/in-kind-aid-types?id=${id}`, { method: "DELETE" });
+          if (!res.ok) throw new Error("Silme başarısız");
+          toast.success("Tanım silindi");
+          fetchAidTypes();
+        } catch (error: any) {
+          toast.error(error.message || "Bir hata oluştu");
+        }
+      },
+    });
   };
 
   const addItemToForm = () => {
@@ -267,22 +305,7 @@ export default function InKindAidPage() {
     }));
   };
 
-  const handleSubmit = async (e: React.FormEvent) => {
-    e.preventDefault();
-
-    if (formData.items.length === 0) {
-      toast.error("Lütfen en az bir ayni yardım kalemi ekleyin");
-      return;
-    }
-
-    // Son 30 gün içinde yardım alınmışsa onay uyarısı
-    if (recentWarning && recentWarning.hasRecentDelivery) {
-      const confirmMsg = `⚠️ DİKKAT!\n\nBu T.C. Kimlik Numarasına son 30 gün içinde (${recentWarning.daysAgo} gün önce) ayni yardım teslim edilmiştir!\n\nYine de yeni kayıt oluşturmak istiyor musunuz?`;
-      if (!window.confirm(confirmMsg)) {
-        return;
-      }
-    }
-
+  const executeSaveAid = async () => {
     try {
       if (editingRecord) {
         const res = await fetch("/api/in-kind-aid", {
@@ -311,16 +334,63 @@ export default function InKindAidPage() {
     }
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Bu kaydı silmek istediğinize emin misiniz?")) return;
-    try {
-      const res = await fetch(`/api/in-kind-aid?id=${id}`, { method: "DELETE" });
-      if (!res.ok) throw new Error("Silme işlemi başarısız");
-      toast.success("Kayıt başarıyla silindi");
-      fetchRecords();
-    } catch (error: any) {
-      toast.error(error.message || "Bir hata oluştu");
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+
+    if (formData.items.length === 0) {
+      toast.error("Lütfen en az bir ayni yardım kalemi ekleyin");
+      return;
     }
+
+    // Son 30 gün içinde yardım alınmışsa modern onay uyarısı
+    if (recentWarning && recentWarning.hasRecentDelivery) {
+      setDialogState({
+        isOpen: true,
+        type: "warning",
+        title: "DİKKAT: Son 30 Gün İçinde Teslimat Yapılmış!",
+        confirmText: "Onayla ve Devam Et",
+        cancelText: "Vazgeç",
+        message: (
+          <div className="space-y-2 text-left">
+            <p className="text-red-700 font-semibold text-sm">
+              Bu kişiye son 30 gün içinde ({recentWarning.daysAgo} gün önce) ayni yardım teslim edilmiştir!
+            </p>
+            <p className="text-xs text-slate-600">
+              Mükerrer teslimatı önlemek için kontrol ediniz. Yine de yeni teslimat kaydı oluşturmak istiyor musunuz?
+            </p>
+          </div>
+        ),
+        onConfirm: async () => {
+          setDialogState((prev) => ({ ...prev, isOpen: false }));
+          await executeSaveAid();
+        },
+      });
+      return;
+    }
+
+    await executeSaveAid();
+  };
+
+  const handleDelete = (id: string) => {
+    setDialogState({
+      isOpen: true,
+      type: "danger",
+      title: "Ayni Yardım Kaydını Sil",
+      confirmText: "Evet, Sil",
+      cancelText: "Vazgeç",
+      message: "Bu ayni yardım kaydını kalıcı olarak silmek istediğinize emin misiniz?",
+      onConfirm: async () => {
+        setDialogState((prev) => ({ ...prev, isOpen: false }));
+        try {
+          const res = await fetch(`/api/in-kind-aid?id=${id}`, { method: "DELETE" });
+          if (!res.ok) throw new Error("Silme işlemi başarısız");
+          toast.success("Kayıt başarıyla silindi");
+          fetchRecords();
+        } catch (error: any) {
+          toast.error(error.message || "Bir hata oluştu");
+        }
+      },
+    });
   };
 
   const resetForm = () => {
@@ -1772,6 +1842,17 @@ export default function InKindAidPage() {
           </div>
         </div>
       )}
+
+      <ModernConfirmDialog
+        isOpen={dialogState.isOpen}
+        title={dialogState.title}
+        message={dialogState.message}
+        type={dialogState.type}
+        confirmText={dialogState.confirmText}
+        cancelText={dialogState.cancelText}
+        onConfirm={dialogState.onConfirm}
+        onClose={() => setDialogState((prev) => ({ ...prev, isOpen: false }))}
+      />
     </div>
   );
 }

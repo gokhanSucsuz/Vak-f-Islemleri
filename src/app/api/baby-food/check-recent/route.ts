@@ -5,6 +5,7 @@ import dbConnect from "@/lib/db";
 import BabyFood from "@/models/BabyFood";
 import User from "@/models/User";
 import { getCalendarDaysDiff } from "@/lib/date";
+import { extractTC, turkishIncludes } from "@/lib/turkish";
 
 export async function GET(req: Request) {
   try {
@@ -14,15 +15,18 @@ export async function GET(req: Request) {
     }
 
     const { searchParams } = new URL(req.url);
-    const tc = searchParams.get("tc")?.trim();
+    const tc = searchParams.get("tc")?.trim() || "";
+    const name = searchParams.get("name")?.trim() || "";
     const excludeId = searchParams.get("excludeId")?.trim();
 
-    if (!tc || tc.length !== 11 || !/^\d{11}$/.test(tc)) {
-      return NextResponse.json({ hasRecentDelivery: false, message: "Geçersiz TC" });
+    const hasValidTc = tc.length === 11 && /^\d{11}$/.test(tc);
+    const hasValidName = name.length >= 3;
+
+    if (!hasValidTc && !hasValidName) {
+      return NextResponse.json({ hasRecentDelivery: false, message: "Geçersiz parametre" });
     }
 
     await dbConnect();
-    // Ensure User model is loaded for populate
     if (!User) {
       // noop
     }
@@ -39,21 +43,35 @@ export async function GET(req: Request) {
           { deliveryDate: null, createdAt: { $gte: thirtyDaysAgo } },
         ],
       },
-      {
-        $or: [
-          { tcNo: tc },
-          { motherInfo: { $regex: tc, $options: "i" } },
-        ],
-      },
     ];
 
     if (excludeId) {
       conditions.push({ _id: { $ne: excludeId } });
     }
 
-    const recentRecords = await BabyFood.find({ $and: conditions })
+    // Şifreli alanlar (tcNo, motherInfo) Mongoose post-find hook'u ile çözüldükten sonra bellekte karşılaştırılır
+    const allRecent = await BabyFood.find({ $and: conditions })
       .populate("createdBy", "name")
       .sort({ deliveryDate: -1, createdAt: -1 });
+
+    const recentRecords = allRecent.filter((r: any) => {
+      const recTc = String(r.tcNo || "").trim() || extractTC(r.motherInfo || "");
+      const recMother = String(r.motherInfo || "").trim();
+      const recReceiver = String(r.receiver || "").trim();
+
+      if (hasValidTc) {
+        if (recTc === tc || recMother.includes(tc)) return true;
+      }
+      if (hasValidName) {
+        if (
+          (recMother && turkishIncludes(recMother, name)) ||
+          (recReceiver && turkishIncludes(recReceiver, name))
+        ) {
+          return true;
+        }
+      }
+      return false;
+    });
 
     if (!recentRecords || recentRecords.length === 0) {
       return NextResponse.json({ hasRecentDelivery: false });

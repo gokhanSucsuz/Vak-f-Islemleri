@@ -5,6 +5,8 @@ import dbConnect from "@/lib/db";
 import Transaction from "@/models/Transaction";
 import ApplicationFile from "@/models/ApplicationFile";
 import Petition from "@/models/Petition";
+import BabyFood from "@/models/BabyFood";
+import InKindAid from "@/models/InKindAid";
 import { extractTC, turkishIncludes } from "@/lib/turkish";
 
 export async function POST(req: Request) {
@@ -36,7 +38,7 @@ export async function POST(req: Request) {
 
     const matches: Array<{
       id: string;
-      source: "İşlem Kaydı" | "Başvuru Dosyası" | "Dilekçe";
+      source: "İşlem Kaydı" | "Başvuru Dosyası" | "Dilekçe" | "Bebek Maması" | "Ayni Yardım";
       citizenInfo: string;
       detail: string;
       staffName: string;
@@ -65,7 +67,7 @@ export async function POST(req: Request) {
       return false;
     };
 
-    const [recentTx, recentApps, recentPetitions] = await Promise.all([
+    const [recentTx, recentApps, recentPetitions, recentBabyFood, recentInKind] = await Promise.all([
       Transaction.find({ createdAt: { $gte: oneMonthAgo } })
         .populate("userId", "name")
         .populate("helpType", "name")
@@ -76,6 +78,22 @@ export async function POST(req: Request) {
       Petition.find({ createdAt: { $gte: oneMonthAgo } })
         .populate("createdBy", "name")
         .sort({ createdAt: -1 }),
+      BabyFood.find({
+        $or: [
+          { deliveryDate: { $gte: oneMonthAgo } },
+          { createdAt: { $gte: oneMonthAgo } },
+        ],
+      })
+        .populate("createdBy", "name")
+        .sort({ deliveryDate: -1, createdAt: -1 }),
+      InKindAid.find({
+        $or: [
+          { deliveryDate: { $gte: oneMonthAgo } },
+          { createdAt: { $gte: oneMonthAgo } },
+        ],
+      })
+        .populate("createdBy", "name")
+        .sort({ deliveryDate: -1, createdAt: -1 }),
     ]);
 
     for (const t of recentTx) {
@@ -113,6 +131,38 @@ export async function POST(req: Request) {
           detail: p.subject || (p.petitionType === "matbu" ? "Matbu Dilekçe" : "Detaylı Dilekçe"),
           staffName: (p.createdBy as any)?.name || "Personel",
           createdAt: p.createdAt,
+        });
+      }
+    }
+
+    for (const b of recentBabyFood) {
+      if (isMatch(b.motherInfo, b.tcNo)) {
+        const itemsSummary = (b.items || [])
+          .map((it: any) => `${it.quantity || 1}x ${it.brand || ""} ${it.foodName || ""}`)
+          .join(", ");
+        matches.push({
+          id: `bf-${b._id}`,
+          source: "Bebek Maması",
+          citizenInfo: `${b.motherInfo}${b.tcNo && !String(b.motherInfo).includes(b.tcNo) ? ` (${b.tcNo})` : ""}`,
+          detail: itemsSummary || "Bebek Maması Teslimatı",
+          staffName: (b.createdBy as any)?.name || "Personel",
+          createdAt: b.deliveryDate || b.createdAt,
+        });
+      }
+    }
+
+    for (const ik of recentInKind) {
+      if (isMatch(ik.citizenName, ik.tcNo)) {
+        const itemsSummary = (ik.items || [])
+          .map((it: any) => `${it.quantity || 1} ${it.unit || ""} ${it.aidType || ""}`)
+          .join(", ");
+        matches.push({
+          id: `ik-${ik._id}`,
+          source: "Ayni Yardım",
+          citizenInfo: `${ik.citizenName}${ik.tcNo && !String(ik.citizenName).includes(ik.tcNo) ? ` (${ik.tcNo})` : ""}`,
+          detail: itemsSummary || "Ayni Yardım Teslimatı",
+          staffName: (ik.createdBy as any)?.name || "Personel",
+          createdAt: ik.deliveryDate || ik.createdAt,
         });
       }
     }
