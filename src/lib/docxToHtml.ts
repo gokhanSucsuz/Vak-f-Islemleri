@@ -270,7 +270,8 @@ function renderTable(tblNode: XmlNode): string {
         nonEmptyParts.length > 0 ? nonEmptyParts.join("") : cellParts[0] || "<p>&nbsp;</p>";
 
       const cellBorders = tcPr ? hasVisibleBorders(findChild(tcPr, "w:tcBorders")) : null;
-      const showCellBorder = cellBorders !== null ? cellBorders : tableHasBorders !== false;
+      const showCellBorder =
+        tableHasBorders === false ? cellBorders === true : cellBorders !== false;
       const borderStyle = showCellBorder ? "border:1.5px solid #000;" : "border:none;";
 
       html += `<td${colspan > 1 ? ` colspan="${colspan}"` : ""} style="${borderStyle}padding:5pt 7pt;vertical-align:${vAlign};${widthStyle}">${cellInner}</td>`;

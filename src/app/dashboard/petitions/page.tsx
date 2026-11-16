@@ -58,7 +58,7 @@ interface PetitionRecord {
   tcNo: string;
   subject?: string;
   originalSize?: number;
-  createdBy?: { _id: string; name: string; email: string };
+  createdBy?: { _id: string; name: string; email: string; title?: string };
   updatedBy?: { _id: string; name: string; email: string };
   createdAt: string;
   updatedAt: string;
@@ -127,6 +127,10 @@ export default function PetitionsPage() {
   const [tcNo, setTcNo] = useState("");
   const [subject, setSubject] = useState("");
   const [editorInitialHtml, setEditorInitialHtml] = useState("");
+  const [editorStaffInfo, setEditorStaffInfo] = useState<{ name: string; title: string }>({
+    name: "",
+    title: "",
+  });
   const [saving, setSaving] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
 
@@ -287,6 +291,8 @@ export default function PetitionsPage() {
         cell.style.removeProperty("height");
         if (type === "matbu") {
           cell.style.border = "none";
+        } else {
+          cell.style.border = "1.5px solid #000";
         }
         if (!cell.getAttribute("style")?.trim()) cell.removeAttribute("style");
         const paragraphs = Array.from(cell.querySelectorAll("p"));
@@ -307,6 +313,9 @@ export default function PetitionsPage() {
       });
 
       if (type !== "matbu") {
+        doc.querySelectorAll<HTMLElement>("table").forEach((tbl) => {
+          tbl.removeAttribute("data-borderless");
+        });
         const isCellEmpty = (cell: HTMLElement) =>
           (cell.textContent || "").replace(/\u00a0/g, " ").trim().length === 0 &&
           !cell.querySelector("table");
@@ -406,15 +415,16 @@ export default function PetitionsPage() {
       return;
     }
 
-    const todayStr = new Date().toLocaleDateString("tr-TR", {
-      day: "2-digit",
-      month: "2-digit",
-      year: "numeric",
-    });
-    let filledHtml = (tpl.htmlContent || "<p></p>").replace(
-      /\(\s*tar[iİıI]h\s*\)|\[\s*tar[iİıI]h\s*\]|\{\{\s*tar[iİıI]h\s*\}\}/gi,
-      todayStr
-    );
+    const now = new Date();
+    const todayStr = `${String(now.getDate()).padStart(2, "0")}.${String(
+      now.getMonth() + 1
+    ).padStart(2, "0")}.${now.getFullYear()}`;
+    let filledHtml = (tpl.htmlContent || "<p></p>")
+      .replace(
+        /\(\s*(?:<[^>]+>\s*)*tar[iİıI]h(?:\s*<[^>]+>)*\s*\)|\[\s*(?:<[^>]+>\s*)*tar[iİıI]h(?:\s*<[^>]+>)*\s*\]|\{\{\s*(?:<[^>]+>\s*)*tar[iİıI]h(?:\s*<[^>]+>)*\s*\}\}/gi,
+        todayStr
+      )
+      .replace(/\.{2,}\s*\/\s*\.{2,}\s*\/\s*\d{4}/g, todayStr);
 
     const isDirectHtmlTemplate = (tpl.fileName || "").toLowerCase().endsWith(".html");
     if (!isDirectHtmlTemplate) {
@@ -439,6 +449,10 @@ export default function PetitionsPage() {
     setCitizenName("");
     setTcNo("");
     setSubject("");
+    setEditorStaffInfo({
+      name: session?.user?.name || "Personel",
+      title: (session?.user as any)?.title || "Personel",
+    });
     setEditorInitialHtml(filledHtml);
     setEditorMode(true);
   };
@@ -482,6 +496,10 @@ export default function PetitionsPage() {
         setCitizenName(full.citizenName);
         setTcNo(full.tcNo);
         setSubject(full.subject || "");
+        setEditorStaffInfo({
+          name: full.createdBy?.name || session?.user?.name || "Personel",
+          title: full.createdBy?.title || "Personel",
+        });
         setEditorInitialHtml(full.htmlContent || "<p></p>");
         setEditorMode(true);
       } else if (action === "useAsTemplate") {
@@ -491,6 +509,10 @@ export default function PetitionsPage() {
         setCitizenName("");
         setTcNo("");
         setSubject(full.subject || "");
+        setEditorStaffInfo({
+          name: session?.user?.name || "Personel",
+          title: (session?.user as any)?.title || "Personel",
+        });
         setEditorInitialHtml(normalizePetitionTableHtml(full.htmlContent || "<p></p>", full.petitionType));
         setEditorMode(true);
         toast.success("Kayıtlı dilekçe şablon olarak açıldı. Bilgileri güncelleyip kaydedebilirsiniz.");
@@ -757,7 +779,7 @@ export default function PetitionsPage() {
     const html = editorRef.current?.innerHTML || "";
     const namePart = citizenName.trim() || "Dilekce";
     const typePart = editorType === "matbu" ? "Matbu" : "Detayli";
-    await downloadPetitionAsDocx(html, `${namePart}_${typePart}_Dilekce`);
+    await downloadPetitionAsDocx(html, `${namePart}_${typePart}_Dilekce`, editorStaffInfo);
     toast.success("Word (.docx) dosyası indirildi.");
   };
 
@@ -1016,25 +1038,41 @@ export default function PetitionsPage() {
         <style>{`@media print { @page { size: A4; margin: 10mm; } html, body { background: #fff !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; } body * { min-height: 0 !important; } }`}</style>
 
         {/* A4 Word Kağıt Alanı */}
-        <div className="bg-slate-200/70 p-4 sm:p-8 rounded-3xl overflow-x-auto print:bg-white print:p-0 print:overflow-visible">
-          <div className="w-full max-w-[210mm] min-h-[297mm] print:min-h-0 print:h-auto mx-auto bg-white shadow-xl border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:p-0">
-            <div className="flex justify-center mb-3">
-              <img
-                src="/logo-vakif.jpg"
-                alt="Vakıf Logosu"
-                className="w-16 h-16 object-contain rounded-full"
+        <div className="bg-slate-200/70 p-2 sm:p-8 rounded-3xl overflow-x-auto print:bg-white print:p-0 print:overflow-visible">
+          <div className="w-[210mm] min-h-[297mm] print:min-h-0 print:h-auto mx-auto bg-white shadow-xl border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:p-0 flex flex-col justify-between">
+            <div>
+              <div className="flex justify-center mb-3">
+                <img
+                  src="/logo-vakif.jpg"
+                  alt="Vakıf Logosu"
+                  className="w-16 h-16 object-contain rounded-full"
+                />
+              </div>
+              <div
+                ref={editorRef}
+                contentEditable
+                suppressContentEditableWarning
+                className={`w-full min-h-[225mm] print:min-h-0 text-slate-900 text-[13.5px] leading-snug focus:outline-none [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${
+                  editorType === "matbu"
+                    ? "[&_td]:!border-0 [&_th]:!border-0"
+                    : "[&_td]:border [&_td]:border-black [&_th]:border [&_th]:border-black"
+                }`}
               />
             </div>
-            <div
-              ref={editorRef}
-              contentEditable
-              suppressContentEditableWarning
-              className={`w-full min-h-[250mm] print:min-h-0 text-slate-900 text-[13.5px] leading-snug focus:outline-none [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${
-                editorType === "matbu"
-                  ? "[&_td]:!border-0 [&_th]:!border-0"
-                  : "[&_td]:border [&_td]:border-black [&_th]:border [&_th]:border-black"
-              }`}
-            />
+
+            {/* Standart Altbilgi (Resim 2 formatı) */}
+            <div className="pt-8 mt-6 flex justify-between items-end gap-6 text-[10.5px] leading-snug text-slate-600 select-none">
+              <div className="space-y-0.5">
+                <p>Babademirtaş Mahallesi Sebil Sokak No:15/EDİRNE</p>
+                <p>Telefon No: 0 (284) 2120957 Faks No: 0(284) 2120957</p>
+                <p>e-Posta: edirnesydv@gmail.com</p>
+              </div>
+              <div className="space-y-0.5 text-left min-w-[200px]">
+                <p>Bilgi için: {editorStaffInfo.name || session?.user?.name || "Personel"}</p>
+                <p>{editorStaffInfo.title || (session?.user as any)?.title || "Personel"}</p>
+                <p>Telefon No: 0 (284) 2120957</p>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -1600,7 +1638,11 @@ export default function PetitionsPage() {
                   onClick={async () => {
                     await downloadPetitionAsDocx(
                       previewPetition.htmlContent,
-                      `${previewPetition.citizenName}_${previewPetition.petitionType}_Dilekce`
+                      `${previewPetition.citizenName}_${previewPetition.petitionType}_Dilekce`,
+                      {
+                        name: previewPetition.createdBy?.name || "Personel",
+                        title: previewPetition.createdBy?.title || "Personel",
+                      }
                     );
                     toast.success("Word (.docx) dosyası indirildi.");
                   }}
@@ -1619,24 +1661,40 @@ export default function PetitionsPage() {
               </div>
             </div>
 
-            <div className="flex-1 overflow-y-auto bg-slate-100 p-4 sm:p-8 rounded-2xl mt-4 print:bg-white print:p-0 print:mt-0 print:overflow-visible">
+            <div className="flex-1 overflow-y-auto overflow-x-auto bg-slate-100 p-2 sm:p-8 rounded-2xl mt-4 print:bg-white print:p-0 print:mt-0 print:overflow-visible">
               <style>{`@media print { @page { size: A4; margin: 10mm; } html, body { background: #fff !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; } body * { min-height: 0 !important; } }`}</style>
-              <div className="w-full max-w-[210mm] min-h-[260mm] print:min-h-0 print:h-auto mx-auto bg-white shadow-md border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:p-0">
-                <div className="flex justify-center mb-3">
-                  <img
-                    src="/logo-vakif.jpg"
-                    alt="Vakıf Logosu"
-                    className="w-16 h-16 object-contain rounded-full"
+              <div className="w-[210mm] min-h-[260mm] print:min-h-0 print:h-auto mx-auto bg-white shadow-md border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:p-0 flex flex-col justify-between">
+                <div>
+                  <div className="flex justify-center mb-3">
+                    <img
+                      src="/logo-vakif.jpg"
+                      alt="Vakıf Logosu"
+                      className="w-16 h-16 object-contain rounded-full"
+                    />
+                  </div>
+                  <div
+                    className={`text-slate-900 text-[13.5px] leading-snug [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${
+                      previewPetition.petitionType === "matbu"
+                        ? "[&_td]:!border-0 [&_th]:!border-0"
+                        : "[&_td]:border [&_td]:border-black [&_th]:border [&_th]:border-black"
+                    }`}
+                    dangerouslySetInnerHTML={{ __html: previewPetition.htmlContent }}
                   />
                 </div>
-                <div
-                  className={`text-slate-900 text-[13.5px] leading-snug [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${
-                    previewPetition.petitionType === "matbu"
-                      ? "[&_td]:!border-0 [&_th]:!border-0"
-                      : "[&_td]:border [&_td]:border-black [&_th]:border [&_th]:border-black"
-                  }`}
-                  dangerouslySetInnerHTML={{ __html: previewPetition.htmlContent }}
-                />
+
+                {/* Standart Altbilgi (Resim 2 formatı) */}
+                <div className="pt-8 mt-6 flex justify-between items-end gap-6 text-[10.5px] leading-snug text-slate-600 select-none">
+                  <div className="space-y-0.5">
+                    <p>Babademirtaş Mahallesi Sebil Sokak No:15/EDİRNE</p>
+                    <p>Telefon No: 0 (284) 2120957 Faks No: 0(284) 2120957</p>
+                    <p>e-Posta: edirnesydv@gmail.com</p>
+                  </div>
+                  <div className="space-y-0.5 text-left min-w-[200px]">
+                    <p>Bilgi için: {previewPetition.createdBy?.name || "Personel"}</p>
+                    <p>{previewPetition.createdBy?.title || "Personel"}</p>
+                    <p>Telefon No: 0 (284) 2120957</p>
+                  </div>
+                </div>
               </div>
             </div>
           </div>

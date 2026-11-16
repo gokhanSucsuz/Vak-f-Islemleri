@@ -34,8 +34,9 @@ function computeSearchRelevance(
   if (name.includes(normSearch)) return 800;
 
   // 3. Eş Adı Soyadı tam ifade eşleşmesi
-  if (spouse === normSearch) return 650;
-  if (spouse.includes(normSearch)) return 600;
+  if (spouse === normSearch) return 900;
+  if (spouse.startsWith(normSearch)) return 820;
+  if (spouse.includes(normSearch)) return 750;
 
   // 4. Tüm kelimeler Ad Soyad içinde geçiyorsa ("Ali Mehmet Kaya" için "ali kaya")
   if (normTokens.length > 1 && normTokens.every((t) => name.includes(t))) {
@@ -220,7 +221,18 @@ export async function GET(req: Request) {
       }));
       scored.sort((a, b) => b.score - a.score);
 
-      const ranked = scored.map((item) => item.doc);
+      const hasExact = scored.some((item) => item.score >= 900);
+      const hasPhrase = scored.some((item) => item.score >= 600);
+      const filteredScored = hasExact
+        ? scored.filter((item) => item.score >= 900)
+        : hasPhrase
+        ? scored.filter((item) => item.score >= 600)
+        : scored;
+
+      const ranked = filteredScored.map((item) => ({
+        ...item.doc,
+        _exactMatch: item.score >= 600,
+      }));
       totalMatched = ranked.length;
 
       if (fetchAll) {

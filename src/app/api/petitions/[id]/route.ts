@@ -20,7 +20,7 @@ export async function GET(
     await dbConnect();
 
     const doc: any = await Petition.findById(id)
-      .populate("createdBy", "name email")
+      .populate("createdBy", "name email title")
       .populate("updatedBy", "name email")
       .lean();
 
@@ -118,7 +118,7 @@ export async function PUT(
       { new: true }
     )
       .select("-contentCompressed")
-      .populate("createdBy", "name email")
+      .populate("createdBy", "name email title")
       .populate("updatedBy", "name email")
       .lean();
 

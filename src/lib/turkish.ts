@@ -1,4 +1,5 @@
 import * as XLSX from "xlsx";
+import toast from "react-hot-toast";
 
 /**
  * Türkçe karakter uyumlu küçük harfe dönüştürme
@@ -212,7 +213,7 @@ export function parseDateOrExtractDate(val: any): { date: Date | null; remaining
  */
 export function exportToExcel(data: any[], fileName: string, sheetName = "Sayfa1") {
   if (!data || data.length === 0) {
-    alert("Dışa aktarılacak veri bulunamadı.");
+    toast.error("Dışa aktarılacak veri bulunamadı.");
     return;
   }
 
@@ -248,7 +249,7 @@ export function exportStyledApplicationExcel(
   }
 ) {
   if (!records || records.length === 0) {
-    alert("Dışa aktarılacak kayıt bulunamadı.");
+    toast.error("Dışa aktarılacak kayıt bulunamadı.");
     return;
   }
 

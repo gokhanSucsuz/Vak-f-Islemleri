@@ -22,7 +22,7 @@ export async function GET() {
 
     await dbConnect();
     const rawUsers = await User.find({ role: { $in: ["personnel", "manager"] } })
-      .select("name email role canManageApplications authorizedModules")
+      .select("name email role title canManageApplications authorizedModules")
       .sort({ name: 1 })
       .lean();
 
@@ -33,6 +33,7 @@ export async function GET() {
         name: u.name,
         email: u.email,
         role: u.role,
+        title: u.title || "",
         canManageApplications: authorizedModules.length > 0,
         authorizedModules,
       };
@@ -57,10 +58,29 @@ export async function POST(req: Request) {
 
     await dbConnect();
     const body = await req.json();
-    const { userId, authorizedModules, canManageApplications } = body;
+    const { userId, authorizedModules, canManageApplications, title } = body;
 
     if (!userId) {
       return NextResponse.json({ error: "Kullanıcı ID zorunludur." }, { status: 400 });
+    }
+
+    if (typeof title === "string" && authorizedModules === undefined && canManageApplications === undefined) {
+      const targetUser = await User.findById(userId);
+      if (!targetUser) {
+        return NextResponse.json({ error: "Kullanıcı bulunamadı." }, { status: 404 });
+      }
+      targetUser.title = title.trim();
+      await targetUser.save();
+      try {
+        await Log.create({
+          userId: session.user.id,
+          action: "Personel Görevi Güncellendi",
+          details: `${targetUser.name} (${targetUser.email}) görevi: ${targetUser.title || "Belirtilmedi"}`,
+        });
+      } catch {
+        /* ignore */
+      }
+      return NextResponse.json({ success: true, title: targetUser.title });
     }
 
     let cleanModules: string[] = [];

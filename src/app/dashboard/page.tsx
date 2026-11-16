@@ -156,58 +156,105 @@ export default function DashboardPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (matchingTodayTransactions.length > 0) {
-      setDialogState({
-        isOpen: true,
-        type: "warning",
-        title: "DİKKAT: Bugün Bu Kişi İçin Zaten Kayıt Girilmiş!",
-        confirmText: "Yine de Kaydet",
-        cancelText: "Vazgeç",
-        message: (
-          <div className="space-y-3 text-left">
-            <p className="text-sm text-amber-800 font-semibold">
-              Bugünkü kayıtlarınız arasında bu kişiyle eşleşen {matchingTodayTransactions.length} kayıt bulundu:
-            </p>
-            <div className="max-h-40 overflow-y-auto space-y-1.5 bg-amber-50/70 p-2.5 rounded-xl border border-amber-200">
-              {matchingTodayTransactions.map((t: any) => (
-                <div key={t._id} className="text-xs flex items-center justify-between gap-2 bg-white px-2.5 py-1.5 rounded-lg border border-amber-100">
-                  <span className="font-semibold text-slate-800 truncate">{t.citizenInfo}</span>
-                  <span className="text-slate-500 whitespace-nowrap">
-                    {t.helpType?.name || "-"} • {format(new Date(t.createdAt), "HH:mm")}
-                  </span>
-                </div>
-              ))}
-            </div>
-            <p className="text-xs text-slate-600">
-              Mükerrer kayıt girmemek için kontrol ediniz. Yine de yeni kayıt eklemek istiyor musunuz?
-            </p>
-          </div>
-        ),
-        onConfirm: async () => {
-          setDialogState((prev) => ({ ...prev, isOpen: false }));
-          await executeSaveTransaction();
-        },
+    try {
+      const checkRes = await fetch("/api/transactions/check-recent", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ citizenInfo: formData.citizenInfo }),
       });
-      return;
+      const checkData = checkRes.ok ? await checkRes.json() : { matches: [] };
+      const recentMatches =
+        Array.isArray(checkData.matches) && checkData.matches.length > 0
+          ? checkData.matches
+          : matchingTodayTransactions.map((t: any) => ({
+              id: t._id,
+              source: "İşlem Kaydı",
+              citizenInfo: t.citizenInfo,
+              detail: t.helpType?.name || "İşlem",
+              staffName: t.userId?.name || "Personel",
+              createdAt: t.createdAt,
+            }));
+
+      if (recentMatches.length > 0) {
+        setDialogState({
+          isOpen: true,
+          type: "warning",
+          title: "DİKKAT: Son 1 Ay İçinde Kayıt Bulundu!",
+          confirmText: "Onayla ve Devam Et",
+          cancelText: "İşlemi İptal Et",
+          message: (
+            <div className="space-y-3 text-left">
+              <p className="text-sm text-amber-800 font-semibold">
+                Bu kişiyle eşleşen son 1 ay içinde yapılmış {recentMatches.length} işlem / başvuru kaydı tespit edildi:
+              </p>
+              <div className="max-h-52 overflow-y-auto space-y-2 bg-amber-50/80 p-2.5 rounded-xl border border-amber-200">
+                {recentMatches.map((m: any) => (
+                  <div
+                    key={m.id}
+                    className="text-xs flex flex-col gap-1 bg-white px-3 py-2 rounded-lg border border-amber-100 shadow-xs"
+                  >
+                    <div className="flex items-center justify-between gap-2">
+                      <span className="font-bold text-slate-800 truncate">{m.citizenInfo}</span>
+                      <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 whitespace-nowrap">
+                        {m.source}
+                      </span>
+                    </div>
+                    <div className="flex items-center justify-between gap-2 text-slate-500">
+                      <span className="truncate">{m.detail} • {m.staffName}</span>
+                      <span className="whitespace-nowrap font-mono">
+                        {format(new Date(m.createdAt), "dd.MM.yyyy HH:mm")}
+                      </span>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <p className="text-xs text-slate-600">
+                Uyarıyı onaylayarak işleme devam edebilir veya vazgeçebilirsiniz.
+              </p>
+            </div>
+          ),
+          onConfirm: async () => {
+            setDialogState((prev) => ({ ...prev, isOpen: false }));
+            await executeSaveTransaction();
+          },
+        });
+        return;
+      }
+    } catch {
+      // Check başarısız olursa kaydetmeye devam et
     }
 
     await executeSaveTransaction();
   };
 
-  const handleDelete = async (id: string) => {
-    if (!confirm("Bu kaydı silmek istediğinize emin misiniz?")) return;
-    
-    try {
-      const res = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
-      if (res.ok) {
-        toast.success("Kayıt silindi");
-        fetchData();
-      } else {
-        toast.error("Silinemedi");
-      }
-    } catch (e) {
-      toast.error("Bir hata oluştu");
-    }
+  const handleDelete = (id: string) => {
+    setDialogState({
+      isOpen: true,
+      type: "danger",
+      title: "İşlem Kaydını Sil",
+      confirmText: "Evet, Sil",
+      cancelText: "Vazgeç",
+      message: (
+        <p className="text-sm text-slate-600">
+          Bu işlem kaydını kalıcı olarak silmek istediğinize emin misiniz?
+        </p>
+      ),
+      onConfirm: async () => {
+        setDialogState((prev) => ({ ...prev, isOpen: false }));
+        try {
+          const res = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+          if (res.ok) {
+            toast.success("Kayıt silindi");
+            fetchData();
+          } else {
+            const err = await res.json();
+            toast.error(err.error || "Silinemedi");
+          }
+        } catch {
+          toast.error("Bir hata oluştu");
+        }
+      },
+    });
   };
 
   const handleUpdate = async (id: string) => {
@@ -359,46 +406,44 @@ export default function DashboardPage() {
 
       {/* Kayıtlar Listesi */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-        <div className="p-6 border-b border-slate-100">
+        <div className="p-4 sm:p-6 border-b border-slate-100">
           <h2 className="text-lg font-bold text-slate-800">
-            {isSuperAdminOrManager ? "Bugünkü Personel İşlemleri" : "Bugünkü Kayıtlarınız"}
+            Bugünkü Personel İşlemleri
           </h2>
         </div>
         <div className="overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50">
-                <th className="py-3 px-6 font-semibold text-slate-600 text-sm whitespace-nowrap">Tarih / Saat</th>
-                {isSuperAdminOrManager && (
-                  <th className="py-3 px-6 font-semibold text-slate-600 text-sm">Personel</th>
-                )}
-                <th className="py-3 px-6 font-semibold text-slate-600 text-sm">Vatandaş Bilgisi</th>
-                <th className="py-3 px-6 font-semibold text-slate-600 text-sm">Tür</th>
+                <th className="py-3 px-4 sm:px-6 font-semibold text-slate-600 text-xs sm:text-sm whitespace-nowrap">Tarih / Saat</th>
+                <th className="py-3 px-4 sm:px-6 font-semibold text-slate-600 text-xs sm:text-sm whitespace-nowrap">Personel</th>
+                <th className="py-3 px-4 sm:px-6 font-semibold text-slate-600 text-xs sm:text-sm">Vatandaş Bilgisi</th>
+                <th className="py-3 px-4 sm:px-6 font-semibold text-slate-600 text-xs sm:text-sm">Tür</th>
                 {session?.user?.role !== "manager" && (
-                  <th className="py-3 px-6 font-semibold text-slate-600 text-sm text-right">İşlemler</th>
+                  <th className="py-3 px-4 sm:px-6 font-semibold text-slate-600 text-xs sm:text-sm text-right">İşlemler</th>
                 )}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {transactions.length === 0 ? (
                 <tr>
-                  <td colSpan={session?.user?.role === "superadmin" ? 5 : 4} className="py-8 text-center text-slate-500">Henüz bir kayıt bulunmamaktadır.</td>
+                  <td colSpan={session?.user?.role !== "manager" ? 5 : 4} className="py-8 text-center text-slate-500">Henüz bir kayıt bulunmamaktadır.</td>
                 </tr>
               ) : (
                 transactions.map((t: any) => {
                   const isEditing = editingId === t._id;
+                  const isOwner = String(t.userId?._id || t.userId || "") === String(session?.user?.id || "");
+                  const canCrud = session?.user?.role === "superadmin" || (session?.user?.role === "personnel" && isOwner);
                   
                   return (
                     <tr key={t._id} className="even:bg-slate-50/70 odd:bg-white hover:bg-slate-100 transition-colors">
-                      <td className="py-4 px-6 text-sm text-slate-500 whitespace-nowrap align-top border-t border-slate-100">
+                      <td className="py-3.5 px-4 sm:px-6 text-xs sm:text-sm text-slate-500 whitespace-nowrap align-top border-t border-slate-100">
                         {format(new Date(t.createdAt), "dd/MM/yyyy HH:mm")}
                       </td>
 
-                      {isSuperAdminOrManager && (
-                        <td className="py-4 px-6 text-sm text-slate-800 font-medium align-top border-t border-slate-100">
-                          {t.userId?.name}
-                        </td>
-                      )}
+                      <td className="py-3.5 px-4 sm:px-6 text-xs sm:text-sm text-slate-800 font-medium align-top border-t border-slate-100 whitespace-nowrap">
+                        {t.userId?.name || "-"}
+                      </td>
                       
                       <td className="py-4 px-6 align-top border-t border-slate-100">
                         {isEditing ? (
@@ -435,8 +480,12 @@ export default function DashboardPage() {
                       </td>
                       
                       {session?.user?.role !== "manager" && (
-                        <td className="py-4 px-6 align-top text-right whitespace-nowrap border-t border-slate-100">
-                          {isEditing ? (
+                        <td className="py-3.5 px-4 sm:px-6 align-top text-right whitespace-nowrap border-t border-slate-100">
+                          {!canCrud ? (
+                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                              Salt Okunur
+                            </span>
+                          ) : isEditing ? (
                             <div className="flex justify-end gap-2">
                               <button onClick={() => handleUpdate(t._id)} className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition">
                                 <Check className="w-4 h-4" />
@@ -446,7 +495,7 @@ export default function DashboardPage() {
                               </button>
                             </div>
                           ) : (
-                            <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity" style={{ opacity: 1 }}>
+                            <div className="flex justify-end gap-2">
                               <button onClick={() => startEditing(t)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Düzenle">
                                 <Edit2 className="w-4 h-4" />
                               </button>

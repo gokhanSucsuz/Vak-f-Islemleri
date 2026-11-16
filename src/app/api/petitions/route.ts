@@ -70,7 +70,7 @@ export async function GET(req: Request) {
     if (search) {
       const rawMatched = await Petition.find(query)
         .select("-contentCompressed")
-        .populate("createdBy", "name email")
+        .populate("createdBy", "name email title")
         .populate("updatedBy", "name email")
         .sort(sortOptions)
         .lean();
@@ -102,7 +102,7 @@ export async function GET(req: Request) {
       [petitions, totalMatched] = await Promise.all([
         Petition.find(query)
           .select("-contentCompressed")
-          .populate("createdBy", "name email")
+          .populate("createdBy", "name email title")
           .populate("updatedBy", "name email")
           .sort(sortOptions)
           .skip(skip)
@@ -194,7 +194,7 @@ export async function POST(req: Request) {
 
     const populated = await Petition.findById(created._id)
       .select("-contentCompressed")
-      .populate("createdBy", "name email")
+      .populate("createdBy", "name email title")
       .lean();
 
     return NextResponse.json({ petition: populated }, { status: 201 });

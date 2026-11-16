@@ -21,6 +21,7 @@ interface UserPermission {
   name: string;
   email: string;
   role: string;
+  title?: string;
   canManageApplications: boolean;
   authorizedModules: PermissionModuleKey[];
 }
@@ -39,6 +40,8 @@ export default function SettingsPage() {
   const [expandedUserId, setExpandedUserId] = useState<string | null>(null);
   const [userSearch, setUserSearch] = useState("");
   const [permFilter, setPermFilter] = useState<"all" | "authorized" | "unauthorized">("all");
+  const [titleDrafts, setTitleDrafts] = useState<Record<string, string>>({});
+  const [savingTitleId, setSavingTitleId] = useState<string | null>(null);
 
   const [passwords, setPasswords] = useState({
     currentPassword: "",
@@ -52,7 +55,13 @@ export default function SettingsPage() {
       const res = await fetch("/api/settings/permissions");
       if (res.ok) {
         const data = await res.json();
-        setUserList(data.users || []);
+        const list: UserPermission[] = data.users || [];
+        setUserList(list);
+        const drafts: Record<string, string> = {};
+        list.forEach((u) => {
+          drafts[u._id] = u.title || "";
+        });
+        setTitleDrafts(drafts);
       }
     } catch {
       /* ignore */
@@ -74,6 +83,31 @@ export default function SettingsPage() {
       fetchUserPermissions();
     }
   }, [isSuperAdmin, fetchUserPermissions]);
+
+  const handleSaveUserTitle = async (userId: string) => {
+    setSavingTitleId(userId);
+    try {
+      const nextTitle = (titleDrafts[userId] || "").trim();
+      const res = await fetch("/api/settings/permissions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId, title: nextTitle }),
+      });
+      if (res.ok) {
+        toast.success("Personel görevi kaydedildi.");
+        setUserList((prev) =>
+          prev.map((u) => (u._id === userId ? { ...u, title: nextTitle } : u))
+        );
+      } else {
+        const err = await res.json();
+        toast.error(err.error || "Görev kaydedilemedi.");
+      }
+    } catch {
+      toast.error("Bağlantı hatası");
+    } finally {
+      setSavingTitleId(null);
+    }
+  };
 
   const handleUpdateUserModules = async (
     userId: string,
@@ -458,6 +492,28 @@ export default function SettingsPage() {
                             )}
                           </div>
                           <p className="text-xs text-slate-500 font-mono truncate">{u.email}</p>
+
+                          {/* Personel Görevi Girişi (Süper Admin) */}
+                          <div className="mt-2.5 flex flex-wrap items-center gap-2">
+                            <input
+                              type="text"
+                              value={titleDrafts[u._id] ?? u.title ?? ""}
+                              onChange={(e) =>
+                                setTitleDrafts((prev) => ({ ...prev, [u._id]: e.target.value }))
+                              }
+                              placeholder="Personel Görevi (Örn: Büro Görevlisi)"
+                              className="px-3 py-1.5 text-xs bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none min-w-[210px] sm:min-w-[250px]"
+                            />
+                            <button
+                              type="button"
+                              disabled={savingTitleId === u._id}
+                              onClick={() => handleSaveUserTitle(u._id)}
+                              className="px-2.5 py-1.5 rounded-lg text-xs font-bold bg-blue-600 hover:bg-blue-700 text-white transition-colors disabled:opacity-50 flex items-center gap-1"
+                            >
+                              <Save className="w-3 h-3" />
+                              {savingTitleId === u._id ? "..." : "Görevi Kaydet"}
+                            </button>
+                          </div>
 
                           {/* Aktif Sayfa Özet Etiketleri */}
                           <div className="flex flex-wrap gap-1.5 mt-2">

@@ -255,8 +255,99 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
   return blocks;
 }
 
-export async function downloadPetitionAsDocx(htmlContent: string, fileBaseName: string) {
+export async function downloadPetitionAsDocx(
+  htmlContent: string,
+  fileBaseName: string,
+  staffInfo?: { name?: string; title?: string }
+) {
   const children = htmlToDocxChildren(htmlContent);
+
+  const staffName = staffInfo?.name?.trim() || "Personel";
+  const staffTitle = staffInfo?.title?.trim() || "Personel";
+  const noBorder = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+  const footerCells = [
+    new TableCell({
+      borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
+      children: [
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: "Babademirtaş Mahallesi Sebil Sokak No:15/EDİRNE",
+              font: "Calibri",
+              size: 18,
+              color: "64748B",
+            }),
+          ],
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: "Telefon No: 0 (284) 2120957 Faks No: 0(284) 2120957",
+              font: "Calibri",
+              size: 18,
+              color: "64748B",
+            }),
+          ],
+        }),
+        new Paragraph({
+          children: [
+            new TextRun({
+              text: "e-Posta: edirnesydv@gmail.com",
+              font: "Calibri",
+              size: 18,
+              color: "64748B",
+            }),
+          ],
+        }),
+      ],
+    }),
+    new TableCell({
+      borders: { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder },
+      children: [
+        new Paragraph({
+          alignment: AlignmentType.LEFT,
+          children: [
+            new TextRun({
+              text: `Bilgi için: ${staffName}`,
+              font: "Calibri",
+              size: 18,
+              color: "64748B",
+            }),
+          ],
+        }),
+        new Paragraph({
+          alignment: AlignmentType.LEFT,
+          children: [
+            new TextRun({
+              text: staffTitle,
+              font: "Calibri",
+              size: 18,
+              color: "64748B",
+            }),
+          ],
+        }),
+        new Paragraph({
+          alignment: AlignmentType.LEFT,
+          children: [
+            new TextRun({
+              text: "Telefon No: 0 (284) 2120957",
+              font: "Calibri",
+              size: 18,
+              color: "64748B",
+            }),
+          ],
+        }),
+      ],
+    }),
+  ];
+
+  children.push(
+    new Paragraph({ children: [new TextRun("")], spacing: { before: 240 } }),
+    new Table({
+      width: { size: 100, type: WidthType.PERCENTAGE },
+      rows: [new TableRow({ children: footerCells })],
+    })
+  );
 
   try {
     const res = await fetch("/logo-vakif.jpg");

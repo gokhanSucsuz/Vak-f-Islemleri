@@ -125,9 +125,10 @@ export const authOptions: NextAuthOptions = {
         try {
           await dbConnect();
           const dbUser = (await User.findById(token.id)
-            .select("role canManageApplications authorizedModules")
+            .select("role title canManageApplications authorizedModules")
             .lean()) as {
             role?: string;
+            title?: string;
             canManageApplications?: boolean;
             authorizedModules?: string[];
           } | null;
@@ -142,6 +143,7 @@ export const authOptions: NextAuthOptions = {
                 : resolveUserAuthorizedModules(dbUser);
             const isAuthorized = liveRole === "superadmin" || authorizedModules.length > 0;
             session.user.role = liveRole;
+            (session.user as any).title = dbUser.title || "";
             session.user.authorizedModules = authorizedModules;
             session.user.isAuthorized = isAuthorized;
             session.user.canManageSystem =

@@ -21,6 +21,10 @@ const UserSchema = new mongoose.Schema(
       enum: ['superadmin', 'manager', 'personnel'],
       default: 'personnel',
     },
+    title: {
+      type: String,
+      default: '',
+    },
     canManageApplications: {
       type: Boolean,
       default: false,

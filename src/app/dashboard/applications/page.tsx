@@ -2004,17 +2004,32 @@ export default function ApplicationsPage() {
               ) : (
                 records.map((record, idx) => {
                   const isEmpty = !record.applicantName || record.applicantName.trim() === "";
+                  const isSearchActive = debouncedSearch.trim().length > 0;
+                  const isExactHighlight = isSearchActive && ((record as any)._exactMatch || records.length <= 5);
 
                   return (
                     <tr
                       key={record._id}
-                      className={`hover:bg-indigo-50/20 transition-colors ${
-                        isEmpty ? "bg-amber-50/30" : ""
+                      className={`transition-colors ${
+                        isExactHighlight
+                          ? "bg-amber-50/90 hover:bg-amber-100/80 ring-2 ring-inset ring-amber-400"
+                          : isEmpty
+                          ? "bg-amber-50/30 hover:bg-indigo-50/20"
+                          : "hover:bg-indigo-50/20"
                       }`}
                     >
                       {/* Sıra No */}
                       <td className="py-3.5 px-4 font-mono text-xs text-slate-400 text-center whitespace-nowrap">
-                        {(currentPage - 1) * pageSize + idx + 1}
+                        <div className="flex flex-col items-center gap-1">
+                          <span className={isExactHighlight ? "font-bold text-amber-800" : ""}>
+                            {(currentPage - 1) * pageSize + idx + 1}
+                          </span>
+                          {isExactHighlight && (
+                            <span className="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-400/90 text-amber-950 shadow-xs">
+                              Eşleşme
+                            </span>
+                          )}
+                        </div>
                       </td>
 
                       {/* Dinamik Excel Sütunları */}

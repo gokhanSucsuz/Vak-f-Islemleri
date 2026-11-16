@@ -65,11 +65,8 @@ export async function GET(req: Request) {
 
     let query: any = {};
 
-    // Personel SADECE KENDİSİNİ görebilir
-    if (session.user.role === "personnel") {
-      query.userId = session.user.id;
-    } else if (filterUserId) {
-      // Müdür veya Superadmin filtreleme yapabilir
+    // Tüm personeller diğer personellerin kayıtlarını salt okunur görebilir
+    if (filterUserId) {
       query.userId = filterUserId;
     }
 
