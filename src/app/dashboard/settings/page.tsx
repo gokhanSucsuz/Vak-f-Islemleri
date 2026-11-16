@@ -15,6 +15,7 @@ import {
 } from "lucide-react";
 import { useSession } from "next-auth/react";
 import { PERMISSION_MODULES, type PermissionModuleKey } from "@/lib/permissionModules";
+import { turkishIncludes } from "@/lib/turkish";
 
 interface UserPermission {
   _id: string;
@@ -237,15 +238,16 @@ export default function SettingsPage() {
   );
 
   const filteredUsers = useMemo(() => {
-    const q = userSearch.trim().toLocaleLowerCase("tr-TR");
+    const q = userSearch.trim();
     return userList.filter((u) => {
       const hasMods = (u.authorizedModules || []).length > 0;
       if (permFilter === "authorized" && !hasMods) return false;
       if (permFilter === "unauthorized" && hasMods) return false;
       if (!q) return true;
       return (
-        u.name.toLocaleLowerCase("tr-TR").includes(q) ||
-        u.email.toLocaleLowerCase("tr-TR").includes(q)
+        turkishIncludes(u.name || "", q) ||
+        turkishIncludes(u.email || "", q) ||
+        turkishIncludes(u.title || "", q)
       );
     });
   }, [userList, userSearch, permFilter]);

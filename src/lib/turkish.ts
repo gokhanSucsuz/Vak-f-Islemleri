@@ -24,6 +24,7 @@ export function toTurkishUpper(str: string): string {
 export function normalizeTurkish(str: string): string {
   if (!str) return "";
   return str
+    .normalize("NFC")
     .replace(/Ğ/g, "g")
     .replace(/ğ/g, "g")
     .replace(/Ü/g, "u")
@@ -37,7 +38,13 @@ export function normalizeTurkish(str: string): string {
     .replace(/ö/g, "o")
     .replace(/Ç/g, "c")
     .replace(/ç/g, "c")
-    .toLowerCase()
+    .toLocaleLowerCase("tr-TR")
+    .replace(/\u0307/g, "")
+    .replace(/ı/g, "i")
+    .replace(/[âä]/g, "a")
+    .replace(/[îï]/g, "i")
+    .replace(/[û]/g, "u")
+    .replace(/[ô]/g, "o")
     .trim();
 }
 

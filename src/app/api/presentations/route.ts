@@ -20,7 +20,7 @@ export async function GET(req: NextRequest) {
 
     const { searchParams } = new URL(req.url);
     const meetingId = searchParams.get("meetingId") || "";
-    const search = (searchParams.get("search") || "").trim().toLowerCase();
+    const search = (searchParams.get("search") || "").trim();
 
     await dbConnect();
     await purgeExpiredMeetingPhotos();
@@ -86,12 +86,13 @@ export async function GET(req: NextRequest) {
       })
     );
 
+    const { turkishIncludes } = await import("@/lib/turkish");
     const filtered = search
       ? mapped.filter(
           (m) =>
-            m.summaryTitle.toLowerCase().includes(search) ||
-            ((m.createdBy as any)?.name || "").toLowerCase().includes(search) ||
-            m.meetingTitle.toLowerCase().includes(search)
+            turkishIncludes(m.summaryTitle || "", search) ||
+            turkishIncludes((m.createdBy as any)?.name || "", search) ||
+            turkishIncludes(m.meetingTitle || "", search)
         )
       : mapped;
 

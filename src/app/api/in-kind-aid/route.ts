@@ -5,7 +5,7 @@ import dbConnect from "@/lib/db";
 import InKindAid from "@/models/InKindAid";
 import Log from "@/models/Log";
 import User from "@/models/User";
-import { toTurkishRegexPattern } from "@/lib/turkish";
+import { turkishIncludes } from "@/lib/turkish";
 import { parseDeliveryDate } from "@/lib/date";
 
 export async function GET(req: Request) {
@@ -49,28 +49,35 @@ export async function GET(req: Request) {
       conditions.push({ "items.aidType": aidType });
     }
 
-    if (search && search.trim()) {
-      const regex = new RegExp(toTurkishRegexPattern(search.trim()), "i");
-      conditions.push({
-        $or: [
-          { citizenName: regex },
-          { tcNo: regex },
-          { receiver: regex },
-          { phone: regex },
-          { address: regex },
-          { "items.aidType": regex },
-          { "items.specification": regex },
-        ],
-      });
-    }
-
     const query = conditions.length > 0 ? { $and: conditions } : {};
 
     const records = await InKindAid.find(query)
       .populate("createdBy", "name email")
       .sort({ deliveryDate: -1, createdAt: -1 });
 
-    return NextResponse.json(records);
+    const filteredRecords =
+      search && search.trim()
+        ? records.filter((r: any) => {
+            const q = search.trim();
+            const itemsText = (r.items || [])
+              .map((it: any) => `${it.aidType || ""} ${it.specification || ""}`)
+              .join(" ");
+            const combined = [
+              r.citizenName,
+              r.tcNo,
+              r.receiver,
+              r.phone,
+              r.address,
+              r.createdBy?.name,
+              itemsText,
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return turkishIncludes(combined, q);
+          })
+        : records;
+
+    return NextResponse.json(filteredRecords);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

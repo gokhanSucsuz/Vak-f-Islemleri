@@ -5,7 +5,7 @@ import dbConnect from "@/lib/db";
 import BabyFood from "@/models/BabyFood";
 import Log from "@/models/Log";
 import User from "@/models/User";
-import { toTurkishRegexPattern } from "@/lib/turkish";
+import { turkishIncludes } from "@/lib/turkish";
 import { parseDeliveryDate } from "@/lib/date";
 
 export async function GET(req: Request) {
@@ -51,27 +51,34 @@ export async function GET(req: Request) {
       conditions.push({ "items.brand": brand });
     }
 
-    if (search && search.trim()) {
-      const regex = new RegExp(toTurkishRegexPattern(search.trim()), "i");
-      conditions.push({
-        $or: [
-          { motherInfo: regex },
-          { tcNo: regex },
-          { receiver: regex },
-          { babyName: regex },
-          { "items.foodName": regex },
-          { "items.brand": regex },
-        ],
-      });
-    }
-
     const query = conditions.length > 0 ? { $and: conditions } : {};
 
     const records = await BabyFood.find(query)
       .populate('createdBy', 'name email')
       .sort({ deliveryDate: -1, createdAt: -1 });
 
-    return NextResponse.json(records);
+    const filteredRecords =
+      search && search.trim()
+        ? records.filter((r: any) => {
+            const q = search.trim();
+            const itemsText = (r.items || [])
+              .map((it: any) => `${it.brand || ""} ${it.foodName || ""}`)
+              .join(" ");
+            const combined = [
+              r.motherInfo,
+              r.tcNo,
+              r.receiver,
+              r.babyName,
+              r.createdBy?.name,
+              itemsText,
+            ]
+              .filter(Boolean)
+              .join(" ");
+            return turkishIncludes(combined, q);
+          })
+        : records;
+
+    return NextResponse.json(filteredRecords);
   } catch (error: any) {
     return NextResponse.json({ error: error.message }, { status: 500 });
   }

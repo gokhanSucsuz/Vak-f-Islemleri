@@ -38,15 +38,17 @@ export async function GET(req: Request) {
       .populate("userId", "name email role")
       .sort({ createdAt: -1 });
       
-    // Text search (action or details)
+    // Text search (action, details, or staff name - 100% Turkish & case-insensitive)
     let filteredLogs = logs;
     
     if (searchText && searchText.trim().length > 0) {
-      const lowerSearch = searchText.toLowerCase();
+      const { turkishIncludes } = await import("@/lib/turkish");
+      const cleanQ = searchText.trim();
       filteredLogs = logs.filter((l: any) => {
-        const actionMatch = l.action && l.action.toLowerCase().includes(lowerSearch);
-        const detailsMatch = l.details && l.details.toLowerCase().includes(lowerSearch);
-        return actionMatch || detailsMatch;
+        const actionMatch = l.action && turkishIncludes(l.action, cleanQ);
+        const detailsMatch = l.details && turkishIncludes(l.details, cleanQ);
+        const userMatch = l.userId?.name && turkishIncludes(l.userId.name, cleanQ);
+        return Boolean(actionMatch || detailsMatch || userMatch);
       });
     }
 
