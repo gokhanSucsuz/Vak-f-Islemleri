@@ -432,7 +432,31 @@ export default function PetitionsPage() {
       });
 
       const firstTable = doc.querySelector("table");
+      if (firstTable) {
+        (firstTable as HTMLElement).style.marginTop = "1pt";
+      }
+
       doc.querySelectorAll<HTMLElement>("p, div").forEach((el) => {
+        const isBeforeTable =
+          !firstTable ||
+          Boolean(el.compareDocumentPosition(firstTable) & Node.DOCUMENT_POSITION_FOLLOWING);
+
+        if (isBeforeTable && !el.contains(firstTable)) {
+          const rawCheck = (el.textContent || "").replace(/[\u00a0\u2003\u2002]/g, " ").trim();
+          if (!rawCheck && !el.querySelector("img, table")) {
+            el.remove();
+            return;
+          }
+          if (el.tagName === "P") {
+            el.style.marginTop = "0";
+            el.style.marginBottom = "0";
+            el.style.lineHeight = "1.25";
+          } else if (el.style.width === "fit-content") {
+            el.style.margin = "0 auto 1pt auto";
+            el.style.lineHeight = "1.2";
+          }
+        }
+
         if (el.querySelector("p, div, table")) return;
         const txt = (el.textContent || "").replace(/[\u00a0\u2003\u2002]/g, " ").trim();
         if (!txt) return;
@@ -448,12 +472,7 @@ export default function PetitionsPage() {
         }
 
         // Yeni başvuru ise ve tablodan önceki tarih satırında eski bir tarih (örn. 14.11.2026) varsa bugünün tarihine güncelle
-        if (
-          isNewApplication &&
-          (!firstTable ||
-            Boolean(el.compareDocumentPosition(firstTable) & Node.DOCUMENT_POSITION_FOLLOWING)) &&
-          /^\d{2}[./]\d{2}[./]20\d{2}$/.test(txt)
-        ) {
+        if (isNewApplication && isBeforeTable && /^\d{2}[./]\d{2}[./]20\d{2}$/.test(txt)) {
           el.innerHTML = `<span data-petition-date="true" style="font-weight:bold;">${dateStr}</span>`;
         }
       });
@@ -485,12 +504,12 @@ export default function PetitionsPage() {
         .replace(
           /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<\/p>\s*<p[^>]*>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
           (_m, titleText, cityText) =>
-            `<div style="width:fit-content;margin:0 auto 6pt auto;text-align:center;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+            `<div style="width:fit-content;margin:0 auto 1pt auto;text-align:center;line-height:1.2;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
         )
         .replace(
           /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<br\s*\/?>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
           (_m, titleText, cityText) =>
-            `<div style="width:fit-content;margin:0 auto 6pt auto;text-align:center;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+            `<div style="width:fit-content;margin:0 auto 1pt auto;text-align:center;line-height:1.2;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
         );
       filledHtml = normalizePetitionTableHtml(filledHtml, type);
     } else if (type === "matbu") {
@@ -1116,7 +1135,7 @@ export default function PetitionsPage() {
                 ref={editorRef}
                 contentEditable
                 suppressContentEditableWarning
-                className={`w-full min-h-[225mm] print:min-h-0 text-slate-900 text-[13.5px] leading-snug focus:outline-none [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${
+                className={`w-full min-h-[225mm] print:min-h-0 text-slate-900 text-[13.5px] leading-snug focus:outline-none [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:m-0 [&_p]:leading-snug [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${
                   editorType === "matbu"
                     ? "[&_td]:!border-0 [&_th]:!border-0"
                     : "[&_td]:border [&_td]:border-black [&_th]:border [&_th]:border-black"
@@ -1746,7 +1765,7 @@ export default function PetitionsPage() {
                     />
                   </div>
                   <div
-                    className={`text-slate-900 text-[13.5px] leading-snug [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:mb-1.5 [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${
+                    className={`text-slate-900 text-[13.5px] leading-snug [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:m-0 [&_p]:leading-snug [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${
                       previewPetition.petitionType === "matbu"
                         ? "[&_td]:!border-0 [&_th]:!border-0"
                         : "[&_td]:border [&_td]:border-black [&_th]:border [&_th]:border-black"

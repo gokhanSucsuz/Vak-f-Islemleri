@@ -136,7 +136,7 @@ function renderParagraph(pNode: XmlNode, inTable = false): string {
   if (inTable) {
     styles.push("margin:0");
   } else {
-    styles.push("margin:0 0 4pt 0");
+    styles.push("margin:0;line-height:1.25");
   }
 
   if (pPr) {
@@ -208,7 +208,7 @@ function renderTable(tblNode: XmlNode): string {
   const colWidths = gridCols.map((c) => parseInt(getAttr(c.attrs, "w") || "0", 10));
   const totalGridW = colWidths.reduce((a, b) => a + b, 0);
 
-  let html = `<table${tableHasBorders === false ? ' data-borderless="true"' : ""} style="width:100%;border-collapse:collapse;margin:8pt 0;table-layout:fixed">`;
+  let html = `<table${tableHasBorders === false ? ' data-borderless="true"' : ""} style="width:100%;border-collapse:collapse;margin:1pt 0 4pt 0;table-layout:fixed">`;
 
   for (const tr of rows) {
     html += `<tr>`;
@@ -290,11 +290,11 @@ function alignEdirneHeader(html: string): string {
   return html.replace(
     /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<\/p>\s*<p[^>]*>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
     (_m, titleText, cityText) =>
-      `<div style="width:fit-content;margin:0 auto 6pt auto;text-align:center;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+      `<div style="width:fit-content;margin:0 auto 1pt auto;text-align:center;line-height:1.2;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
   ).replace(
     /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<br\s*\/?>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
     (_m, titleText, cityText) =>
-      `<div style="width:fit-content;margin:0 auto 6pt auto;text-align:center;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+      `<div style="width:fit-content;margin:0 auto 1pt auto;text-align:center;line-height:1.2;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
   );
 }
 

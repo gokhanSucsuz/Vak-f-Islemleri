@@ -1421,7 +1421,7 @@ export default function PresentationsPage() {
         });
 
         toast.success(
-          "Tüm slaytlar belirlenen sırayla tek dosya (.pptx) olarak indirildi. Fotoğraflar 12 saat sonra otomatik silinecek."
+          "Tüm slaytlar belirlenen sırayla tek dosya (.pptx) olarak indirildi."
         );
         await fetchAll();
         const refreshed = await fetch(`/api/presentations/meetings/${meeting._id}`);
@@ -2451,23 +2451,10 @@ export default function PresentationsPage() {
               </div>
             )}
 
-            {selectedMeeting.downloadedAt && (
+            {selectedMeeting.downloadedAt && selectedMeeting.photosPurged && (
               <div className="text-xs flex items-center gap-2 text-amber-700 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2">
                 <Clock className="w-4 h-4 shrink-0" />
-                {selectedMeeting.photosPurged ? (
-                  <span>Bu toplantının fotoğrafları indirmeden 12 saat sonra otomatik olarak silindi.</span>
-                ) : selectedMeeting.photosExpireAt ? (
-                  <span>
-                    Fotoğraflar{" "}
-                    {new Date(selectedMeeting.photosExpireAt).toLocaleString("tr-TR", {
-                      day: "2-digit",
-                      month: "2-digit",
-                      hour: "2-digit",
-                      minute: "2-digit",
-                    })}{" "}
-                    tarihinde sistemden otomatik silinecek.
-                  </span>
-                ) : null}
+                <span>Bu toplantının fotoğrafları daha önce silinmiş.</span>
               </div>
             )}
           </div>

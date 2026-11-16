@@ -25,33 +25,8 @@ export async function decompressSlides(buf: Buffer): Promise<ISlideData[]> {
  * slayt fotoğraflarını otomatik olarak sistemden siler (metin kayıtları korunur).
  */
 export async function purgeExpiredMeetingPhotos(): Promise<number> {
-  const now = new Date();
-  const expiredMeetings = await PresentationMeeting.find({
-    photosPurged: false,
-    photosExpireAt: { $lte: now },
-  });
-
-  if (expiredMeetings.length === 0) return 0;
-
-  let purgedCount = 0;
-  for (const meeting of expiredMeetings) {
-    const presentations = await Presentation.find({ meetingId: meeting._id });
-    for (const pres of presentations) {
-      const slides = await decompressSlides(pres.slidesCompressed);
-      const cleaned = slides.map((s) => ({
-        ...s,
-        photos: [],
-      }));
-      pres.slidesCompressed = await compressSlides(cleaned);
-      await pres.save();
-    }
-    meeting.photosPurged = true;
-    meeting.photosPurgedAt = now;
-    await meeting.save();
-    purgedCount++;
-  }
-
-  return purgedCount;
+  // Otomatik fotoğraf silme işlemi devre dışı bırakıldı
+  return 0;
 }
 
 /**
