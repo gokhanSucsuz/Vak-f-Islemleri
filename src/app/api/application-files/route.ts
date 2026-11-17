@@ -327,12 +327,13 @@ export async function POST(req: Request) {
       if (trimmedAppNo !== existing.applicationNo) {
         const dup = await ApplicationFile.findOne({
           applicationNo: trimmedAppNo,
+          sheetName: targetSheet,
           _id: { $ne: targetRecordId },
         });
         if (dup) {
           return NextResponse.json(
             {
-              error: `Başvuru / Dosya No (${trimmedAppNo}) sistemde zaten kayıtlı! Aynı başvuru numarasında birden fazla dosya oluşturulamaz.`,
+              error: `Başvuru / Dosya No (${trimmedAppNo}) "${targetSheet}" sekmesinde zaten kayıtlı! Aynı sekmede aynı numarada birden fazla dosya oluşturulamaz.`,
             },
             { status: 409 }
           );
@@ -375,14 +376,15 @@ export async function POST(req: Request) {
       });
     }
 
-    // Yeni kayıt oluşturma senaryosu (Başvuru No tüm sistemde tekil/birincil anahtardır)
+    // Yeni kayıt oluşturma senaryosu (Başvuru No kendi sekmesi içinde tekil/birincil anahtardır)
     const duplicate = await ApplicationFile.findOne({
       applicationNo: trimmedAppNo,
+      sheetName: targetSheet,
     });
     if (duplicate) {
       return NextResponse.json(
         {
-          error: `Başvuru / Dosya No (${trimmedAppNo}) sistemde zaten kayıtlı! Aynı başvuru numarasında birden fazla dosya oluşturulamaz.`,
+          error: `Başvuru / Dosya No (${trimmedAppNo}) "${targetSheet}" sekmesinde zaten kayıtlı! Aynı sekmede aynı numarada birden fazla dosya oluşturulamaz.`,
         },
         { status: 409 }
       );

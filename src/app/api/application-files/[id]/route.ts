@@ -44,11 +44,12 @@ export async function PUT(
     if (trimmedAppNo !== record.applicationNo) {
       const duplicate = await ApplicationFile.findOne({
         applicationNo: trimmedAppNo,
+        sheetName: record.sheetName || "Sayfa 1",
         _id: { $ne: id },
       });
       if (duplicate) {
         return NextResponse.json(
-          { error: `Başvuru No (${trimmedAppNo}) sistemde zaten kayıtlı! Aynı başvuru numarasında birden fazla dosya olamaz.` },
+          { error: `Başvuru No (${trimmedAppNo}) bu sekmede zaten başka bir kayıtta kullanılıyor.` },
           { status: 409 }
         );
       }
