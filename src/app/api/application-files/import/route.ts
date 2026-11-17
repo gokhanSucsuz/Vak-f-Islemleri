@@ -462,10 +462,10 @@ export async function POST(req: Request) {
         }
       }
 
-      // bulkWrite updateOne (upsert)
+      // bulkWrite updateOne (upsert) - applicationNo birincil tekil anahtar
       bulkOps.push({
         updateOne: {
-          filter: { applicationNo, sheetName },
+          filter: { applicationNo },
           update: {
             $set: {
               applicationNo,

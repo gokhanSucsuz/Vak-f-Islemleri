@@ -44,12 +44,11 @@ export async function PUT(
     if (trimmedAppNo !== record.applicationNo) {
       const duplicate = await ApplicationFile.findOne({
         applicationNo: trimmedAppNo,
-        sheetName: record.sheetName || "Sayfa 1",
         _id: { $ne: id },
       });
       if (duplicate) {
         return NextResponse.json(
-          { error: `Başvuru No (${trimmedAppNo}) zaten başka bir kayıtta kullanılıyor.` },
+          { error: `Başvuru No (${trimmedAppNo}) sistemde zaten kayıtlı! Aynı başvuru numarasında birden fazla dosya olamaz.` },
           { status: 409 }
         );
       }
@@ -89,6 +88,12 @@ export async function PUT(
     return NextResponse.json({ message: "Kayıt güncellendi.", record }, { headers: (() => { invalidateApplicationCache(); return {}; })() });
   } catch (error: any) {
     console.error("PUT /api/application-files/[id] error:", error);
+    if (error?.code === 11000) {
+      return NextResponse.json(
+        { error: "Bu Başvuru / Dosya Numarası sistemde zaten kayıtlı. Aynı numarada birden fazla dosya olamaz." },
+        { status: 409 }
+      );
+    }
     return NextResponse.json(
       { error: error.message || "Sunucu hatası" },
       { status: 500 }

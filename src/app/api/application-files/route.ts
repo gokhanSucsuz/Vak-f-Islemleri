@@ -324,6 +324,21 @@ export async function POST(req: Request) {
         );
       }
 
+      if (trimmedAppNo !== existing.applicationNo) {
+        const dup = await ApplicationFile.findOne({
+          applicationNo: trimmedAppNo,
+          _id: { $ne: targetRecordId },
+        });
+        if (dup) {
+          return NextResponse.json(
+            {
+              error: `Başvuru / Dosya No (${trimmedAppNo}) sistemde zaten kayıtlı! Aynı başvuru numarasında birden fazla dosya oluşturulamaz.`,
+            },
+            { status: 409 }
+          );
+        }
+      }
+
       existing.applicationNo = trimmedAppNo;
       existing.applicationNoSeq = numericSeq;
       existing.sheetName = targetSheet;
@@ -360,15 +375,14 @@ export async function POST(req: Request) {
       });
     }
 
-    // Yeni kayıt oluşturma senaryosu
+    // Yeni kayıt oluşturma senaryosu (Başvuru No tüm sistemde tekil/birincil anahtardır)
     const duplicate = await ApplicationFile.findOne({
       applicationNo: trimmedAppNo,
-      sheetName: targetSheet,
     });
     if (duplicate) {
       return NextResponse.json(
         {
-          error: `Başvuru / Dosya No (${trimmedAppNo}) "${targetSheet}" sekmesinde zaten kayıtlı! Lütfen farklı bir numara kullanın.`,
+          error: `Başvuru / Dosya No (${trimmedAppNo}) sistemde zaten kayıtlı! Aynı başvuru numarasında birden fazla dosya oluşturulamaz.`,
         },
         { status: 409 }
       );
@@ -413,6 +427,12 @@ export async function POST(req: Request) {
     );
   } catch (error: any) {
     console.error("POST /api/application-files error:", error);
+    if (error?.code === 11000) {
+      return NextResponse.json(
+        { error: "Bu Başvuru / Dosya Numarası sistemde zaten kayıtlı. Aynı numarada birden fazla dosya olamaz." },
+        { status: 409 }
+      );
+    }
     return NextResponse.json(
       { error: error.message || "Sunucu hatası" },
       { status: 500 }
