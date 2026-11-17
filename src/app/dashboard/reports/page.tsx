@@ -1,8 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
+import jsPDF from "jspdf";
+import autoTable from "jspdf-autotable";
 import {
   Download,
   Filter,
@@ -17,6 +19,8 @@ import {
   FileSpreadsheet,
   Package,
   Users as UsersIcon,
+  Presentation as PresentationIcon,
+  FileCheck2,
 } from "lucide-react";
 import { format, subDays } from "date-fns";
 import { tr } from "date-fns/locale";
@@ -31,8 +35,10 @@ import {
 } from "recharts";
 import { turkishIncludes, extractTC, exportToExcel } from "@/lib/turkish";
 import { toLocalDateInputValue, toLocalDayStartISO, toLocalDayEndISO } from "@/lib/date";
+import { registerTurkishFont } from "@/lib/pdfFont";
+import PaginationControls from "@/components/PaginationControls";
 
-type ReportTab = "transactions" | "babyFood" | "inKindAid";
+type ReportTab = "transactions" | "petitions" | "presentations" | "babyFood" | "inKindAid";
 
 export default function ReportsPage() {
   const { data: session } = useSession();
@@ -80,12 +86,42 @@ export default function ReportsPage() {
   const [inKindChartData, setInKindChartData] = useState<any[]>([]);
   const [inKindTypeStats, setInKindTypeStats] = useState<{ name: string; count: number }[]>([]);
 
+  // --- TAB 4: DİLEKÇELER ---
+  const [petitionRecords, setPetitionRecords] = useState<any[]>([]);
+  const [petitionFilters, setPetitionFilters] = useState({
+    userId: "",
+    type: "all",
+    dateStart: "",
+    dateEnd: "",
+    search: "",
+  });
+
+  // --- TAB 5: SUNULAR ---
+  const [presentationRecords, setPresentationRecords] = useState<any[]>([]);
+  const [meetingList, setMeetingList] = useState<any[]>([]);
+  const [presentationFilters, setPresentationFilters] = useState({
+    userId: "",
+    meetingId: "",
+    dateStart: "",
+    dateEnd: "",
+    search: "",
+  });
+
+  // Sayfalama Durumları (Tüm Sekmeler)
+  const [txPage, setTxPage] = useState(1);
+  const [bfPage, setBfPage] = useState(1);
+  const [ikPage, setIkPage] = useState(1);
+  const [petPage, setPetPage] = useState(1);
+  const [presPage, setPresPage] = useState(1);
+  const reportPageSize = 20;
+
   // Genel kullanıcı listesi ve başlangıç verileri
   useEffect(() => {
     fetchUsers();
     fetchHelpTypes();
     fetchBabyFoodTypes();
     fetchInKindTypes();
+    fetchMeetings();
   }, []);
 
   useEffect(() => {
@@ -95,6 +131,10 @@ export default function ReportsPage() {
       fetchBabyFood();
     } else if (activeTab === "inKindAid") {
       fetchInKindAid();
+    } else if (activeTab === "petitions") {
+      fetchPetitions();
+    } else if (activeTab === "presentations") {
+      fetchPresentations();
     }
   }, [activeTab]);
 
@@ -143,6 +183,54 @@ export default function ReportsPage() {
       }
     } catch (e) {
       console.error(e);
+    }
+  };
+
+  const fetchMeetings = async () => {
+    try {
+      const res = await fetch("/api/presentations/meetings");
+      if (res.ok) {
+        const data = await res.json();
+        setMeetingList(data.meetings || []);
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
+
+  const fetchPetitions = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams({ limit: "2000", page: "1" });
+      if (petitionFilters.type !== "all") params.append("type", petitionFilters.type);
+      const res = await fetch(`/api/petitions?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPetitionRecords(data.petitions || []);
+        setPetPage(1);
+      }
+    } catch {
+      toast.error("Dilekçe verileri yüklenemedi");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const fetchPresentations = async () => {
+    setLoading(true);
+    try {
+      const params = new URLSearchParams();
+      if (presentationFilters.meetingId) params.append("meetingId", presentationFilters.meetingId);
+      const res = await fetch(`/api/presentations?${params.toString()}`);
+      if (res.ok) {
+        const data = await res.json();
+        setPresentationRecords(data.presentations || []);
+        setPresPage(1);
+      }
+    } catch {
+      toast.error("Sunu verileri yüklenemedi");
+    } finally {
+      setLoading(false);
     }
   };
 
@@ -334,6 +422,126 @@ export default function ReportsPage() {
       )
   );
 
+  const filteredPetitions = useMemo(() => {
+    const startMs = petitionFilters.dateStart
+      ? new Date(toLocalDayStartISO(petitionFilters.dateStart)).getTime()
+      : null;
+    const endMs = petitionFilters.dateEnd
+      ? new Date(toLocalDayEndISO(petitionFilters.dateEnd)).getTime()
+      : null;
+
+    return petitionRecords.filter((p) => {
+      if (petitionFilters.userId && String(p.createdBy?._id || "") !== petitionFilters.userId) {
+        return false;
+      }
+      if (petitionFilters.type !== "all" && p.petitionType !== petitionFilters.type) {
+        return false;
+      }
+      const cMs = new Date(p.createdAt).getTime();
+      if (startMs !== null && cMs < startMs) return false;
+      if (endMs !== null && cMs > endMs) return false;
+
+      if (petitionFilters.search.trim()) {
+        const q = petitionFilters.search.trim();
+        const combined = [p.citizenName, p.tcNo, p.subject, p.createdBy?.name]
+          .filter(Boolean)
+          .join(" ");
+        if (!turkishIncludes(combined, q)) return false;
+      }
+      return true;
+    });
+  }, [petitionRecords, petitionFilters]);
+
+  const filteredPresentations = useMemo(() => {
+    const startMs = presentationFilters.dateStart
+      ? new Date(toLocalDayStartISO(presentationFilters.dateStart)).getTime()
+      : null;
+    const endMs = presentationFilters.dateEnd
+      ? new Date(toLocalDayEndISO(presentationFilters.dateEnd)).getTime()
+      : null;
+
+    return presentationRecords.filter((p) => {
+      if (
+        presentationFilters.userId &&
+        String(p.createdBy?._id || "") !== presentationFilters.userId
+      ) {
+        return false;
+      }
+      if (
+        presentationFilters.meetingId &&
+        String(p.meetingId || "") !== presentationFilters.meetingId
+      ) {
+        return false;
+      }
+      const cMs = new Date(p.createdAt).getTime();
+      if (startMs !== null && cMs < startMs) return false;
+      if (endMs !== null && cMs > endMs) return false;
+
+      if (presentationFilters.search.trim()) {
+        const q = presentationFilters.search.trim();
+        const combined = [p.summaryTitle, p.meetingTitle, p.createdBy?.name]
+          .filter(Boolean)
+          .join(" ");
+        if (!turkishIncludes(combined, q)) return false;
+      }
+      return true;
+    });
+  }, [presentationRecords, presentationFilters]);
+
+  const petitionStaffStats = useMemo(() => {
+    const map: Record<string, { name: string; total: number; detayli: number; matbu: number }> = {};
+    filteredPetitions.forEach((p) => {
+      const name = p.createdBy?.name || "Bilinmiyor";
+      if (!map[name]) map[name] = { name, total: 0, detayli: 0, matbu: 0 };
+      map[name].total++;
+      if (p.petitionType === "matbu") map[name].matbu++;
+      else map[name].detayli++;
+    });
+    return Object.values(map).sort((a, b) => b.total - a.total);
+  }, [filteredPetitions]);
+
+  const presentationStaffStats = useMemo(() => {
+    const map: Record<string, { name: string; count: number; slides: number; photos: number }> = {};
+    filteredPresentations.forEach((p) => {
+      const name = p.createdBy?.name || "Bilinmiyor";
+      if (!map[name]) map[name] = { name, count: 0, slides: 0, photos: 0 };
+      map[name].count++;
+      map[name].slides += p.slideCount || 0;
+      map[name].photos += p.totalPhotos || 0;
+    });
+    return Object.values(map).sort((a, b) => b.count - a.count);
+  }, [filteredPresentations]);
+
+  const txTotalPages = Math.max(1, Math.ceil(filteredTransactions.length / reportPageSize));
+  const paginatedTransactions = filteredTransactions.slice(
+    (Math.min(txPage, txTotalPages) - 1) * reportPageSize,
+    Math.min(txPage, txTotalPages) * reportPageSize
+  );
+
+  const bfTotalPages = Math.max(1, Math.ceil(filteredBabyFood.length / reportPageSize));
+  const paginatedBabyFood = filteredBabyFood.slice(
+    (Math.min(bfPage, bfTotalPages) - 1) * reportPageSize,
+    Math.min(bfPage, bfTotalPages) * reportPageSize
+  );
+
+  const ikTotalPages = Math.max(1, Math.ceil(filteredInKind.length / reportPageSize));
+  const paginatedInKind = filteredInKind.slice(
+    (Math.min(ikPage, ikTotalPages) - 1) * reportPageSize,
+    Math.min(ikPage, ikTotalPages) * reportPageSize
+  );
+
+  const petTotalPages = Math.max(1, Math.ceil(filteredPetitions.length / reportPageSize));
+  const paginatedPetitions = filteredPetitions.slice(
+    (Math.min(petPage, petTotalPages) - 1) * reportPageSize,
+    Math.min(petPage, petTotalPages) * reportPageSize
+  );
+
+  const presTotalPages = Math.max(1, Math.ceil(filteredPresentations.length / reportPageSize));
+  const paginatedPresentations = filteredPresentations.slice(
+    (Math.min(presPage, presTotalPages) - 1) * reportPageSize,
+    Math.min(presPage, presTotalPages) * reportPageSize
+  );
+
   // --- EXCEL DIŞA AKTARMA (TÜRKÇE KARAKTER UYUMLU) ---
   const exportTxExcel = () => {
     const exportData = filteredTransactions.map((t, idx) => ({
@@ -397,8 +605,145 @@ export default function ReportsPage() {
     toast.success("Ayni Yardım raporu Türkçe karakter uyumlu Excel olarak indirildi.");
   };
 
-  const exportPDF = () => {
-    window.print();
+  const exportPetitionsExcel = () => {
+    const exportData = filteredPetitions.map((p, idx) => ({
+      "Sıra": idx + 1,
+      "Tarih": format(new Date(p.createdAt), "dd.MM.yyyy HH:mm"),
+      "Tür": p.petitionType === "matbu" ? "Matbu Dilekçe" : "Detaylı Dilekçe",
+      "Vatandaş Adı Soyadı": p.citizenName,
+      "T.C. Kimlik No": p.tcNo || "-",
+      "Konu": p.subject || "-",
+      "Hazırlayan Personel": p.createdBy?.name || "Bilinmiyor",
+    }));
+    exportToExcel(exportData, `Dilekce_Istatistik_Raporu_${toLocalDateInputValue()}`, "Dilekçeler");
+    toast.success("Dilekçe İstatistik raporu Türkçe karakter uyumlu Excel olarak indirildi.");
+  };
+
+  const exportPresentationsExcel = () => {
+    const exportData = filteredPresentations.map((p, idx) => ({
+      "Sıra": idx + 1,
+      "Tarih": format(new Date(p.createdAt), "dd.MM.yyyy HH:mm"),
+      "Toplantı Dosyası": p.meetingTitle || "-",
+      "Sunu Başlığı": p.summaryTitle || "-",
+      "Slayt Sayısı": p.slideCount || 0,
+      "Fotoğraf Sayısı": p.totalPhotos || 0,
+      "Hazırlayan Personel": p.createdBy?.name || "Bilinmiyor",
+    }));
+    exportToExcel(exportData, `Sunu_Istatistik_Raporu_${toLocalDateInputValue()}`, "Sunular");
+    toast.success("Sunu İstatistik raporu Türkçe karakter uyumlu Excel olarak indirildi.");
+  };
+
+  const exportPDF = async () => {
+    try {
+      const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
+      await registerTurkishFont(doc);
+
+      const titleMap: Record<ReportTab, string> = {
+        transactions: "VAKIF İŞLEMLERİ RESMİ İSTATİSTİK VE FAALİYET RAPORU",
+        petitions: "DİLEKÇE İŞLEMLERİ RESMİ İSTATİSTİK RAPORU",
+        presentations: "TOPLANTI SUNULARI RESMİ İSTATİSTİK RAPORU",
+        babyFood: "BEBEK MAMASI TESLİMAT VE DAĞITIM RAPORU",
+        inKindAid: "AYNİ YARDIM TESLİMAT VE DAĞITIM RAPORU",
+      };
+
+      doc.setFontSize(11);
+      doc.text("T.C. EDİRNE SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI", 148.5, 14, {
+        align: "center",
+      });
+      doc.setFontSize(13);
+      doc.text(titleMap[activeTab], 148.5, 21, { align: "center" });
+      doc.setFontSize(9);
+      doc.text(
+        `Rapor Tarihi: ${format(new Date(), "dd.MM.yyyy HH:mm")}   |   Düzenleyen: ${
+          session?.user?.name || "Personel"
+        }`,
+        14,
+        28
+      );
+
+      let head: string[][] = [];
+      let body: (string | number)[][] = [];
+
+      if (activeTab === "transactions") {
+        head = [["Sıra", "Tarih / Saat", "Personel", "Vatandaş Bilgisi", "Yardım Türü"]];
+        body = filteredTransactions.map((t, i) => [
+          i + 1,
+          format(new Date(t.createdAt), "dd.MM.yyyy HH:mm"),
+          t.userId?.name || "-",
+          t.citizenInfo || "-",
+          t.helpType?.name || "-",
+        ]);
+      } else if (activeTab === "petitions") {
+        head = [["Sıra", "Tarih", "Dilekçe Türü", "Adı Soyadı", "T.C. Kimlik No", "Konu", "Personel"]];
+        body = filteredPetitions.map((p, i) => [
+          i + 1,
+          format(new Date(p.createdAt), "dd.MM.yyyy HH:mm"),
+          p.petitionType === "matbu" ? "Matbu" : "Detaylı",
+          p.citizenName || "-",
+          p.tcNo || "-",
+          p.subject || "-",
+          p.createdBy?.name || "-",
+        ]);
+      } else if (activeTab === "presentations") {
+        head = [["Sıra", "Tarih", "Toplantı", "Sunu Başlığı", "Slayt", "Fotoğraf", "Personel"]];
+        body = filteredPresentations.map((p, i) => [
+          i + 1,
+          format(new Date(p.createdAt), "dd.MM.yyyy HH:mm"),
+          p.meetingTitle || "-",
+          p.summaryTitle || "-",
+          p.slideCount || 0,
+          p.totalPhotos || 0,
+          p.createdBy?.name || "-",
+        ]);
+      } else if (activeTab === "babyFood") {
+        head = [["Sıra", "Tarih", "Anne / T.C.", "Teslim Alan", "Bebek Adı", "Mamalar", "Personel"]];
+        body = filteredBabyFood.map((r, i) => [
+          i + 1,
+          format(new Date(r.deliveryDate || r.createdAt), "dd.MM.yyyy"),
+          `${r.motherInfo || "-"}${r.tcNo ? ` (${r.tcNo})` : ""}`,
+          r.receiver || "Kendisi",
+          r.babyName || "-",
+          (r.items || []).map((it: any) => `${it.quantity}x ${it.brand} ${it.foodName}`).join(", "),
+          r.createdBy?.name || "-",
+        ]);
+      } else {
+        head = [["Sıra", "Tarih", "Vatandaş / T.C.", "Teslim Alan", "Yardımlar", "Not", "Personel"]];
+        body = filteredInKind.map((r, i) => [
+          i + 1,
+          format(new Date(r.deliveryDate || r.createdAt), "dd.MM.yyyy"),
+          `${r.citizenName || "-"}${r.tcNo ? ` (${r.tcNo})` : ""}`,
+          r.receiver || "Kendisi",
+          (r.items || []).map((it: any) => `${it.quantity} ${it.unit} ${it.aidType}`).join(", "),
+          r.notes || "-",
+          r.createdBy?.name || "-",
+        ]);
+      }
+
+      autoTable(doc, {
+        head,
+        body,
+        startY: 33,
+        styles: {
+          font: "Roboto",
+          fontSize: 8.5,
+          cellPadding: 2.5,
+        },
+        headStyles: {
+          fillColor: [15, 23, 42],
+          textColor: [255, 255, 255],
+          fontStyle: "bold",
+        },
+        alternateRowStyles: {
+          fillColor: [248, 250, 252],
+        },
+      });
+
+      doc.save(`Edirne_SYDV_${activeTab}_${toLocalDateInputValue()}.pdf`);
+      toast.success("Resmi kurum standartlarında Türkçe PDF indirildi.");
+    } catch (err) {
+      console.error(err);
+      window.print();
+    }
   };
 
   return (
@@ -419,7 +764,7 @@ export default function ReportsPage() {
           {activeTab === "transactions" && session?.user?.role === "superadmin" && (
             <button
               onClick={handleDeleteAllTx}
-              className="inline-flex items-center justify-center px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+              className="h-10 inline-flex items-center justify-center px-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors shadow-sm"
             >
               <Trash2 className="w-4 h-4 mr-1.5" />
               Tüm Geçmişi Sil
@@ -430,11 +775,15 @@ export default function ReportsPage() {
             onClick={
               activeTab === "transactions"
                 ? exportTxExcel
+                : activeTab === "petitions"
+                ? exportPetitionsExcel
+                : activeTab === "presentations"
+                ? exportPresentationsExcel
                 : activeTab === "babyFood"
                 ? exportBabyFoodExcel
                 : exportInKindExcel
             }
-            className="inline-flex items-center justify-center px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+            className="h-10 inline-flex items-center justify-center px-3.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors shadow-sm"
             title="Türkçe Karakter Uyumlu Excel İndir"
           >
             <FileSpreadsheet className="w-4 h-4 mr-1.5" />
@@ -443,50 +792,74 @@ export default function ReportsPage() {
 
           <button
             onClick={exportPDF}
-            className="inline-flex items-center justify-center px-4 py-2.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-sm font-medium transition-colors shadow-sm"
+            className="h-10 inline-flex items-center justify-center px-3.5 bg-slate-800 hover:bg-slate-900 text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors shadow-sm"
           >
             <Download className="w-4 h-4 mr-1.5" />
-            PDF / Yazdır
+            Resmi PDF İndir
           </button>
         </div>
       </div>
 
       {/* Rapor Sekmeleri */}
-      <div className="flex border-b border-slate-200 gap-2 print:hidden">
+      <div className="flex overflow-x-auto border-b border-slate-200 gap-1.5 print:hidden">
         <button
           onClick={() => setActiveTab("transactions")}
-          className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-all ${
+          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
             activeTab === "transactions"
               ? "border-blue-600 text-blue-600 bg-blue-50/50 rounded-t-xl"
               : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50 rounded-t-xl"
           }`}
         >
           <FileText className="w-4 h-4" />
-          Vakıf İşlemleri Raporu
+          Vakıf İşlemleri
+        </button>
+
+        <button
+          onClick={() => setActiveTab("petitions")}
+          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
+            activeTab === "petitions"
+              ? "border-indigo-600 text-indigo-600 bg-indigo-50/50 rounded-t-xl"
+              : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50 rounded-t-xl"
+          }`}
+        >
+          <FileCheck2 className="w-4 h-4 text-indigo-500" />
+          Dilekçe İstatistikleri
+        </button>
+
+        <button
+          onClick={() => setActiveTab("presentations")}
+          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
+            activeTab === "presentations"
+              ? "border-violet-600 text-violet-600 bg-violet-50/50 rounded-t-xl"
+              : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50 rounded-t-xl"
+          }`}
+        >
+          <PresentationIcon className="w-4 h-4 text-violet-500" />
+          Sunu İstatistikleri
         </button>
 
         <button
           onClick={() => setActiveTab("babyFood")}
-          className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-all ${
+          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
             activeTab === "babyFood"
               ? "border-pink-500 text-pink-600 bg-pink-50/50 rounded-t-xl"
               : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50 rounded-t-xl"
           }`}
         >
           <Baby className="w-4 h-4 text-pink-500" />
-          Bebek Maması Raporu
+          Bebek Maması
         </button>
 
         <button
           onClick={() => setActiveTab("inKindAid")}
-          className={`flex items-center gap-2 px-5 py-3 text-sm font-semibold border-b-2 transition-all ${
+          className={`flex items-center gap-2 px-4 py-3 text-xs sm:text-sm font-semibold border-b-2 transition-all whitespace-nowrap ${
             activeTab === "inKindAid"
               ? "border-amber-500 text-amber-600 bg-amber-50/50 rounded-t-xl"
               : "border-transparent text-slate-500 hover:text-slate-800 hover:bg-slate-100/50 rounded-t-xl"
           }`}
         >
           <Gift className="w-4 h-4 text-amber-500" />
-          Ayni Yardım Raporu
+          Ayni Yardım
         </button>
       </div>
 
@@ -674,7 +1047,7 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredTransactions.map((t: any) => (
+                    {paginatedTransactions.map((t: any) => (
                       <tr key={t._id} className="hover:bg-slate-50">
                         <td className="py-3 px-4 text-slate-600 whitespace-nowrap">
                           {format(new Date(t.createdAt), "dd/MM/yyyy HH:mm")}
@@ -705,6 +1078,392 @@ export default function ReportsPage() {
                 </table>
               )}
             </div>
+            <PaginationControls
+              currentPage={Math.min(txPage, txTotalPages)}
+              totalPages={txTotalPages}
+              totalRecords={filteredTransactions.length}
+              pageSize={reportPageSize}
+              onPageChange={setTxPage}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* YENİ SEKME: DİLEKÇE İSTATİSTİKLERİ                         */}
+      {/* ========================================================= */}
+      {activeTab === "petitions" && (
+        <div className="space-y-6">
+          <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 print:hidden">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Personel</label>
+                <select
+                  value={petitionFilters.userId}
+                  onChange={(e) => {
+                    setPetitionFilters((p) => ({ ...p, userId: e.target.value }));
+                    setPetPage(1);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
+                >
+                  <option value="">Tüm Personeller</option>
+                  {users.map((u) => (
+                    <option key={u._id} value={u._id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Dilekçe Türü</label>
+                <select
+                  value={petitionFilters.type}
+                  onChange={(e) => {
+                    setPetitionFilters((p) => ({ ...p, type: e.target.value }));
+                    setPetPage(1);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
+                >
+                  <option value="all">Tümü</option>
+                  <option value="detayli">Detaylı Dilekçe</option>
+                  <option value="matbu">Matbu Dilekçe</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Başlangıç</label>
+                <input
+                  type="date"
+                  value={petitionFilters.dateStart}
+                  onChange={(e) => {
+                    setPetitionFilters((p) => ({ ...p, dateStart: e.target.value }));
+                    setPetPage(1);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Bitiş</label>
+                <input
+                  type="date"
+                  value={petitionFilters.dateEnd}
+                  onChange={(e) => {
+                    setPetitionFilters((p) => ({ ...p, dateEnd: e.target.value }));
+                    setPetPage(1);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Ara-Bul</label>
+                <input
+                  type="text"
+                  value={petitionFilters.search}
+                  onChange={(e) => {
+                    setPetitionFilters((p) => ({ ...p, search: e.target.value }));
+                    setPetPage(1);
+                  }}
+                  placeholder="Ad, TC, konu veya personel..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Özet Kartlar */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Toplam Dilekçe</p>
+              <p className="text-3xl font-extrabold text-slate-900 mt-1">{filteredPetitions.length}</p>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+              <p className="text-xs font-semibold text-indigo-600 uppercase">Detaylı Dilekçe</p>
+              <p className="text-3xl font-extrabold text-indigo-700 mt-1">
+                {filteredPetitions.filter((p) => p.petitionType !== "matbu").length}
+              </p>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+              <p className="text-xs font-semibold text-emerald-600 uppercase">Matbu Dilekçe</p>
+              <p className="text-3xl font-extrabold text-emerald-700 mt-1">
+                {filteredPetitions.filter((p) => p.petitionType === "matbu").length}
+              </p>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Aktif Personel</p>
+              <p className="text-3xl font-extrabold text-slate-900 mt-1">{petitionStaffStats.length}</p>
+            </div>
+          </div>
+
+          {/* Personel Bazlı Dilekçe Dağılımı */}
+          {petitionStaffStats.length > 0 && (
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-indigo-600" />
+                Personel Bazlı Dilekçe İstatistikleri
+              </h3>
+              <div className="h-60">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={petitionStaffStats}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#475569" }} />
+                    <YAxis tick={{ fontSize: 12, fill: "#64748b" }} allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="detayli" name="Detaylı" fill="#4f46e5" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="matbu" name="Matbu" fill="#10b981" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Dilekçe Kayıtları Tablosu */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="font-bold text-slate-800">Dilekçe Kayıtları</h3>
+              <span className="text-xs font-semibold px-2.5 py-1 bg-indigo-100 text-indigo-800 rounded-full">
+                {filteredPetitions.length} Kayıt
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              {loading ? (
+                <div className="p-8 text-center text-slate-500">Yükleniyor...</div>
+              ) : filteredPetitions.length === 0 ? (
+                <div className="p-8 text-center text-slate-500">Eşleşen dilekçe kaydı bulunamadı.</div>
+              ) : (
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-200">
+                      <th className="py-3 px-4 font-semibold text-slate-700">Tarih</th>
+                      <th className="py-3 px-4 font-semibold text-slate-700">Tür</th>
+                      <th className="py-3 px-4 font-semibold text-slate-700">Vatandaş Adı Soyadı</th>
+                      <th className="py-3 px-4 font-semibold text-slate-700">T.C. No</th>
+                      <th className="py-3 px-4 font-semibold text-slate-700">Konu</th>
+                      <th className="py-3 px-4 font-semibold text-slate-700">Personel</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {paginatedPetitions.map((p: any) => (
+                      <tr key={p._id} className="hover:bg-slate-50">
+                        <td className="py-3 px-4 text-slate-600 whitespace-nowrap font-mono text-xs">
+                          {format(new Date(p.createdAt), "dd.MM.yyyy HH:mm")}
+                        </td>
+                        <td className="py-3 px-4">
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-xs font-bold ${
+                              p.petitionType === "matbu"
+                                ? "bg-emerald-100 text-emerald-800"
+                                : "bg-indigo-100 text-indigo-800"
+                            }`}
+                          >
+                            {p.petitionType === "matbu" ? "Matbu" : "Detaylı"}
+                          </span>
+                        </td>
+                        <td className="py-3 px-4 font-semibold text-slate-800">{p.citizenName}</td>
+                        <td className="py-3 px-4 font-mono text-xs text-slate-600">{p.tcNo || "-"}</td>
+                        <td className="py-3 px-4 text-slate-600">{p.subject || "-"}</td>
+                        <td className="py-3 px-4 font-medium text-slate-700">
+                          {p.createdBy?.name || "Bilinmiyor"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <PaginationControls
+              currentPage={Math.min(petPage, petTotalPages)}
+              totalPages={petTotalPages}
+              totalRecords={filteredPetitions.length}
+              pageSize={reportPageSize}
+              onPageChange={setPetPage}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* ========================================================= */}
+      {/* YENİ SEKME: SUNU İSTATİSTİKLERİ                            */}
+      {/* ========================================================= */}
+      {activeTab === "presentations" && (
+        <div className="space-y-6">
+          <div className="bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-slate-200 print:hidden">
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-3">
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Personel</label>
+                <select
+                  value={presentationFilters.userId}
+                  onChange={(e) => {
+                    setPresentationFilters((p) => ({ ...p, userId: e.target.value }));
+                    setPresPage(1);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
+                >
+                  <option value="">Tüm Personeller</option>
+                  {users.map((u) => (
+                    <option key={u._id} value={u._id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Toplantı Dosyası</label>
+                <select
+                  value={presentationFilters.meetingId}
+                  onChange={(e) => {
+                    setPresentationFilters((p) => ({ ...p, meetingId: e.target.value }));
+                    setPresPage(1);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
+                >
+                  <option value="">Tüm Toplantılar</option>
+                  {meetingList.map((m) => (
+                    <option key={m._id} value={m._id}>
+                      {m.title}
+                    </option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Başlangıç</label>
+                <input
+                  type="date"
+                  value={presentationFilters.dateStart}
+                  onChange={(e) => {
+                    setPresentationFilters((p) => ({ ...p, dateStart: e.target.value }));
+                    setPresPage(1);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Bitiş</label>
+                <input
+                  type="date"
+                  value={presentationFilters.dateEnd}
+                  onChange={(e) => {
+                    setPresentationFilters((p) => ({ ...p, dateEnd: e.target.value }));
+                    setPresPage(1);
+                  }}
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-semibold text-slate-600 mb-1">Ara-Bul</label>
+                <input
+                  type="text"
+                  value={presentationFilters.search}
+                  onChange={(e) => {
+                    setPresentationFilters((p) => ({ ...p, search: e.target.value }));
+                    setPresPage(1);
+                  }}
+                  placeholder="Sunu başlığı, toplantı veya personel..."
+                  className="w-full p-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm outline-none"
+                />
+              </div>
+            </div>
+          </div>
+
+          {/* Özet Kartlar */}
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Toplam Sunu</p>
+              <p className="text-3xl font-extrabold text-slate-900 mt-1">{filteredPresentations.length}</p>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+              <p className="text-xs font-semibold text-violet-600 uppercase">Toplam Slayt Sayısı</p>
+              <p className="text-3xl font-extrabold text-violet-700 mt-1">
+                {filteredPresentations.reduce((s, p) => s + (p.slideCount || 0), 0)}
+              </p>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+              <p className="text-xs font-semibold text-blue-600 uppercase">Toplam Fotoğraf</p>
+              <p className="text-3xl font-extrabold text-blue-700 mt-1">
+                {filteredPresentations.reduce((s, p) => s + (p.totalPhotos || 0), 0)}
+              </p>
+            </div>
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs">
+              <p className="text-xs font-semibold text-slate-500 uppercase">Aktif Personel</p>
+              <p className="text-3xl font-extrabold text-slate-900 mt-1">{presentationStaffStats.length}</p>
+            </div>
+          </div>
+
+          {/* Personel Bazlı Sunu Grafiği */}
+          {presentationStaffStats.length > 0 && (
+            <div className="bg-white p-5 rounded-2xl border border-slate-200 shadow-xs space-y-4">
+              <h3 className="text-base font-bold text-slate-800 flex items-center gap-2">
+                <BarChart3 className="w-5 h-5 text-violet-600" />
+                Personel Bazlı Sunu & Slayt İstatistikleri
+              </h3>
+              <div className="h-60">
+                <ResponsiveContainer width="100%" height="100%">
+                  <BarChart data={presentationStaffStats}>
+                    <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#f1f5f9" />
+                    <XAxis dataKey="name" tick={{ fontSize: 11, fill: "#475569" }} />
+                    <YAxis tick={{ fontSize: 12, fill: "#64748b" }} allowDecimals={false} />
+                    <Tooltip />
+                    <Bar dataKey="count" name="Sunu Sayısı" fill="#7c3aed" radius={[4, 4, 0, 0]} />
+                    <Bar dataKey="slides" name="Slayt Sayısı" fill="#2563eb" radius={[4, 4, 0, 0]} />
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
+
+          {/* Sunu Kayıtları Tablosu */}
+          <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+            <div className="p-4 sm:p-5 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+              <h3 className="font-bold text-slate-800">Sunu Kayıtları</h3>
+              <span className="text-xs font-semibold px-2.5 py-1 bg-violet-100 text-violet-800 rounded-full">
+                {filteredPresentations.length} Sunu
+              </span>
+            </div>
+            <div className="overflow-x-auto">
+              {loading ? (
+                <div className="p-8 text-center text-slate-500">Yükleniyor...</div>
+              ) : filteredPresentations.length === 0 ? (
+                <div className="p-8 text-center text-slate-500">Eşleşen sunu kaydı bulunamadı.</div>
+              ) : (
+                <table className="w-full text-left border-collapse text-sm">
+                  <thead>
+                    <tr className="bg-slate-100 border-b border-slate-200">
+                      <th className="py-3 px-4 font-semibold text-slate-700">Tarih</th>
+                      <th className="py-3 px-4 font-semibold text-slate-700">Toplantı Dosyası</th>
+                      <th className="py-3 px-4 font-semibold text-slate-700">Sunu Başlığı</th>
+                      <th className="py-3 px-4 font-semibold text-slate-700">Slayt</th>
+                      <th className="py-3 px-4 font-semibold text-slate-700">Fotoğraf</th>
+                      <th className="py-3 px-4 font-semibold text-slate-700">Personel</th>
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-slate-100">
+                    {paginatedPresentations.map((p: any) => (
+                      <tr key={p._id} className="hover:bg-slate-50">
+                        <td className="py-3 px-4 text-slate-600 whitespace-nowrap font-mono text-xs">
+                          {format(new Date(p.createdAt), "dd.MM.yyyy HH:mm")}
+                        </td>
+                        <td className="py-3 px-4 text-slate-700 font-medium">{p.meetingTitle || "-"}</td>
+                        <td className="py-3 px-4 font-semibold text-slate-800">{p.summaryTitle || "-"}</td>
+                        <td className="py-3 px-4 font-mono text-xs font-bold text-violet-700">
+                          {p.slideCount || 0}
+                        </td>
+                        <td className="py-3 px-4 font-mono text-xs font-bold text-blue-700">
+                          {p.totalPhotos || 0}
+                        </td>
+                        <td className="py-3 px-4 font-medium text-slate-700">
+                          {p.createdBy?.name || "Bilinmiyor"}
+                        </td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+            </div>
+            <PaginationControls
+              currentPage={Math.min(presPage, presTotalPages)}
+              totalPages={presTotalPages}
+              totalRecords={filteredPresentations.length}
+              pageSize={reportPageSize}
+              onPageChange={setPresPage}
+            />
           </div>
         </div>
       )}
@@ -930,7 +1689,7 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredBabyFood.map((r: any) => {
+                    {paginatedBabyFood.map((r: any) => {
                       const displayTc = r.tcNo || extractTC(r.motherInfo);
                       return (
                         <tr key={r._id} className="hover:bg-slate-50">
@@ -968,13 +1727,17 @@ export default function ReportsPage() {
                 </table>
               )}
             </div>
+            <PaginationControls
+              currentPage={Math.min(bfPage, bfTotalPages)}
+              totalPages={bfTotalPages}
+              totalRecords={filteredBabyFood.length}
+              pageSize={reportPageSize}
+              onPageChange={setBfPage}
+            />
           </div>
         </div>
       )}
 
-      {/* ========================================================= */}
-      {/* 3. SEKME: AYNİ YARDIM RAPORU                               */}
-      {/* ========================================================= */}
       {activeTab === "inKindAid" && (
         <div className="space-y-6">
           {/* Filtreleme */}
@@ -1193,7 +1956,7 @@ export default function ReportsPage() {
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100">
-                    {filteredInKind.map((r: any) => {
+                    {paginatedInKind.map((r: any) => {
                       const displayTc = r.tcNo || extractTC(r.citizenName);
                       return (
                         <tr key={r._id} className="hover:bg-slate-50">
@@ -1240,6 +2003,13 @@ export default function ReportsPage() {
                 </table>
               )}
             </div>
+            <PaginationControls
+              currentPage={Math.min(ikPage, ikTotalPages)}
+              totalPages={ikTotalPages}
+              totalRecords={filteredInKind.length}
+              pageSize={reportPageSize}
+              onPageChange={setIkPage}
+            />
           </div>
         </div>
       )}

@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useLayoutEffect } from "react";
+import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
 import {
@@ -34,6 +34,7 @@ import {
   Maximize2,
 } from "lucide-react";
 import ModernConfirmDialog from "@/components/ModernConfirmDialog";
+import PaginationControls from "@/components/PaginationControls";
 import {
   SlideItem,
   PresentationTemplateClient,
@@ -795,6 +796,9 @@ export default function PresentationsPage() {
   const [staffUsers, setStaffUsers] = useState<StaffUserOption[]>([]);
   const [presentations, setPresentations] = useState<PresentationListItem[]>([]);
   const [search, setSearch] = useState("");
+  const [selectedPersonnelId, setSelectedPersonnelId] = useState<string>("");
+  const [presPage, setPresPage] = useState(1);
+  const [presPageSize, setPresPageSize] = useState(12);
   const [loading, setLoading] = useState(true);
 
   // Şablon Modalı
@@ -1252,14 +1256,17 @@ export default function PresentationsPage() {
     }
   };
 
-  // Toplantı Toplu Önizleme Modalını Aç
-  const openBulkPreview = async (meeting: MeetingItem) => {
+  // Toplantı Toplu Önizleme Modalını Aç (opsiyonel olarak seçili personel filtresiyle)
+  const openBulkPreview = async (meeting: MeetingItem, filterPersonnelName?: string) => {
     setLoadingMeetingSlides(true);
     try {
       const res = await fetch(`/api/presentations/meetings/${meeting._id}`);
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Toplantı slaytları alınamadı");
-      const groups: OrderedPresentationGroup[] = data.orderedPresentations || [];
+      const allGroups: OrderedPresentationGroup[] = data.orderedPresentations || [];
+      const groups = filterPersonnelName
+        ? allGroups.filter((g) => g.authorName === filterPersonnelName)
+        : allGroups;
       const flatSlides: Array<{
         presentationId: string;
         slideIndex: number;
@@ -2460,30 +2467,101 @@ export default function PresentationsPage() {
           </div>
 
           {/* Toplantı İçindeki Tüm Slaytlar */}
-          <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 space-y-4">
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-              <h3 className="text-base font-bold text-slate-900">
-                Toplantıdaki Tüm Slaytlar ({presentations.length})
-              </h3>
-              <div className="relative w-full sm:w-80">
-                <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
-                <input
-                  type="text"
-                  value={search}
-                  onChange={(e) => setSearch(e.target.value)}
-                  placeholder="Adı Soyadı, mahalle veya personel ara..."
-                  className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
-                />
-              </div>
-            </div>
+          {(() => {
+            const authorOptions = Array.from(
+              new Map(
+                presentations
+                  .filter((p) => p.createdBy?._id && p.createdBy?.name)
+                  .map((p) => [String(p.createdBy!._id), p.createdBy!.name])
+              ).entries()
+            ).map(([id, name]) => ({ id, name }));
 
-            {presentations.length === 0 ? (
-              <div className="text-center py-10 text-sm text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
-                Bu toplantı dosyasında henüz slayt bulunmuyor.
-              </div>
-            ) : (
-              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                {presentations.map((item) => {
+            const filteredPresentations = selectedPersonnelId
+              ? presentations.filter(
+                  (p) => String(p.createdBy?._id || "") === selectedPersonnelId
+                )
+              : presentations;
+
+            const presTotalPages = Math.max(
+              1,
+              Math.ceil(filteredPresentations.length / presPageSize)
+            );
+            const safePresPage = Math.min(presPage, presTotalPages);
+            const paginatedPresentations = filteredPresentations.slice(
+              (safePresPage - 1) * presPageSize,
+              safePresPage * presPageSize
+            );
+            const selectedAuthorName = authorOptions.find(
+              (a) => a.id === selectedPersonnelId
+            )?.name;
+
+            return (
+              <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 space-y-4">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                  <div className="flex flex-wrap items-center gap-2.5">
+                    <h3 className="text-base font-bold text-slate-900">
+                      Toplantıdaki Tüm Slaytlar ({filteredPresentations.length})
+                    </h3>
+                    {((session?.user as any)?.role === "superadmin" || canManageSelectedMeeting) &&
+                      selectedPersonnelId &&
+                      filteredPresentations.length > 0 && (
+                        <button
+                          type="button"
+                          onClick={() => openBulkPreview(selectedMeeting, selectedAuthorName)}
+                          disabled={loadingMeetingSlides}
+                          className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm inline-flex items-center gap-1.5 transition-colors"
+                        >
+                          <Eye className="w-3.5 h-3.5" />
+                          {selectedAuthorName} Sunularını Toplu Görüntüle / Düzenle
+                        </button>
+                      )}
+                  </div>
+
+                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
+                    {((session?.user as any)?.role === "superadmin" || canManageSelectedMeeting) && (
+                      <select
+                        value={selectedPersonnelId}
+                        onChange={(e) => {
+                          setSelectedPersonnelId(e.target.value);
+                          setPresPage(1);
+                        }}
+                        className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                      >
+                        <option value="">Tüm Personeller</option>
+                        {authorOptions.map((a) => (
+                          <option key={a.id} value={a.id}>
+                            Personel: {a.name}
+                          </option>
+                        ))}
+                      </select>
+                    )}
+
+                    <div className="relative w-full sm:w-72">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                      <input
+                        type="text"
+                        value={search}
+                        onChange={(e) => {
+                          setSearch(e.target.value);
+                          setPresPage(1);
+                        }}
+                        placeholder="Adı Soyadı, mahalle veya personel ara..."
+                        className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {filteredPresentations.length === 0 ? (
+                  <div className="text-center py-10 text-sm text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                    {selectedPersonnelId
+                      ? "Seçili personele ait sunu kaydı bulunmuyor."
+                      : "Bu toplantı dosyasında henüz slayt bulunmuyor."}
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {paginatedPresentations.map((item) => {
                   const canModify =
                     selectedMeeting.status === "open" &&
                     (canManageSelectedMeeting ||
@@ -2586,11 +2664,26 @@ export default function PresentationsPage() {
                         </div>
                       </div>
                     </div>
-                  );
-                })}
-              </div>
-            )}
-          </div>
+                      );
+                    })}
+                  </div>
+                  <PaginationControls
+                    currentPage={safePresPage}
+                    totalPages={presTotalPages}
+                    totalRecords={filteredPresentations.length}
+                    pageSize={presPageSize}
+                    onPageChange={setPresPage}
+                    onPageSizeChange={(s) => {
+                      setPresPageSize(s);
+                      setPresPage(1);
+                    }}
+                    pageSizeOptions={[9, 12, 24, 48]}
+                  />
+                </>
+              )}
+            </div>
+          );
+        })()}
         </div>
       )}
 

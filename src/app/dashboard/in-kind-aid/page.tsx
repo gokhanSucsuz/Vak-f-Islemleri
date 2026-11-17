@@ -28,6 +28,7 @@ import { turkishIncludes, extractTC, exportToExcel } from "@/lib/turkish";
 import { toLocalDateInputValue, toLocalDayStartISO, toLocalDayEndISO } from "@/lib/date";
 import { registerTurkishFont } from "@/lib/pdfFont";
 import ModernConfirmDialog, { DialogType } from "@/components/ModernConfirmDialog";
+import PaginationControls from "@/components/PaginationControls";
 
 type InKindAidType = {
   _id: string;
@@ -64,6 +65,8 @@ export default function InKindAidPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [ikPage, setIkPage] = useState(1);
+  const [ikPageSize, setIkPageSize] = useState(20);
   const [editingRecord, setEditingRecord] = useState<InKindAidRecord | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -529,6 +532,13 @@ export default function InKindAidPage() {
   const sortedDistribution = Object.entries(typeDistribution).sort((a, b) => b[1] - a[1]);
 
   // Excel Dışa Aktarma (Türkçe Karakter Uyumlu)
+  const ikTotalPages = Math.max(1, Math.ceil(filteredRecords.length / ikPageSize));
+  const paginatedRecords = useMemo(() => {
+    const safePage = Math.min(ikPage, ikTotalPages);
+    const start = (safePage - 1) * ikPageSize;
+    return filteredRecords.slice(start, start + ikPageSize);
+  }, [filteredRecords, ikPage, ikPageSize, ikTotalPages]);
+
   const handleExportExcel = () => {
     const exportData = filteredRecords.map((r, i) => {
       const itemsDetail = r.items
@@ -1107,7 +1117,7 @@ export default function InKindAidPage() {
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((record) => {
+                paginatedRecords.map((record) => {
                   const displayTc = record.tcNo || extractTC(record.citizenName);
                   return (
                     <tr key={record._id} className="hover:bg-slate-50/50 transition-colors">
@@ -1196,6 +1206,18 @@ export default function InKindAidPage() {
             </tbody>
           </table>
         </div>
+
+        <PaginationControls
+          currentPage={Math.min(ikPage, ikTotalPages)}
+          totalPages={ikTotalPages}
+          totalRecords={filteredRecords.length}
+          pageSize={ikPageSize}
+          onPageChange={setIkPage}
+          onPageSizeChange={(s) => {
+            setIkPageSize(s);
+            setIkPage(1);
+          }}
+        />
       </div>
 
       {/* Ayni Yardım Ekle / Düzenle Modalı */}

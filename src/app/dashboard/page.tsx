@@ -8,6 +8,7 @@ import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import { turkishIncludes, extractTC } from "@/lib/turkish";
 import ModernConfirmDialog, { DialogType } from "@/components/ModernConfirmDialog";
+import PaginationControls from "@/components/PaginationControls";
 
 export default function DashboardPage() {
   const { data: session, status } = useSession();
@@ -23,6 +24,8 @@ export default function DashboardPage() {
   const [allSearchedTransactions, setAllSearchedTransactions] = useState<any[] | null>(null);
   const [txSearch, setTxSearch] = useState("");
   const [searchingAll, setSearchingAll] = useState(false);
+  const [txPage, setTxPage] = useState(1);
+  const [txPageSize, setTxPageSize] = useState(20);
   const [helpTypes, setHelpTypes] = useState([]);
   const [todayStats, setTodayStats] = useState(0);
   
@@ -80,6 +83,7 @@ export default function DashboardPage() {
   };
 
   useEffect(() => {
+    setTxPage(1);
     const q = txSearch.trim();
     if (!q) {
       setAllSearchedTransactions(null);
@@ -332,6 +336,13 @@ export default function DashboardPage() {
     });
   };
 
+  const activeTransactionsList = allSearchedTransactions ?? transactions;
+  const txTotalPages = Math.max(1, Math.ceil(activeTransactionsList.length / txPageSize));
+  const paginatedTransactions = useMemo(() => {
+    const start = (txPage - 1) * txPageSize;
+    return activeTransactionsList.slice(start, start + txPageSize);
+  }, [activeTransactionsList, txPage, txPageSize]);
+
   const isSuperAdminOrManager = session?.user?.role === "superadmin" || session?.user?.role === "manager";
 
   return (
@@ -506,7 +517,7 @@ export default function DashboardPage() {
               Henüz bir kayıt bulunmamaktadır.
             </div>
           ) : (
-            (allSearchedTransactions ?? transactions).map((t: any) => {
+            paginatedTransactions.map((t: any) => {
               const isEditing = editingId === t._id;
               const isOwner = String(t.userId?._id || t.userId || "") === String(session?.user?.id || "");
               const canCrud = session?.user?.role === "superadmin" || (session?.user?.role === "personnel" && isOwner);
@@ -634,7 +645,7 @@ export default function DashboardPage() {
                   <td colSpan={session?.user?.role !== "manager" ? 5 : 4} className="py-8 text-center text-slate-500">Henüz bir kayıt bulunmamaktadır.</td>
                 </tr>
               ) : (
-                (allSearchedTransactions ?? transactions).map((t: any) => {
+                paginatedTransactions.map((t: any) => {
                   const isEditing = editingId === t._id;
                   const isOwner = String(t.userId?._id || t.userId || "") === String(session?.user?.id || "");
                   const canCrud = session?.user?.role === "superadmin" || (session?.user?.role === "personnel" && isOwner);
@@ -718,6 +729,18 @@ export default function DashboardPage() {
             </tbody>
           </table>
         </div>
+
+        <PaginationControls
+          currentPage={txPage}
+          totalPages={txTotalPages}
+          totalRecords={activeTransactionsList.length}
+          pageSize={txPageSize}
+          onPageChange={setTxPage}
+          onPageSizeChange={(s) => {
+            setTxPageSize(s);
+            setTxPage(1);
+          }}
+        />
       </div>
 
       <ModernConfirmDialog

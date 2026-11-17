@@ -1,17 +1,20 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import { Filter, Search, Calendar, User as UserIcon, Activity } from "lucide-react";
 import { format } from "date-fns";
 import { toLocalDateInputValue, toLocalDayStartISO, toLocalDayEndISO } from "@/lib/date";
 import { tr } from "date-fns/locale";
+import PaginationControls from "@/components/PaginationControls";
 
 export default function LogsPage() {
   const { data: session } = useSession();
   const [logs, setLogs] = useState([]);
   const [users, setUsers] = useState([]);
   const [loading, setLoading] = useState(false);
+  const [logPage, setLogPage] = useState(1);
+  const [logPageSize, setLogPageSize] = useState(30);
 
   // Varsayılan olarak bugünü göster
   const today = toLocalDateInputValue();
@@ -60,7 +63,8 @@ export default function LogsPage() {
       const res = await fetch(`/api/logs?${params.toString()}`);
       if (res.ok) {
         const data = await res.json();
-        setLogs(data.logs);
+        setLogs(data.logs || []);
+        setLogPage(1);
       }
     } catch (error) {
       console.error("Loglar yüklenemedi", error);
@@ -78,6 +82,12 @@ export default function LogsPage() {
     e.preventDefault();
     fetchLogs();
   };
+
+  const logTotalPages = Math.max(1, Math.ceil(logs.length / logPageSize));
+  const paginatedLogs = useMemo(() => {
+    const start = (logPage - 1) * logPageSize;
+    return logs.slice(start, start + logPageSize);
+  }, [logs, logPage, logPageSize]);
 
   if (session?.user?.role !== "superadmin") {
     return (
@@ -209,7 +219,7 @@ export default function LogsPage() {
                   <td colSpan={4} className="py-8 text-center text-slate-500">Belirtilen tarihte veya filtrede kayıt bulunamadı.</td>
                 </tr>
               ) : (
-                logs.map((log: any) => (
+                paginatedLogs.map((log: any) => (
                   <tr key={log._id} className="even:bg-slate-50/70 odd:bg-white hover:bg-slate-100 transition-colors">
                     <td className="py-3 px-6 text-sm text-slate-500 whitespace-nowrap border-t border-slate-100">
                       {format(new Date(log.createdAt), "dd/MM/yyyy HH:mm:ss")}
@@ -236,6 +246,18 @@ export default function LogsPage() {
             </tbody>
           </table>
         </div>
+
+        <PaginationControls
+          currentPage={logPage}
+          totalPages={logTotalPages}
+          totalRecords={logs.length}
+          pageSize={logPageSize}
+          onPageChange={setLogPage}
+          onPageSizeChange={(s) => {
+            setLogPageSize(s);
+            setLogPage(1);
+          }}
+        />
       </div>
     </div>
   );

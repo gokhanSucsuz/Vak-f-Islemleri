@@ -30,6 +30,7 @@ import { turkishIncludes, extractTC, exportToExcel } from "@/lib/turkish";
 import { toLocalDateInputValue, toLocalDayStartISO, toLocalDayEndISO } from "@/lib/date";
 import { registerTurkishFont } from "@/lib/pdfFont";
 import ModernConfirmDialog, { DialogType } from "@/components/ModernConfirmDialog";
+import PaginationControls from "@/components/PaginationControls";
 
 type BabyFoodType = {
   _id: string;
@@ -64,6 +65,8 @@ export default function BabyFoodPage() {
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
+  const [bfPage, setBfPage] = useState(1);
+  const [bfPageSize, setBfPageSize] = useState(20);
   const [editingRecord, setEditingRecord] = useState<BabyFoodRecord | null>(null);
   const [saving, setSaving] = useState(false);
   const savingRef = useRef(false);
@@ -534,6 +537,13 @@ export default function BabyFoodPage() {
   const sortedDetailedStats = Object.entries(detailedStats).sort((a, b) => b[1] - a[1]);
 
   // Excel Dışa Aktarma
+  const bfTotalPages = Math.max(1, Math.ceil(filteredRecords.length / bfPageSize));
+  const paginatedRecords = useMemo(() => {
+    const safePage = Math.min(bfPage, bfTotalPages);
+    const start = (safePage - 1) * bfPageSize;
+    return filteredRecords.slice(start, start + bfPageSize);
+  }, [filteredRecords, bfPage, bfPageSize, bfTotalPages]);
+
   const handleExportExcel = () => {
     const exportData = filteredRecords.map((r, i) => {
       const tc = r.tcNo || extractTC(r.motherInfo) || "-";
@@ -1276,7 +1286,7 @@ export default function BabyFoodPage() {
                   </td>
                 </tr>
               ) : (
-                filteredRecords.map((record) => {
+                paginatedRecords.map((record) => {
                   const displayTc = record.tcNo || extractTC(record.motherInfo);
                   return (
                     <tr key={record._id} className="hover:bg-slate-50/70 transition-colors">
@@ -1351,6 +1361,18 @@ export default function BabyFoodPage() {
             </tbody>
           </table>
         </div>
+
+        <PaginationControls
+          currentPage={Math.min(bfPage, bfTotalPages)}
+          totalPages={bfTotalPages}
+          totalRecords={filteredRecords.length}
+          pageSize={bfPageSize}
+          onPageChange={setBfPage}
+          onPageSizeChange={(s) => {
+            setBfPageSize(s);
+            setBfPage(1);
+          }}
+        />
       </div>
 
       {/* ========================================================= */}
