@@ -40,6 +40,12 @@ export function invalidateApplicationCache() {
   g.__appFilesCachePromise = null;
 }
 
+export function warmApplicationCache() {
+  if (!g.__appFilesCache && !g.__appFilesCachePromise) {
+    void getApplicationCache().catch(() => {});
+  }
+}
+
 export async function getApplicationCache(): Promise<ApplicationCacheData> {
   if (g.__appFilesCache) {
     return g.__appFilesCache;
@@ -51,8 +57,6 @@ export async function getApplicationCache(): Promise<ApplicationCacheData> {
   g.__appFilesCachePromise = (async () => {
     await dbConnect();
     const rawDocs = await ApplicationFile.find({})
-      .populate("createdBy", "name email")
-      .populate("updatedBy", "name email")
       .sort({ applicationNoSeq: -1, createdAt: -1 })
       .lean();
 

@@ -179,23 +179,34 @@ function highlightText(rawText: string, query: string): React.ReactNode {
   }
 }
 
+const moduleAppFilesCache = new Map<
+  string,
+  {
+    records: ApplicationFileRecord[];
+    pagination: { page: number; limit: number; totalRecords: number; totalPages: number };
+    stats: {
+      totalCount: number;
+      emptyCount: number;
+      activeCount: number;
+      nextApplicationNo: string | number;
+      nextSeqNumber?: number;
+      sheetPrefix?: string;
+    };
+    sheets?: SheetTabInfo[];
+    activeColumns?: string[];
+    canManage?: boolean;
+  }
+>();
+
 export default function ApplicationsPage() {
   const { data: session } = useSession();
   const fileInputRef = useRef<HTMLInputElement>(null);
   const searchInputRef = useRef<HTMLInputElement>(null);
+  const abortControllerRef = useRef<AbortController | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
-  // Önbellek Sistemi (Cache): Hızlı ara-bul için istemci tarafı bellek önbelleği
-  const cacheRef = useRef<
-    Map<
-      string,
-      {
-        records: ApplicationFileRecord[];
-        pagination: { page: number; limit: number; totalRecords: number; totalPages: number };
-        stats: { totalCount: number; emptyCount: number; activeCount: number; nextApplicationNo: number };
-      }
-    >
-  >(new Map());
+  // Önbellek Sistemi (Cache): Sayfalar arası geçişte bile anında açılan modül seviyesi önbellek
+  const cacheRef = useRef(moduleAppFilesCache);
 
   const [records, setRecords] = useState<ApplicationFileRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -235,11 +246,11 @@ export default function ApplicationsPage() {
   >("no_desc");
   const [isAdvancedFilterOpen, setIsAdvancedFilterOpen] = useState(false);
 
-  // Arama girdisini anlık ve kesintisiz 80ms gecikmeli tetikleme (Debounce)
+  // Arama girdisini anlık ve kesintisiz 50ms gecikmeli tetikleme (Debounce)
   useEffect(() => {
     const handler = setTimeout(() => {
       setDebouncedSearch(searchTerm);
-    }, 80);
+    }, 50);
     return () => clearTimeout(handler);
   }, [searchTerm]);
 
@@ -386,10 +397,19 @@ export default function ApplicationsPage() {
       setRecords(cached.records);
       setTotalPages(cached.pagination.totalPages);
       setTotalRecords(cached.pagination.totalRecords);
-      setStats(cached.stats);
+      setStats(cached.stats as any);
+      if (cached.sheets?.length) setSheets(cached.sheets);
+      if (cached.activeColumns?.length) setActiveTableColumns(cached.activeColumns);
+      if (typeof cached.canManage === "boolean") setCanManage(cached.canManage);
       setLoading(false);
       return;
     }
+
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+    }
+    const controller = new AbortController();
+    abortControllerRef.current = controller;
 
     setLoading(true);
     try {
@@ -406,7 +426,9 @@ export default function ApplicationsPage() {
       if (dateStart) params.append("dateStart", dateStart);
       if (dateEnd) params.append("dateEnd", dateEnd);
 
-      const res = await fetch(`/api/application-files?${params.toString()}`);
+      const res = await fetch(`/api/application-files?${params.toString()}`, {
+        signal: controller.signal,
+      });
       if (res.ok) {
         const data = await res.json();
         const recs = data.records || [];
@@ -452,15 +474,21 @@ export default function ApplicationsPage() {
           records: recs,
           pagination: data.pagination || { page: currentPage, limit: pageSize, totalRecords: recs.length, totalPages: 1 },
           stats: data.stats || { totalCount: 0, emptyCount: 0, activeCount: 0, nextApplicationNo: "1", nextSeqNumber: 1, sheetPrefix: "" },
+          sheets: data.sheets,
+          activeColumns: data.activeColumns,
+          canManage: Boolean(data.canManage),
         });
       } else {
         toast.error("Dosya kayıtları yüklenemedi.");
       }
-    } catch (e) {
+    } catch (e: any) {
+      if (e?.name === "AbortError") return;
       console.error(e);
       toast.error("Sunucu ile bağlantı kurulamadı.");
     } finally {
-      setLoading(false);
+      if (abortControllerRef.current === controller) {
+        setLoading(false);
+      }
     }
   }, [selectedSheet, currentPage, pageSize, filterTab, statusFilter, debouncedSearch, dateStart, dateEnd, minNo, maxNo, sortBy]);
 
@@ -1995,7 +2023,7 @@ export default function ApplicationsPage() {
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
-              {loading ? (
+              {loading && records.length === 0 ? (
                 <tr>
                   <td colSpan={tableColumns.length + 2} className="py-12 text-center text-slate-500">
                     <div className="flex items-center justify-center gap-2">

@@ -127,6 +127,7 @@ export async function GET(req: Request) {
 
     await dbConnect();
     await deduplicateSameDayTransactionsOnce();
+    import("@/lib/applicationCache").then((m) => m.warmApplicationCache()).catch(() => {});
     const HelpType = (await import("@/models/HelpType")).default; // ensure model is registered
 
     let query: any = {};
