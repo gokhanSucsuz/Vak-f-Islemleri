@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
 import {
@@ -65,6 +65,8 @@ export default function BabyFoodPage() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [editingRecord, setEditingRecord] = useState<BabyFoodRecord | null>(null);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   // Mamaların Tür ve Numaralarına Göre Dağılımı - Aşağı Açılır Menü (Varsayılan: KAPALI)
   const [isDistributionOpen, setIsDistributionOpen] = useState(false);
@@ -352,6 +354,7 @@ export default function BabyFoodPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving || savingRef.current) return;
 
     if (formData.items.length === 0) {
       toast.error("Lütfen en az bir adet mama ekleyin");
@@ -388,6 +391,9 @@ export default function BabyFoodPage() {
   };
 
   const executeSaveRecord = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
     try {
       const payload = {
         ...formData,
@@ -421,6 +427,9 @@ export default function BabyFoodPage() {
       fetchRecords();
     } catch (error: any) {
       toast.error(error.message || "Bir hata oluştu");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
@@ -1907,9 +1916,13 @@ export default function BabyFoodPage() {
                 </button>
                 <button
                   type="submit"
-                  className="px-5 py-2.5 text-white rounded-xl font-semibold text-sm bg-pink-500 hover:bg-pink-600 shadow-lg shadow-pink-500/30"
+                  disabled={saving}
+                  className="px-5 py-2.5 text-white rounded-xl font-semibold text-sm bg-pink-500 hover:bg-pink-600 shadow-lg shadow-pink-500/30 disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2"
                 >
-                  {editingRecord ? "Güncelle" : "Kaydet"}
+                  {saving && (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  )}
+                  {saving ? "Kaydediliyor..." : editingRecord ? "Güncelle" : "Kaydet"}
                 </button>
               </div>
             </form>

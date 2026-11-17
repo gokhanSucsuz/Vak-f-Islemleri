@@ -4,6 +4,42 @@ import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import Transaction from "@/models/Transaction";
 import User from "@/models/User";
+import { normalizeTurkish } from "@/lib/turkish";
+
+const g = globalThis as unknown as { __txDeduplicated?: boolean };
+
+async function deduplicateSameDayTransactionsOnce() {
+  if (g.__txDeduplicated) return;
+  g.__txDeduplicated = true;
+  try {
+    const allTx = await Transaction.find({}).sort({ createdAt: 1 });
+    const seen = new Map<string, boolean>();
+    const deleteIds: any[] = [];
+
+    for (const t of allTx) {
+      const d = new Date(t.createdAt);
+      const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
+        d.getDate()
+      ).padStart(2, "0")}`;
+      const infoKey = normalizeTurkish(String(t.citizenInfo || "").replace(/\s+/g, " "));
+      const typeKey = t.helpType ? String(t.helpType) : "none";
+      const userKey = String(t.userId || "");
+      const composite = `${userKey}|${dayKey}|${infoKey}|${typeKey}`;
+
+      if (seen.has(composite)) {
+        deleteIds.push(t._id);
+      } else {
+        seen.set(composite, true);
+      }
+    }
+
+    if (deleteIds.length > 0) {
+      await Transaction.deleteMany({ _id: { $in: deleteIds } });
+    }
+  } catch (err) {
+    console.error("Transaction deduplication warning:", err);
+  }
+}
 
 export async function POST(req: Request) {
   try {
@@ -20,6 +56,31 @@ export async function POST(req: Request) {
 
     await dbConnect();
     await import("@/models/HelpType");
+
+    // 15 saniye içinde aynı kullanıcı tarafından aynı kişi ve tür için çift tıklama koruması
+    const fifteenSecondsAgo = new Date(Date.now() - 15_000);
+    const recentSameUser = await Transaction.find({
+      userId: session.user.id,
+      createdAt: { $gte: fifteenSecondsAgo },
+    })
+      .populate("userId", "name email")
+      .populate("helpType", "name")
+      .sort({ createdAt: -1 });
+
+    const normInputInfo = normalizeTurkish(String(citizenInfo).replace(/\s+/g, " "));
+    const existingDuplicate = recentSameUser.find((t: any) => {
+      const sameInfo =
+        normalizeTurkish(String(t.citizenInfo || "").replace(/\s+/g, " ")) === normInputInfo;
+      const sameType = String(t.helpType?._id || t.helpType || "") === String(helpType || "");
+      return sameInfo && sameType;
+    });
+
+    if (existingDuplicate) {
+      return NextResponse.json(
+        { message: "İşlem zaten kaydedildi", transaction: existingDuplicate, deduplicated: true },
+        { status: 200 }
+      );
+    }
 
     const transaction = new Transaction({
       userId: session.user.id,
@@ -65,6 +126,7 @@ export async function GET(req: Request) {
     const filterHelpType = searchParams.get("helpType");
 
     await dbConnect();
+    await deduplicateSameDayTransactionsOnce();
     const HelpType = (await import("@/models/HelpType")).default; // ensure model is registered
 
     let query: any = {};

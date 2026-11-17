@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
 import {
@@ -65,6 +65,8 @@ export default function InKindAidPage() {
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
   const [searchTerm, setSearchTerm] = useState("");
   const [editingRecord, setEditingRecord] = useState<InKindAidRecord | null>(null);
+  const [saving, setSaving] = useState(false);
+  const savingRef = useRef(false);
 
   const [formData, setFormData] = useState({
     tcNo: "",
@@ -349,6 +351,9 @@ export default function InKindAidPage() {
   };
 
   const executeSaveAid = async () => {
+    if (savingRef.current) return;
+    savingRef.current = true;
+    setSaving(true);
     try {
       if (editingRecord) {
         const res = await fetch("/api/in-kind-aid", {
@@ -374,11 +379,15 @@ export default function InKindAidPage() {
       fetchRecords();
     } catch (error: any) {
       toast.error(error.message || "Bir hata oluştu");
+    } finally {
+      savingRef.current = false;
+      setSaving(false);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (saving || savingRef.current) return;
 
     if (formData.items.length === 0) {
       toast.error("Lütfen en az bir ayni yardım kalemi ekleyin");
@@ -1492,13 +1501,19 @@ export default function InKindAidPage() {
                 </button>
                 <button
                   type="submit"
-                  className={`px-5 py-2.5 text-white rounded-xl font-medium shadow-lg transition-all ${
+                  disabled={saving}
+                  className={`px-5 py-2.5 text-white rounded-xl font-medium shadow-lg transition-all disabled:opacity-60 disabled:cursor-not-allowed inline-flex items-center gap-2 ${
                     recentWarning && recentWarning.hasRecentDelivery
                       ? "bg-red-600 hover:bg-red-700 shadow-red-500/30"
                       : "bg-amber-500 hover:bg-amber-600 shadow-amber-500/30"
                   }`}
                 >
-                  {editingRecord
+                  {saving && (
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  )}
+                  {saving
+                    ? "Kaydediliyor..."
+                    : editingRecord
                     ? "Güncelle"
                     : recentWarning && recentWarning.hasRecentDelivery
                     ? "Yine de Kaydet"

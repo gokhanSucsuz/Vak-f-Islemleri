@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
 import { Save, UserCircle, Activity, Clock, Trash2, Edit2, X, Check, AlertTriangle, Search } from "lucide-react";
@@ -13,6 +13,7 @@ export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
   const [loading, setLoading] = useState(false);
+  const submittingRef = useRef(false);
   const [formData, setFormData] = useState({
     citizenInfo: "",
     helpType: "",
@@ -161,6 +162,8 @@ export default function DashboardPage() {
   }, [formData.citizenInfo, transactions]);
 
   const executeSaveTransaction = async () => {
+    if (submittingRef.current) return;
+    submittingRef.current = true;
     setLoading(true);
     try {
       const res = await fetch("/api/transactions", {
@@ -173,8 +176,12 @@ export default function DashboardPage() {
         const data = await res.json();
         toast.success("İşlem başarıyla kaydedildi ve listeye eklendi!");
         setFormData({ citizenInfo: "", helpType: "" });
-        if (data?.transaction) {
-          setTransactions((prev: any) => [data.transaction, ...prev]);
+        if (data?.transaction && !data?.deduplicated) {
+          setTransactions((prev: any) =>
+            prev.some((item: any) => item._id === data.transaction._id)
+              ? prev
+              : [data.transaction, ...prev]
+          );
           setTodayStats((prev) => prev + 1);
         }
         // Arka planda sessizce senkronize et
@@ -186,13 +193,14 @@ export default function DashboardPage() {
     } catch (error) {
       toast.error("İşlem kaydedilemedi");
     } finally {
+      submittingRef.current = false;
       setLoading(false);
     }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (loading) return;
+    if (loading || submittingRef.current) return;
     setLoading(true);
 
     try {
@@ -433,10 +441,19 @@ export default function DashboardPage() {
                 <button
                   type="submit"
                   disabled={loading}
-                  className="inline-flex items-center justify-center px-6 py-3 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all disabled:opacity-70 transform hover:-translate-y-0.5"
+                  className="inline-flex items-center justify-center px-6 py-3 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all disabled:opacity-70 disabled:cursor-not-allowed transform hover:-translate-y-0.5"
                 >
-                  <Save className="w-5 h-5 mr-2" />
-                  {loading ? "Kaydediliyor..." : "Kaydet"}
+                  {loading ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin mr-2" />
+                      İşlem Yapılıyor...
+                    </>
+                  ) : (
+                    <>
+                      <Save className="w-5 h-5 mr-2" />
+                      Kaydet
+                    </>
+                  )}
                 </button>
               </div>
             </form>
