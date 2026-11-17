@@ -3,10 +3,10 @@ import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import Transaction from "@/models/Transaction";
-import ApplicationFile from "@/models/ApplicationFile";
 import Petition from "@/models/Petition";
 import BabyFood from "@/models/BabyFood";
 import InKindAid from "@/models/InKindAid";
+import { getApplicationCache } from "@/lib/applicationCache";
 import { extractTC, turkishIncludes } from "@/lib/turkish";
 
 export async function POST(req: Request) {
@@ -67,17 +67,18 @@ export async function POST(req: Request) {
       return false;
     };
 
-    const [recentTx, recentApps, recentPetitions, recentBabyFood, recentInKind] = await Promise.all([
+    const oneMonthAgoMs = oneMonthAgo.getTime();
+    const [recentTx, appCache, recentPetitions, recentBabyFood, recentInKind] = await Promise.all([
       Transaction.find({ createdAt: { $gte: oneMonthAgo } })
         .populate("userId", "name")
         .populate("helpType", "name")
-        .sort({ createdAt: -1 }),
-      ApplicationFile.find({ createdAt: { $gte: oneMonthAgo } })
-        .populate("createdBy", "name")
-        .sort({ createdAt: -1 }),
+        .sort({ createdAt: -1 })
+        .limit(400),
+      getApplicationCache(),
       Petition.find({ createdAt: { $gte: oneMonthAgo } })
         .populate("createdBy", "name")
-        .sort({ createdAt: -1 }),
+        .sort({ createdAt: -1 })
+        .limit(300),
       BabyFood.find({
         $or: [
           { deliveryDate: { $gte: oneMonthAgo } },
@@ -85,7 +86,8 @@ export async function POST(req: Request) {
         ],
       })
         .populate("createdBy", "name")
-        .sort({ deliveryDate: -1, createdAt: -1 }),
+        .sort({ deliveryDate: -1, createdAt: -1 })
+        .limit(300),
       InKindAid.find({
         $or: [
           { deliveryDate: { $gte: oneMonthAgo } },
@@ -93,8 +95,16 @@ export async function POST(req: Request) {
         ],
       })
         .populate("createdBy", "name")
-        .sort({ deliveryDate: -1, createdAt: -1 }),
+        .sort({ deliveryDate: -1, createdAt: -1 })
+        .limit(300),
     ]);
+
+    const recentApps = appCache.items
+      .filter((item) => {
+        const cAt = item.doc.createdAt ? new Date(item.doc.createdAt).getTime() : 0;
+        return cAt >= oneMonthAgoMs;
+      })
+      .map((item) => item.doc);
 
     for (const t of recentTx) {
       if (isMatch(t.citizenInfo)) {

@@ -18,7 +18,7 @@ export default function DashboardPage() {
     helpType: "",
   });
   
-  const [transactions, setTransactions] = useState([]);
+  const [transactions, setTransactions] = useState<any[]>([]);
   const [allSearchedTransactions, setAllSearchedTransactions] = useState<any[] | null>(null);
   const [txSearch, setTxSearch] = useState("");
   const [searchingAll, setSearchingAll] = useState(false);
@@ -170,9 +170,15 @@ export default function DashboardPage() {
       });
 
       if (res.ok) {
-        toast.success("İşlem başarıyla kaydedildi!");
+        const data = await res.json();
+        toast.success("İşlem başarıyla kaydedildi ve listeye eklendi!");
         setFormData({ citizenInfo: "", helpType: "" });
-        fetchData();
+        if (data?.transaction) {
+          setTransactions((prev: any) => [data.transaction, ...prev]);
+          setTodayStats((prev) => prev + 1);
+        }
+        // Arka planda sessizce senkronize et
+        void fetchData();
       } else {
         const data = await res.json();
         toast.error(data.error || "Bir hata oluştu");
@@ -186,6 +192,8 @@ export default function DashboardPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (loading) return;
+    setLoading(true);
 
     try {
       const checkRes = await fetch("/api/transactions/check-recent", {
@@ -207,6 +215,7 @@ export default function DashboardPage() {
             }));
 
       if (recentMatches.length > 0) {
+        setLoading(false);
         setDialogState({
           isOpen: true,
           type: "warning",

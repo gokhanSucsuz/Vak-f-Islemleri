@@ -5,6 +5,23 @@ import dbConnect from "@/lib/db";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
 
+const sessionUserCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    role: string;
+    title: string;
+    authorizedModules: string[];
+    isAuthorized: boolean;
+    canManageSystem: boolean;
+  }
+>();
+
+export function invalidateUserSessionCache(userId?: string) {
+  if (userId) sessionUserCache.delete(String(userId));
+  else sessionUserCache.clear();
+}
+
 export const authOptions: NextAuthOptions = {
   providers: [
     GoogleProvider({
@@ -123,6 +140,17 @@ export const authOptions: NextAuthOptions = {
         session.user.role = token.role as string;
         session.user.id = token.id as string;
         try {
+          const uid = String(token.id);
+          const cached = sessionUserCache.get(uid);
+          if (cached && cached.expiresAt > Date.now()) {
+            session.user.role = cached.role;
+            (session.user as any).title = cached.title;
+            session.user.authorizedModules = cached.authorizedModules as any;
+            session.user.isAuthorized = cached.isAuthorized;
+            session.user.canManageSystem = cached.canManageSystem;
+            return session;
+          }
+
           await dbConnect();
           const dbUser = (await User.findById(token.id)
             .select("role title canManageApplications authorizedModules")
@@ -142,12 +170,21 @@ export const authOptions: NextAuthOptions = {
                 ? [...ALL_PERMISSION_MODULE_KEYS]
                 : resolveUserAuthorizedModules(dbUser);
             const isAuthorized = liveRole === "superadmin" || authorizedModules.length > 0;
+            const canManageSystem =
+              liveRole === "superadmin" || liveRole === "manager" || isAuthorized;
             session.user.role = liveRole;
             (session.user as any).title = dbUser.title || "";
             session.user.authorizedModules = authorizedModules;
             session.user.isAuthorized = isAuthorized;
-            session.user.canManageSystem =
-              liveRole === "superadmin" || liveRole === "manager" || isAuthorized;
+            session.user.canManageSystem = canManageSystem;
+            sessionUserCache.set(uid, {
+              expiresAt: Date.now() + 30_000,
+              role: liveRole,
+              title: dbUser.title || "",
+              authorizedModules,
+              isAuthorized,
+              canManageSystem,
+            });
           } else {
             session.user.authorizedModules = [];
             session.user.isAuthorized = token.role === "superadmin";

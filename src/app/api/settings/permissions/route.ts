@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth/next";
-import { authOptions } from "@/lib/authOptions";
+import { authOptions, invalidateUserSessionCache } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import User from "@/models/User";
 import Log from "@/models/Log";
@@ -71,6 +71,7 @@ export async function POST(req: Request) {
       }
       targetUser.title = title.trim();
       await targetUser.save();
+      invalidateUserSessionCache(userId);
       try {
         await Log.create({
           userId: session.user.id,
@@ -106,6 +107,7 @@ export async function POST(req: Request) {
     targetUser.authorizedModules = cleanModules;
     targetUser.canManageApplications = cleanModules.length > 0;
     await targetUser.save();
+    invalidateUserSessionCache(userId);
 
     const grantedLabels = PERMISSION_MODULES.filter((m) =>
       cleanModules.includes(m.key)
