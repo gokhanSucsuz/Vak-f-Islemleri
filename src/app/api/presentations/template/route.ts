@@ -145,7 +145,7 @@ export async function POST(req: NextRequest) {
     await dbConnect();
 
     // Eski tekli şablon döneminden kalan key_1 unique indeksini otomatik temizle
-    await PresentationTemplate.collection.dropIndex("key_1").catch(() => {});
+    await PresentationTemplate.collection.dropIndex("key_1").catch(() => { });
 
     const tpl = await PresentationTemplate.create({
       name: templateName,
