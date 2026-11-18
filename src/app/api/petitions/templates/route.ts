@@ -37,11 +37,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 
-    const { getEffectivePermissions } = await import("@/lib/permissions");
-    const perms = await getEffectivePermissions(session);
-    if (!perms.canManagePetitions) {
+    if ((session.user as any).role !== "superadmin") {
       return NextResponse.json(
-        { error: "Şablon yükleme yetkisi sadece Müdür, Süper Admin ve yetkili personel içindir." },
+        { error: "Şablon yükleme ve düzenleme yetkisi yalnızca süper admin'e aittir." },
         { status: 403 }
       );
     }

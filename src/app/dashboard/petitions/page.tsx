@@ -90,6 +90,7 @@ export default function PetitionsPage() {
   const { data: session } = useSession();
   const userRole = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
+  const isSuperAdmin = userRole === "superadmin";
   const isManager =
     userRole === "superadmin" ||
     userRole === "manager" ||
@@ -1258,7 +1259,7 @@ export default function PetitionsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
-          {isManager && (
+          {isSuperAdmin && (
             <button
               type="button"
               onClick={() => setIsTemplateModalOpen(true)}
@@ -1519,7 +1520,7 @@ export default function PetitionsPage() {
                             <CopyPlus className="w-3.5 h-3.5" />
                             Şablon Kullan
                           </button>
-                          {isManager && (
+                          {isSuperAdmin && (
                             <button
                               type="button"
                               disabled={isBusy}
@@ -1592,9 +1593,9 @@ export default function PetitionsPage() {
       </div>
 
       {/* ================================================================= */}
-      {/* YÖNETİCİ ŞABLON YÖNETİM MODALI                                    */}
+      {/* SÜPER ADMİN ŞABLON YÖNETİM MODALI                                  */}
       {/* ================================================================= */}
-      {isTemplateModalOpen && isManager && (
+      {isTemplateModalOpen && isSuperAdmin && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 print:hidden">
           <div
             className="fixed inset-0 bg-slate-900/60 backdrop-blur-sm"
@@ -1764,7 +1765,7 @@ export default function PetitionsPage() {
                   <Sparkles className="w-3.5 h-3.5" />
                   Şablon Olarak Kullan
                 </button>
-                {isManager && (
+                {isSuperAdmin && (
                   <button
                     type="button"
                     onClick={() => handleSetAsDefaultTemplate(previewPetition)}

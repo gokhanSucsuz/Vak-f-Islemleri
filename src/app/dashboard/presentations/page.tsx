@@ -784,6 +784,7 @@ export default function PresentationsPage() {
   const { data: session } = useSession();
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
+  const isSuperAdmin = role === "superadmin";
   const isManager =
     role === "superadmin" ||
     role === "manager" ||
@@ -2140,15 +2141,17 @@ export default function PresentationsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2.5">
+          {isSuperAdmin && (
+            <button
+              onClick={() => setIsTemplateModalOpen(true)}
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold transition-colors"
+            >
+              <Upload className="w-4 h-4" />
+              Şablonları Yönet ({templates.length})
+            </button>
+          )}
           {isManager && (
             <>
-              <button
-                onClick={() => setIsTemplateModalOpen(true)}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold transition-colors"
-              >
-                <Upload className="w-4 h-4" />
-                Şablonları Yönet ({templates.length})
-              </button>
               <button
                 onClick={() => {
                   if (hasOpenMeeting) {
@@ -2292,7 +2295,18 @@ export default function PresentationsPage() {
                   </div>
                   <p className="text-xs text-slate-500 mt-0.5">
                     {new Date(selectedMeeting.meetingDate).toLocaleDateString("tr-TR")} •{" "}
-                    {selectedMeeting.recordCount} Kayıt • {selectedMeeting.totalSlides} Slayt
+                    {selectedPersonnelId
+                      ? presentations.filter(
+                          (p) => String(p.createdBy?._id || "") === selectedPersonnelId
+                        ).length
+                      : selectedMeeting.recordCount}{" "}
+                    Kayıt •{" "}
+                    {selectedPersonnelId
+                      ? presentations
+                          .filter((p) => String(p.createdBy?._id || "") === selectedPersonnelId)
+                          .reduce((sum, p) => sum + (p.slideCount || 0), 0)
+                      : selectedMeeting.totalSlides}{" "}
+                    Slayt
                     {selectedMeeting.authorizedUserId?.name &&
                       ` • Yetkili Personel: ${selectedMeeting.authorizedUserId.name}`}
                   </p>
@@ -2314,7 +2328,13 @@ export default function PresentationsPage() {
                   className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors"
                 >
                   <Eye className="w-4 h-4" />
-                  Toplu Önizle ({selectedMeeting.totalSlides})
+                  Toplu Önizle (
+                  {selectedPersonnelId
+                    ? presentations
+                        .filter((p) => String(p.createdBy?._id || "") === selectedPersonnelId)
+                        .reduce((sum, p) => sum + (p.slideCount || 0), 0)
+                    : selectedMeeting.totalSlides}
+                  )
                 </button>
 
                 {isManager && selectedMeeting.status === "open" && (
@@ -2694,8 +2714,8 @@ export default function PresentationsPage() {
         </div>
       )}
 
-      {/* Çoklu Şablon Yönetim Modalı (Yönetici) */}
-      {isTemplateModalOpen && (
+      {/* Çoklu Şablon Yönetim Modalı (Süper Admin) */}
+      {isSuperAdmin && isTemplateModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
           <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] flex flex-col">
             <div className="flex items-center justify-between">

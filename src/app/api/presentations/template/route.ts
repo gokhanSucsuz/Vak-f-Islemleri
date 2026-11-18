@@ -83,13 +83,12 @@ export async function GET() {
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    const { getEffectivePermissions } = await import("@/lib/permissions");
-    const perms = await getEffectivePermissions(session);
-    const userId = perms.userId;
+    const role = (session?.user as any)?.role;
+    const userId = (session?.user as any)?.id;
 
-    if (!session?.user || !perms.canManagePresentations) {
+    if (!session?.user || role !== "superadmin") {
       return NextResponse.json(
-        { error: "Şablon yükleme yetkisi sadece yöneticilere ve yetkili personele aittir." },
+        { error: "Şablon yükleme ve düzenleme yetkisi yalnızca süper admin'e aittir." },
         { status: 403 }
       );
     }
@@ -192,13 +191,12 @@ export async function POST(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    const { getEffectivePermissions } = await import("@/lib/permissions");
-    const perms = await getEffectivePermissions(session);
-    const userId = perms.userId;
+    const role = (session?.user as any)?.role;
+    const userId = (session?.user as any)?.id;
 
-    if (!session?.user || !perms.canManagePresentations) {
+    if (!session?.user || role !== "superadmin") {
       return NextResponse.json(
-        { error: "Şablon silme yetkisi sadece yöneticilere ve yetkili personele aittir." },
+        { error: "Şablon silme yetkisi yalnızca süper admin'e aittir." },
         { status: 403 }
       );
     }
