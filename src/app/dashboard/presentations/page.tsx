@@ -2302,7 +2302,14 @@ export default function PresentationsPage() {
               <div className="flex flex-wrap items-center gap-2">
                 <button
                   type="button"
-                  onClick={() => openBulkPreview(selectedMeeting)}
+                  onClick={() => {
+                    const selAuthor = selectedPersonnelId
+                      ? presentations.find(
+                          (p) => String(p.createdBy?._id || "") === selectedPersonnelId
+                        )?.createdBy?.name
+                      : undefined;
+                    openBulkPreview(selectedMeeting, selAuthor);
+                  }}
                   disabled={loadingMeetingSlides}
                   className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors"
                 >

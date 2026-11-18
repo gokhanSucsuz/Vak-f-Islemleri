@@ -215,6 +215,7 @@ export default function PetitionsPage() {
   useEffect(() => {
     if (editorMode && editorRef.current) {
       editorRef.current.innerHTML = editorInitialHtml || "<p></p>";
+      syncLiveFieldsToEditor(citizenName, tcNo, subject);
     }
   }, [editorMode, editorInitialHtml]);
 
@@ -378,15 +379,66 @@ export default function PetitionsPage() {
         });
       }
 
+      if (type !== "matbu") {
+        // Ayrıntılı dilekçede başlığın altındaki "Muhtaçlığım nedeniyle..." yazısı:
+        // başlık ile ve altındaki tabloyla arasında 1 boş satır, küçük harflerle ve daha küçük punto
+        doc.querySelectorAll<HTMLElement>("p, div").forEach((el) => {
+          if (el.querySelector("p, div, table")) return;
+          const rawTxt = (el.textContent || "").replace(/[\u00a0\u2003\u2002]/g, " ").trim();
+          if (/muhtaçlığım\s+nedeniyle/i.test(rawTxt)) {
+            const lowerSentence =
+              rawTxt.charAt(0).toLocaleUpperCase("tr-TR") +
+              rawTxt
+                .slice(1)
+                .toLocaleLowerCase("tr-TR")
+                .replace(/\bvakfınızca\b/g, "Vakfınızca")
+                .replace(/\bsayılı\b/g, "Sayılı")
+                .replace(/\bkanun\b/g, "Kanun");
+            el.innerHTML = lowerSentence;
+            el.style.fontSize = "9.5pt";
+            el.style.fontWeight = "normal";
+            el.style.marginTop = "10pt";
+            el.style.marginBottom = "10pt";
+            el.style.lineHeight = "1.3";
+          }
+        });
+      }
+
       if (type === "matbu") {
-        doc.querySelectorAll<HTMLElement>("table").forEach((tbl) => {
+        // Matbu dilekçe: başlık ortalı, logodan 2 satır aşağıda (24pt), altında 2 satır boşluk (24pt)
+        doc.querySelectorAll<HTMLElement>("div").forEach((div) => {
+          const t = (div.textContent || "").toLocaleUpperCase("tr-TR");
+          if (
+            t.includes("SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞINA") &&
+            t.includes("EDİRNE") &&
+            div.style.width === "fit-content"
+          ) {
+            div.style.margin = "24pt auto 24pt auto";
+          }
+        });
+
+        doc.querySelectorAll<HTMLElement>("table").forEach((tbl, tblIdx) => {
           tbl.setAttribute("data-borderless", "true");
           tbl.style.border = "none";
+          if (tblIdx === 0) {
+            tbl.style.marginTop = "60pt"; // Ad soyad / TC / adres / telefon alanı 5 satır aşağıda
+          }
         });
+
+        let appliedFiveLineGap = Boolean(doc.querySelector("table"));
         doc.querySelectorAll<HTMLElement>("p").forEach((p) => {
           const txt = (p.textContent || "").replace(/\u00a0/g, " ").trim();
           if (!txt) return;
           if (/BAŞKANLIĞINA|^EDİRNE$/i.test(txt)) return;
+          if (
+            !appliedFiveLineGap &&
+            /^(?:ADI\s*SOYADI|AD\s*SOYAD|T\.?\s*C\.?|ADRES|TELEFON)/i.test(
+              txt.toLocaleUpperCase("tr-TR")
+            )
+          ) {
+            p.style.marginTop = "60pt"; // 5 satır aşağıda
+            appliedFiveLineGap = true;
+          }
           if (/(talep|arz\s*ederim|arz\s*olunur|\barz\b)/i.test(txt)) {
             p.innerHTML = p.innerHTML.replace(/^(?:&emsp;|&ensp;|&nbsp;|\u00a0|\u2003|\s)+/gi, "");
             p.style.textIndent = "35.4pt";
@@ -471,9 +523,13 @@ export default function PetitionsPage() {
           return;
         }
 
-        // Yeni başvuru ise ve tablodan önceki tarih satırında eski bir tarih (örn. 14.11.2026) varsa bugünün tarihine güncelle
-        if (isNewApplication && isBeforeTable && /^\d{2}[./]\d{2}[./]20\d{2}$/.test(txt)) {
-          el.innerHTML = `<span data-petition-date="true" style="font-weight:bold;">${dateStr}</span>`;
+        // Yeni başvuru veya şablon kullanımında tarih mutlaka güncel sistem tarihi olmalı
+        if (isNewApplication && /\d{2}[./]\d{2}[./]20\d{2}/.test(txt)) {
+          if (/^\d{2}[./]\d{2}[./]20\d{2}$/.test(txt)) {
+            el.innerHTML = `<span data-petition-date="true" style="font-weight:bold;">${dateStr}</span>`;
+          } else if (isBeforeTable) {
+            el.innerHTML = el.innerHTML.replace(/\d{2}[./]\d{2}[./]20\d{2}/g, dateStr);
+          }
         }
       });
 
@@ -798,14 +854,14 @@ export default function PetitionsPage() {
       if (!res.ok) throw new Error(data.error || "Dilekçe kaydedilemedi");
 
       toast.success(
-        editingId ? "Dilekçe başarıyla güncellendi." : "Dilekçe sisteme başarıyla kaydedildi."
+        editingId
+          ? "Dilekçe başarıyla güncellendi."
+          : "Dilekçe sisteme kaydedildi. Yazdırabilir veya Word olarak indirebilirsiniz."
       );
-      if (typeof window !== "undefined" && window.history.state?.petitionEditor) {
-        window.history.back();
-      } else {
-        exitEditorMode();
+      if (data?.petition?._id && !editingId) {
+        setEditingId(data.petition._id);
       }
-      fetchPetitions();
+      void fetchPetitions();
     } catch (err: any) {
       toast.error(err.message || "Kaydetme hatası");
     } finally {
@@ -885,10 +941,11 @@ export default function PetitionsPage() {
                     exitEditorMode();
                   }
                 }}
-                className="p-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
-                title="Listeye Dön"
+                className="px-3.5 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors inline-flex items-center gap-1.5 text-xs sm:text-sm font-bold"
+                title="Dilekçeyi Kapat ve Ana Sayfaya Dön"
               >
-                <ArrowLeft className="w-5 h-5" />
+                <ArrowLeft className="w-4 h-4" />
+                Dilekçeyi Kapat
               </button>
               <div>
                 <div className="flex items-center gap-2">
@@ -1117,12 +1174,12 @@ export default function PetitionsPage() {
           </div>
         </div>
 
-        {/* Yazdırmada tarayıcı üst/alt bilgi (tarih, başlık, site linki) ve fazladan boş sayfa engellenir */}
-        <style>{`@media print { @page { size: A4; margin: 10mm; } html, body { background: #fff !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; } body * { min-height: 0 !important; } }`}</style>
+        {/* Yazdırmada tarayıcı üst/alt bilgi (tarih, başlık, site linki), sağa taşma ve fazladan boş sayfa engellenir */}
+        <style>{`@media print { @page { size: A4 portrait; margin: 0; } html, body { background: #fff !important; width: 210mm !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; } body * { min-height: 0 !important; } }`}</style>
 
         {/* A4 Word Kağıt Alanı */}
         <div className="bg-slate-200/70 p-2 sm:p-8 rounded-3xl overflow-x-auto print:bg-white print:p-0 print:overflow-visible">
-          <div className="w-[210mm] min-h-[297mm] print:min-h-0 print:h-auto mx-auto bg-white shadow-xl border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:p-0 flex flex-col justify-between">
+          <div className="w-[210mm] min-h-[297mm] print:w-[210mm] print:max-w-[210mm] print:h-[296mm] print:min-h-[296mm] print:box-border mx-auto bg-white shadow-xl border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:px-[14mm] print:py-[12mm] flex flex-col justify-between">
             <div>
               <div className="flex justify-center mb-3">
                 <img
@@ -1754,8 +1811,8 @@ export default function PetitionsPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto overflow-x-auto bg-slate-100 p-2 sm:p-8 rounded-2xl mt-4 print:bg-white print:p-0 print:mt-0 print:overflow-visible">
-              <style>{`@media print { @page { size: A4; margin: 10mm; } html, body { background: #fff !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; } body * { min-height: 0 !important; } }`}</style>
-              <div className="w-[210mm] min-h-[260mm] print:min-h-0 print:h-auto mx-auto bg-white shadow-md border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:p-0 flex flex-col justify-between">
+              <style>{`@media print { @page { size: A4 portrait; margin: 0; } html, body { background: #fff !important; width: 210mm !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; } body * { min-height: 0 !important; } }`}</style>
+              <div className="w-[210mm] min-h-[260mm] print:w-[210mm] print:max-w-[210mm] print:h-[296mm] print:min-h-[296mm] print:box-border mx-auto bg-white shadow-md border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:px-[14mm] print:py-[12mm] flex flex-col justify-between">
                 <div>
                   <div className="flex justify-center mb-3">
                     <img

@@ -872,7 +872,8 @@ export async function exportSlidesToPptx(params: {
                 underline: r.underline ? { style: "sng" } : undefined,
                 color: r.color || "020617",
                 breakLine: isLastRunOfLine && !isLastLine,
-                paraSpaceAfter: isLastRunOfLine ? 2 : 0,
+                paraSpaceAfter: 0,
+                paraSpaceBefore: 0,
               },
             });
           });
@@ -886,7 +887,8 @@ export async function exportSlidesToPptx(params: {
               bold: true,
               color: "020617",
               breakLine: idx < plainLines.length - 1,
-              paraSpaceAfter: 2,
+              paraSpaceAfter: 0,
+              paraSpaceBefore: 0,
             },
           });
         });
@@ -894,10 +896,12 @@ export async function exportSlidesToPptx(params: {
 
       if (pptxRuns.length > 0) {
         slide.addText(pptxRuns, {
-          x: descX + 0.14 * sx,
-          y: descY + 0.1 * sy,
-          w: descW - 0.28 * sx,
-          h: descH - 0.2 * sy,
+          x: descX + 0.1 * sx,
+          y: descY + 0.06 * sy,
+          w: descW - 0.2 * sx,
+          h: descH - 0.12 * sy,
+          margin: 0,
+          lineSpacingMultiple: 1.08,
           valign: "top",
           fontFace: fontFamily,
         });

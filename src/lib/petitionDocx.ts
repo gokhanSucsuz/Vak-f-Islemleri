@@ -11,6 +11,7 @@ import {
   TableCell,
   WidthType,
   BorderStyle,
+  Footer,
 } from "docx";
 
 type RunStyle = {
@@ -217,6 +218,68 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
     }
 
     if (tag === "p" || tag === "div" || tag === "blockquote") {
+      // "SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞINA" + "EDİRNE" özel hizalı başlık bloğu
+      const rawUpper = (el.textContent || "").trim().toLocaleUpperCase("tr-TR");
+      if (
+        tag === "div" &&
+        rawUpper.includes("SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞINA") &&
+        rawUpper.includes("EDİRNE")
+      ) {
+        const noBorder = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
+        const cellBorders = { top: noBorder, bottom: noBorder, left: noBorder, right: noBorder };
+        blocks.push(
+          new Table({
+            alignment: AlignmentType.CENTER,
+            width: { size: 6200, type: WidthType.DXA },
+            rows: [
+              new TableRow({
+                children: [
+                  new TableCell({
+                    borders: cellBorders,
+                    children: [
+                      new Paragraph({
+                        alignment: AlignmentType.CENTER,
+                        spacing: { after: 20 },
+                        children: [
+                          new TextRun({
+                            text: "SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞINA",
+                            bold: true,
+                            font: "Calibri",
+                            size: 22,
+                          }),
+                        ],
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+              new TableRow({
+                children: [
+                  new TableCell({
+                    borders: cellBorders,
+                    children: [
+                      new Paragraph({
+                        alignment: AlignmentType.RIGHT,
+                        spacing: { after: 120 },
+                        children: [
+                          new TextRun({
+                            text: "EDİRNE",
+                            bold: true,
+                            font: "Calibri",
+                            size: 22,
+                          }),
+                        ],
+                      }),
+                    ],
+                  }),
+                ],
+              }),
+            ],
+          })
+        );
+        return;
+      }
+
       // Eğer içinde başka blok elemanları varsa alt elemanları işle
       const hasBlockChildren = Array.from(el.children).some((c) =>
         ["p", "div", "h1", "h2", "h3", "ul", "ol", "table"].includes(
@@ -228,13 +291,22 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
         return;
       }
 
-      const runs = collectTextRuns(el);
+      const isPetitionIntro = /muhtaçlığım\s+nedeniyle/i.test(rawUpper);
+      const runs = isPetitionIntro
+        ? [
+            new TextRun({
+              text: (el.textContent || "").trim(),
+              font: "Calibri",
+              size: 19, // 9.5pt
+            }),
+          ]
+        : collectTextRuns(el);
       blocks.push(
         new Paragraph({
           alignment: getAlignment(el),
           indent: getParagraphIndent(el),
           children: runs.length ? runs : [new TextRun("")],
-          spacing: { after: 100 },
+          spacing: isPetitionIntro ? { before: 140, after: 140 } : { after: 100 },
         })
       );
       return;
@@ -341,13 +413,10 @@ export async function downloadPetitionAsDocx(
     }),
   ];
 
-  children.push(
-    new Paragraph({ children: [new TextRun("")], spacing: { before: 240 } }),
-    new Table({
-      width: { size: 100, type: WidthType.PERCENTAGE },
-      rows: [new TableRow({ children: footerCells })],
-    })
-  );
+  const footerTable = new Table({
+    width: { size: 100, type: WidthType.PERCENTAGE },
+    rows: [new TableRow({ children: footerCells })],
+  });
 
   try {
     const res = await fetch("/logo-vakif.jpg");
@@ -376,12 +445,17 @@ export async function downloadPetitionAsDocx(
         properties: {
           page: {
             margin: {
-              top: 1134, // ~20mm
-              right: 1134,
-              bottom: 1134,
-              left: 1134,
+              top: 794, // ~14mm
+              right: 850, // ~15mm
+              bottom: 1134, // ~20mm (footer alanı dahil)
+              left: 850, // ~15mm
             },
           },
+        },
+        footers: {
+          default: new Footer({
+            children: [footerTable],
+          }),
         },
         children,
       },
