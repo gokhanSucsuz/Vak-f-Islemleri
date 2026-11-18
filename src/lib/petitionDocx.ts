@@ -51,7 +51,14 @@ function collectTextRuns(node: Node, style: RunStyle = {}): TextRun[] {
   }
 
   const nextStyle: RunStyle = {
-    bold: style.bold || tag === "strong" || tag === "b" || el.style.fontWeight === "bold",
+    bold:
+      el.style.fontWeight === "normal" || el.style.fontWeight === "400"
+        ? false
+        : style.bold ||
+          tag === "strong" ||
+          tag === "b" ||
+          el.style.fontWeight === "bold" ||
+          Number(el.style.fontWeight) >= 600,
     italics: style.italics || tag === "em" || tag === "i" || el.style.fontStyle === "italic",
     underline:
       style.underline ||
@@ -126,6 +133,8 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
         el.style.border === "none" ||
         el.style.borderWidth === "0px";
       const rows = Array.from(el.querySelectorAll("tr")).map((tr) => {
+        const rowUpper = (tr.textContent || "").trim().toLocaleUpperCase("tr-TR");
+        const minCellLines = !tableBorderless ? (/\b[İI]MZA\b/.test(rowUpper) ? 3 : 2) : 1;
         const cells = Array.from(tr.querySelectorAll("th, td")).map((td) => {
           const tdEl = td as HTMLElement;
           const cellBorderless =
@@ -152,6 +161,9 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
                     });
                   })(),
                 ];
+          while (childrenParagraphs.length < minCellLines) {
+            childrenParagraphs.push(new Paragraph({ children: [new TextRun("")] }));
+          }
           const borderDef = cellBorderless
             ? { style: BorderStyle.NONE, size: 0, color: "FFFFFF" }
             : { style: BorderStyle.SINGLE, size: 4, color: "94A3B8" };
@@ -260,7 +272,7 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
                     children: [
                       new Paragraph({
                         alignment: AlignmentType.RIGHT,
-                        spacing: { after: 120 },
+                        spacing: { after: 240 },
                         children: [
                           new TextRun({
                             text: "EDİRNE",
@@ -292,12 +304,23 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
       }
 
       const isPetitionIntro = /muhtaçlığım\s+nedeniyle/i.test(rawUpper);
+      const isBilgilerinizeArz = /bilgilerinize\s+arz\s+ederim/i.test(rawUpper);
+      const marginBefore = cssLengthToTwips(el.style.marginTop);
+      const marginAfter = cssLengthToTwips(el.style.marginBottom);
+      const introRaw = (el.textContent || "").trim();
+      const introLower =
+        introRaw.charAt(0).toLocaleUpperCase("tr-TR") +
+        introRaw
+          .slice(1)
+          .toLocaleLowerCase("tr-TR")
+          .replace(/\bvakfınızca\b/g, "Vakfınızca")
+          .replace(/\bkanun\b/g, "Kanun");
       const runs = isPetitionIntro
         ? [
             new TextRun({
-              text: (el.textContent || "").trim(),
+              text: introLower,
               font: "Calibri",
-              size: 19, // 9.5pt
+              size: 18, // 9pt (başlıktan küçük punto)
             }),
           ]
         : collectTextRuns(el);
@@ -306,7 +329,17 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
           alignment: getAlignment(el),
           indent: getParagraphIndent(el),
           children: runs.length ? runs : [new TextRun("")],
-          spacing: isPetitionIntro ? { before: 140, after: 140 } : { after: 100 },
+          spacing: isPetitionIntro
+            ? { before: 240, after: 240 }
+            : isBilgilerinizeArz
+            ? {
+                ...(marginBefore ? { before: marginBefore } : {}),
+                after: Math.max(marginAfter || 0, 1440), // En az 6 satır boşluk
+              }
+            : {
+                ...(marginBefore ? { before: marginBefore } : {}),
+                after: marginAfter || 100,
+              },
         })
       );
       return;

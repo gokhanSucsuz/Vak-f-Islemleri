@@ -377,12 +377,32 @@ export default function PetitionsPage() {
 
             ensureTrailingBlankLines(cell, targetLines);
           });
+
+          // Detaylı dilekçede boş olsa bile tüm satırlar en az 2 satır, imza satırı en az 3 satır boşluk genişliğinde olsun
+          const rowText = (tr.textContent || "")
+            .replace(/\u00a0/g, " ")
+            .trim()
+            .toLocaleUpperCase("tr-TR");
+          const isImzaRow = /\b[İI]MZA\b/.test(rowText);
+          const minRowLines = isImzaRow ? 3 : 2;
+          cells.forEach((cell, cIdx) => {
+            if (cell.querySelector("table")) return;
+            cell.style.minHeight = isImzaRow ? "44pt" : "28pt";
+            if (isCellEmpty(cell)) {
+              fillEmptyCellLines(cell, minRowLines);
+            } else if (cIdx > 0 || cells.length === 1) {
+              const pCount = cell.querySelectorAll("p").length;
+              if (pCount < minRowLines) {
+                ensureTrailingBlankLines(cell, minRowLines - pCount);
+              }
+            }
+          });
         });
       }
 
       if (type !== "matbu") {
         // Ayrıntılı dilekçede başlığın altındaki "Muhtaçlığım nedeniyle..." yazısı:
-        // başlık ile ve altındaki tabloyla arasında 1 boş satır, küçük harflerle ve daha küçük punto
+        // başlık ile ve altındaki tabloyla arasında 1 boş satır, küçük harflerle ve başlıktan biraz daha küçük punto
         doc.querySelectorAll<HTMLElement>("p, div").forEach((el) => {
           if (el.querySelector("p, div, table")) return;
           const rawTxt = (el.textContent || "").replace(/[\u00a0\u2003\u2002]/g, " ").trim();
@@ -393,20 +413,23 @@ export default function PetitionsPage() {
                 .slice(1)
                 .toLocaleLowerCase("tr-TR")
                 .replace(/\bvakfınızca\b/g, "Vakfınızca")
-                .replace(/\bsayılı\b/g, "Sayılı")
                 .replace(/\bkanun\b/g, "Kanun");
-            el.innerHTML = lowerSentence;
-            el.style.fontSize = "9.5pt";
+            const formattedHtml = lowerSentence.replace(
+              /(\d{2}\.\d{2}\.\d{4})/,
+              '<span data-petition-date="true">$1</span>'
+            );
+            el.innerHTML = formattedHtml;
+            el.style.fontSize = "9pt";
             el.style.fontWeight = "normal";
-            el.style.marginTop = "10pt";
-            el.style.marginBottom = "10pt";
-            el.style.lineHeight = "1.3";
+            el.style.marginTop = "12pt";
+            el.style.marginBottom = "12pt";
+            el.style.lineHeight = "1.35";
           }
         });
       }
 
       if (type === "matbu") {
-        // Matbu dilekçe: başlık ortalı, logodan 2 satır aşağıda (24pt), altında 2 satır boşluk (24pt)
+        // Matbu dilekçe: başlık ortalı, logodan 2 satır aşağıda (24pt), başlıktan sonra 1 satır boşluk (12pt)
         doc.querySelectorAll<HTMLElement>("div").forEach((div) => {
           const t = (div.textContent || "").toLocaleUpperCase("tr-TR");
           if (
@@ -414,37 +437,49 @@ export default function PetitionsPage() {
             t.includes("EDİRNE") &&
             div.style.width === "fit-content"
           ) {
-            div.style.margin = "24pt auto 24pt auto";
+            div.style.margin = "24pt auto 12pt auto";
           }
         });
 
-        doc.querySelectorAll<HTMLElement>("table").forEach((tbl, tblIdx) => {
+        doc.querySelectorAll<HTMLElement>("table").forEach((tbl) => {
           tbl.setAttribute("data-borderless", "true");
           tbl.style.border = "none";
-          if (tblIdx === 0) {
-            tbl.style.marginTop = "60pt"; // Ad soyad / TC / adres / telefon alanı 5 satır aşağıda
-          }
+          tbl.style.marginTop = "0";
         });
 
-        let appliedFiveLineGap = Boolean(doc.querySelector("table"));
-        doc.querySelectorAll<HTMLElement>("p").forEach((p) => {
-          const txt = (p.textContent || "").replace(/\u00a0/g, " ").trim();
+        doc.querySelectorAll<HTMLElement>("p, td, th").forEach((el) => {
+          if (el.querySelector("p, table")) return;
+          const txt = (el.textContent || "").replace(/\u00a0/g, " ").trim();
           if (!txt) return;
           if (/BAŞKANLIĞINA|^EDİRNE$/i.test(txt)) return;
-          if (
-            !appliedFiveLineGap &&
-            /^(?:ADI\s*SOYADI|AD\s*SOYAD|T\.?\s*C\.?|ADRES|TELEFON)/i.test(
-              txt.toLocaleUpperCase("tr-TR")
-            )
-          ) {
-            p.style.marginTop = "60pt"; // 5 satır aşağıda
-            appliedFiveLineGap = true;
+
+          if (/bilgilerinize\s+arz\s+ederim/i.test(txt)) {
+            el.innerHTML = el.innerHTML.replace(/^(?:&emsp;|&ensp;|&nbsp;|\u00a0|\u2003|\s)+/gi, "");
+            el.style.textIndent = "35.4pt";
+            el.style.marginLeft = "0";
+            el.style.paddingLeft = "0";
+            el.style.marginBottom = "72pt"; // Bilgilerinize arz ederim'den sonra en az 6 satır boşluk
+          } else if (/(talep|arz\s*ederim|arz\s*olunur|\barz\b)/i.test(txt)) {
+            el.innerHTML = el.innerHTML.replace(/^(?:&emsp;|&ensp;|&nbsp;|\u00a0|\u2003|\s)+/gi, "");
+            el.style.textIndent = "35.4pt";
+            el.style.marginLeft = "0";
+            el.style.paddingLeft = "0";
           }
-          if (/(talep|arz\s*ederim|arz\s*olunur|\barz\b)/i.test(txt)) {
-            p.innerHTML = p.innerHTML.replace(/^(?:&emsp;|&ensp;|&nbsp;|\u00a0|\u2003|\s)+/gi, "");
-            p.style.textIndent = "35.4pt";
-            p.style.marginLeft = "0";
-            p.style.paddingLeft = "0";
+
+          // Matbu dilekçede Adı Soyadı ve T.C. Kimlik No başlığı kalın, içeriği kalın olmayan punto
+          const boldLabelMatch = txt.match(
+            /^(Ad[ıi]\s*Soyad[ıi]|T\.?\s*C\.?\s*Kimlik\s*(?:No|Numaras[ıi])?)\s*:\s*(.*)$/i
+          );
+          if (boldLabelMatch && el.tagName.toLowerCase() === "p") {
+            const label = boldLabelMatch[1].trim();
+            const liveSpan = el.querySelector<HTMLElement>("[data-live-field]");
+            if (liveSpan) {
+              liveSpan.style.fontWeight = "normal";
+              el.innerHTML = `<strong>${label}:</strong> ${liveSpan.outerHTML}`;
+            } else {
+              const rest = boldLabelMatch[2] || "\u00a0";
+              el.innerHTML = `<strong>${label}:</strong> <span style="font-weight: normal;">${rest}</span>`;
+            }
           }
         });
       }
@@ -744,13 +779,16 @@ export default function PetitionsPage() {
         cells.forEach((cell, idx) => {
           const txt = normTr(cell.textContent || "");
           if (labelRegex.test(txt)) {
+            if (field === "citizenName" || field === "tcNo") {
+              cell.style.fontWeight = "bold";
+            }
             const targetCell = getTargetCell(cells, idx);
             if (
               targetCell &&
               !targetCell.querySelector("table") &&
               !targetCell.querySelector(`[data-live-field="${field}"]`)
             ) {
-              targetCell.innerHTML = `<p><span data-live-field="${field}">\u00a0</span></p>`;
+              targetCell.innerHTML = `<p><span data-live-field="${field}" style="font-weight: normal;">\u00a0</span></p>`;
             }
           }
         });
@@ -774,6 +812,9 @@ export default function PetitionsPage() {
               const colonIdx = rawLine.indexOf(":");
               const labelPart = colonIdx >= 0 ? rawLine.slice(0, colonIdx + 1).trim() : rawLine;
               changed = true;
+              if (field === "citizenName" || field === "tcNo") {
+                return `<strong>${labelPart}</strong> <span data-live-field="${field}" style="font-weight: normal;">\u00a0</span>`;
+              }
               return `${labelPart} <span data-live-field="${field}">\u00a0</span>`;
             }
             return partHtml;
@@ -789,7 +830,11 @@ export default function PetitionsPage() {
         if (inlineRegex.test(upperTxt)) {
           const colonIdx = rawTxt.indexOf(":");
           const labelPart = colonIdx >= 0 ? rawTxt.slice(0, colonIdx + 1).trim() : rawTxt;
-          el.innerHTML = `${labelPart} <span data-live-field="${field}">\u00a0</span>`;
+          if (field === "citizenName" || field === "tcNo") {
+            el.innerHTML = `<strong>${labelPart}</strong> <span data-live-field="${field}" style="font-weight: normal;">\u00a0</span>`;
+          } else {
+            el.innerHTML = `${labelPart} <span data-live-field="${field}">\u00a0</span>`;
+          }
         }
       });
     };
