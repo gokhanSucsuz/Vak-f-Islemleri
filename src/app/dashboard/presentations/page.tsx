@@ -2330,10 +2330,10 @@ export default function PresentationsPage() {
                   <Eye className="w-4 h-4" />
                   Toplu Önizle (
                   {selectedPersonnelId
-                    ? presentations
-                        .filter((p) => String(p.createdBy?._id || "") === selectedPersonnelId)
-                        .reduce((sum, p) => sum + (p.slideCount || 0), 0)
-                    : selectedMeeting.totalSlides}
+                    ? presentations.filter(
+                        (p) => String(p.createdBy?._id || "") === selectedPersonnelId
+                      ).length
+                    : selectedMeeting.recordCount}
                   )
                 </button>
 
