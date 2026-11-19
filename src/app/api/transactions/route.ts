@@ -6,41 +6,6 @@ import Transaction from "@/models/Transaction";
 import User from "@/models/User";
 import { normalizeTurkish } from "@/lib/turkish";
 
-const g = globalThis as unknown as { __txDeduplicated?: boolean };
-
-async function deduplicateSameDayTransactionsOnce() {
-  if (g.__txDeduplicated) return;
-  g.__txDeduplicated = true;
-  try {
-    const allTx = await Transaction.find({}).sort({ createdAt: 1 });
-    const seen = new Map<string, boolean>();
-    const deleteIds: any[] = [];
-
-    for (const t of allTx) {
-      const d = new Date(t.createdAt);
-      const dayKey = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(
-        d.getDate()
-      ).padStart(2, "0")}`;
-      const infoKey = normalizeTurkish(String(t.citizenInfo || "").replace(/\s+/g, " "));
-      const typeKey = t.helpType ? String(t.helpType) : "none";
-      const userKey = String(t.userId || "");
-      const composite = `${userKey}|${dayKey}|${infoKey}|${typeKey}`;
-
-      if (seen.has(composite)) {
-        deleteIds.push(t._id);
-      } else {
-        seen.set(composite, true);
-      }
-    }
-
-    if (deleteIds.length > 0) {
-      await Transaction.deleteMany({ _id: { $in: deleteIds } });
-    }
-  } catch (err) {
-    console.error("Transaction deduplication warning:", err);
-  }
-}
-
 export async function POST(req: Request) {
   try {
     const session = await getServerSession(authOptions);
@@ -65,7 +30,8 @@ export async function POST(req: Request) {
     })
       .populate("userId", "name email")
       .populate("helpType", "name")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
 
     const normInputInfo = normalizeTurkish(String(citizenInfo).replace(/\s+/g, " "));
     const existingDuplicate = recentSameUser.find((t: any) => {
@@ -126,11 +92,9 @@ export async function GET(req: Request) {
     const filterHelpType = searchParams.get("helpType");
 
     await dbConnect();
-    await deduplicateSameDayTransactionsOnce();
-    import("@/lib/applicationCache").then((m) => m.warmApplicationCache()).catch(() => {});
-    const HelpType = (await import("@/models/HelpType")).default; // ensure model is registered
+    await import("@/models/HelpType"); // ensure model is registered
 
-    let query: any = {};
+    const query: any = {};
 
     // Tüm personeller diğer personellerin kayıtlarını salt okunur görebilir
     if (filterUserId) {
@@ -151,7 +115,8 @@ export async function GET(req: Request) {
     const transactions = await Transaction.find(query)
       .populate("userId", "name email")
       .populate("helpType", "name")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .lean();
       
     // Apply in-memory Turkish-aware text search because fields are encrypted in DB
     let filteredTransactions = transactions;

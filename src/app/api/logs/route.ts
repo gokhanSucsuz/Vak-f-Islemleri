@@ -34,9 +34,14 @@ export async function GET(req: Request) {
       };
     }
 
+    const limitParam = parseInt(searchParams.get("limit") || "1000", 10);
+    const safeLimit = Math.min(Math.max(isNaN(limitParam) ? 1000 : limitParam, 50), 2000);
+
     const logs = await Log.find(query)
       .populate("userId", "name email role")
-      .sort({ createdAt: -1 });
+      .sort({ createdAt: -1 })
+      .limit(safeLimit)
+      .lean();
       
     // Text search (action, details, or staff name - 100% Turkish & case-insensitive)
     let filteredLogs = logs;

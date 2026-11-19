@@ -79,6 +79,8 @@ const PresentationSchema = new Schema<IPresentation>(
 );
 
 PresentationSchema.index({ createdAt: -1 });
+PresentationSchema.index({ meetingId: 1, createdAt: -1 });
+PresentationSchema.index({ createdBy: 1, createdAt: -1 });
 
 applyFieldEncryption(PresentationSchema, {
   stringFields: ["summaryTitle"],

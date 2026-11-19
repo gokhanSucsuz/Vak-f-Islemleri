@@ -109,10 +109,9 @@ export default function DashboardPage() {
 
   useEffect(() => {
     if (session?.user?.id) {
-      fetchData();
-      fetchHelpTypes();
+      void Promise.all([fetchData(), fetchHelpTypes()]);
     }
-  }, [session]);
+  }, [session?.user?.id]);
 
   const fetchHelpTypes = async () => {
     try {
@@ -187,9 +186,9 @@ export default function DashboardPage() {
               : [data.transaction, ...prev]
           );
           setTodayStats((prev) => prev + 1);
+        } else if (!data?.transaction) {
+          void fetchData();
         }
-        // Arka planda sessizce senkronize et
-        void fetchData();
       } else {
         const data = await res.json();
         toast.error(data.error || "Bir hata oluştu");

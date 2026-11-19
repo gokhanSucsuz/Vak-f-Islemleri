@@ -67,6 +67,9 @@ InKindAidSchema.pre('save', function (this: any) {
   }
 });
 
+InKindAidSchema.index({ deliveryDate: -1, createdAt: -1 });
+InKindAidSchema.index({ createdBy: 1, deliveryDate: -1 });
+
 applyFieldEncryption(InKindAidSchema, {
   stringFields: ['tcNo', 'citizenName', 'receiver', 'phone', 'address', 'notes'],
 });

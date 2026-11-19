@@ -53,7 +53,8 @@ export async function GET(req: Request) {
 
     const records = await InKindAid.find(query)
       .populate("createdBy", "name email")
-      .sort({ deliveryDate: -1, createdAt: -1 });
+      .sort({ deliveryDate: -1, createdAt: -1 })
+      .lean();
 
     const filteredRecords =
       search && search.trim()
@@ -105,18 +106,14 @@ export async function POST(req: Request) {
       createdBy: userId,
     });
 
-    try {
-      const itemsDetail = Array.isArray(body.items)
-        ? body.items.map((i: any) => `${i.quantity} ${i.unit} ${i.aidType} (${i.specification || "-"})`).join(", ")
-        : "";
-      await Log.create({
-        userId: userId,
-        action: "Ayni Yardım Kaydı Eklendi",
-        details: `${body.citizenName} (TC: ${tcNo || "-"}) kişisine ${itemsDetail} teslim edildi.`,
-      });
-    } catch (e) {
-      // Ignore log error
-    }
+    const itemsDetail = Array.isArray(body.items)
+      ? body.items.map((i: any) => `${i.quantity} ${i.unit} ${i.aidType} (${i.specification || "-"})`).join(", ")
+      : "";
+    void Log.create({
+      userId: userId,
+      action: "Ayni Yardım Kaydı Eklendi",
+      details: `${body.citizenName} (TC: ${tcNo || "-"}) kişisine ${itemsDetail} teslim edildi.`,
+    }).catch(() => {});
 
     return NextResponse.json(newRecord, { status: 201 });
   } catch (error: any) {

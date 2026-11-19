@@ -20,6 +20,9 @@ const LogSchema = new mongoose.Schema({
   }
 });
 
+LogSchema.index({ createdAt: -1 });
+LogSchema.index({ userId: 1, createdAt: -1 });
+
 applyFieldEncryption(LogSchema, {
   stringFields: ["details"],
 });

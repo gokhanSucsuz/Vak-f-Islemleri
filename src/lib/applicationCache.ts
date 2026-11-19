@@ -46,8 +46,10 @@ export function warmApplicationCache() {
   }
 }
 
+const CACHE_TTL_MS = 5 * 60 * 1000;
+
 export async function getApplicationCache(): Promise<ApplicationCacheData> {
-  if (g.__appFilesCache) {
+  if (g.__appFilesCache && Date.now() - g.__appFilesCache.loadedAt < CACHE_TTL_MS) {
     return g.__appFilesCache;
   }
   if (g.__appFilesCachePromise) {

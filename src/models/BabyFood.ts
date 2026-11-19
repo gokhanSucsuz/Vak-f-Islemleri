@@ -55,6 +55,9 @@ BabyFoodSchema.pre('save', function (this: any) {
   }
 });
 
+BabyFoodSchema.index({ deliveryDate: -1, createdAt: -1 });
+BabyFoodSchema.index({ createdBy: 1, deliveryDate: -1 });
+
 applyFieldEncryption(BabyFoodSchema, {
   stringFields: ['tcNo', 'motherInfo', 'babyName', 'receiver', 'notes'],
 });

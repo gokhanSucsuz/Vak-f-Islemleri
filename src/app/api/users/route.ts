@@ -16,8 +16,8 @@ export async function GET() {
     
     await dbConnect();
     
-    const setting = await SystemSetting.findOne({ key: "googleLoginEnabled" });
-    const isGoogleLoginEnabled = setting?.value ?? false;
+    const setting = await SystemSetting.findOne({ key: "googleLoginEnabled" }).lean();
+    const isGoogleLoginEnabled = (setting as any)?.value ?? false;
     
     if (!session && isGoogleLoginEnabled) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
@@ -26,7 +26,9 @@ export async function GET() {
     if (session && !hasRole && !isGoogleVerified) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
-    const users = await User.find({ role: { $in: ["personnel", "manager"] } }).select("-password");
+    const users = await User.find({ role: { $in: ["personnel", "manager"] } })
+      .select("-password")
+      .lean();
 
     return NextResponse.json({ users }, { status: 200 });
   } catch (error) {

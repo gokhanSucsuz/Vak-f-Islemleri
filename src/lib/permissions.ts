@@ -39,6 +39,17 @@ export interface EffectivePermissions {
   canManageInKindAid: boolean;
 }
 
+const permissionsCache = new Map<
+  string,
+  { expiresAt: number; value: EffectivePermissions }
+>();
+const PERMISSIONS_CACHE_TTL_MS = 30_000;
+
+export function invalidatePermissionsCache(userId?: string) {
+  if (userId) permissionsCache.delete(String(userId));
+  else permissionsCache.clear();
+}
+
 /**
  * Tek merkezli sunucu tarafı yetki kontrolü.
  * Kullanıcının rolünü ve Ayarlar'dan tanımlanan sayfa bazlı yetkilerini veritabanından döner.
@@ -83,6 +94,11 @@ export async function getEffectivePermissions(session: any): Promise<EffectivePe
     };
   }
 
+  const cached = permissionsCache.get(userId);
+  if (cached && cached.expiresAt > Date.now()) {
+    return cached.value;
+  }
+
   await dbConnect();
   const dbUser = (await User.findById(userId)
     .select("role canManageApplications authorizedModules")
@@ -101,7 +117,7 @@ export async function getEffectivePermissions(session: any): Promise<EffectivePe
   const isAuthorized = isSuperAdmin || authorizedModules.length > 0;
   const hasMod = (k: PermissionModuleKey) => isSuperAdmin || authorizedModules.includes(k);
 
-  return {
+  const result: EffectivePermissions = {
     userId,
     role,
     isSuperAdmin,
@@ -116,4 +132,11 @@ export async function getEffectivePermissions(session: any): Promise<EffectivePe
     canManageBabyFood: isManager || hasMod("babyFood"),
     canManageInKindAid: isManager || hasMod("inKindAid"),
   };
+
+  permissionsCache.set(userId, {
+    expiresAt: Date.now() + PERMISSIONS_CACHE_TTL_MS,
+    value: result,
+  });
+
+  return result;
 }

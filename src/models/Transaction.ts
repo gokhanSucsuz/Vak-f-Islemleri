@@ -27,6 +27,10 @@ const TransactionSchema = new mongoose.Schema(
   }
 );
 
+TransactionSchema.index({ createdAt: -1 });
+TransactionSchema.index({ userId: 1, createdAt: -1 });
+TransactionSchema.index({ helpType: 1, createdAt: -1 });
+
 applyFieldEncryption(TransactionSchema, {
   stringFields: ['citizenInfo'],
 });

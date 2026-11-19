@@ -20,6 +20,9 @@ const sessionUserCache = new Map<
 export function invalidateUserSessionCache(userId?: string) {
   if (userId) sessionUserCache.delete(String(userId));
   else sessionUserCache.clear();
+  void import("@/lib/permissions")
+    .then((m) => m.invalidatePermissionsCache(userId))
+    .catch(() => {});
 }
 
 export const authOptions: NextAuthOptions = {

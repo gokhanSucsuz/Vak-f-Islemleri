@@ -11,6 +11,20 @@ import {
   purgeExpiredMeetingPhotos,
 } from "@/lib/presentationUtils";
 
+const presentationMetaCache = new Map<
+  string,
+  {
+    expiresAt: number;
+    slideCount: number;
+    totalPhotos: number;
+    photoBytes: number;
+    presentationBytes: number;
+    firstPhoto: string;
+  }
+>();
+const PRESENTATION_META_TTL_MS = 120_000;
+const PRESENTATION_META_MAX = 150;
+
 export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -23,7 +37,6 @@ export async function GET(req: NextRequest) {
     const search = (searchParams.get("search") || "").trim();
 
     await dbConnect();
-    await purgeExpiredMeetingPhotos();
 
     const query: any = {};
     if (meetingId) {
@@ -35,7 +48,8 @@ export async function GET(req: NextRequest) {
       .populate("lockedBy", "name")
       .populate("meetingId", "title status")
       .sort({ createdAt: -1 })
-      .limit(200);
+      .limit(200)
+      .lean();
 
     const LOCK_TTL_MS = 3 * 60 * 1000;
     const nowMs = Date.now();
@@ -48,21 +62,38 @@ export async function GET(req: NextRequest) {
     };
 
     const mapped = await Promise.all(
-      records.map(async (r) => {
-        const slides = await decompressSlides(r.slidesCompressed);
-        const totalPhotos = slides.reduce(
-          (sum, s) => sum + (Array.isArray(s.photos) ? s.photos.length : 0),
-          0
-        );
-        const photoBytes = slides.reduce(
-          (sum, s) =>
-            sum +
-            (Array.isArray(s.photos)
-              ? s.photos.reduce((pSum, p) => pSum + dataUriByteSize(p), 0)
-              : 0),
-          0
-        );
-        const presentationBytes = r.slidesCompressed?.length || 0;
+      records.map(async (r: any) => {
+        const cacheKey = `${String(r._id)}:${r.updatedAt ? new Date(r.updatedAt).getTime() : 0}`;
+        let meta = presentationMetaCache.get(cacheKey);
+        if (!meta || meta.expiresAt <= nowMs) {
+          const slides = await decompressSlides(r.slidesCompressed);
+          const totalPhotos = slides.reduce(
+            (sum, s) => sum + (Array.isArray(s.photos) ? s.photos.length : 0),
+            0
+          );
+          const photoBytes = slides.reduce(
+            (sum, s) =>
+              sum +
+              (Array.isArray(s.photos)
+                ? s.photos.reduce((pSum, p) => pSum + dataUriByteSize(p), 0)
+                : 0),
+            0
+          );
+          meta = {
+            expiresAt: nowMs + PRESENTATION_META_TTL_MS,
+            slideCount: r.slideCount || slides.length,
+            totalPhotos,
+            photoBytes,
+            presentationBytes: r.slidesCompressed?.length || 0,
+            firstPhoto: slides.find((s) => s.photos?.length > 0)?.photos?.[0] || "",
+          };
+          if (presentationMetaCache.size >= PRESENTATION_META_MAX) {
+            const firstKey = presentationMetaCache.keys().next().value;
+            if (firstKey) presentationMetaCache.delete(firstKey);
+          }
+          presentationMetaCache.set(cacheKey, meta);
+        }
+
         const isLockActive =
           Boolean(r.lockedBy) &&
           Boolean(r.lockedAt) &&
@@ -73,11 +104,11 @@ export async function GET(req: NextRequest) {
           meetingTitle: (r.meetingId as any)?.title || "",
           meetingStatus: (r.meetingId as any)?.status || "open",
           summaryTitle: r.summaryTitle,
-          slideCount: r.slideCount || slides.length,
-          totalPhotos,
-          photoBytes,
-          presentationBytes,
-          firstPhoto: slides.find((s) => s.photos?.length > 0)?.photos?.[0] || "",
+          slideCount: meta.slideCount,
+          totalPhotos: meta.totalPhotos,
+          photoBytes: meta.photoBytes,
+          presentationBytes: meta.presentationBytes,
+          firstPhoto: meta.firstPhoto,
           createdBy: r.createdBy,
           lockedBy: isLockActive ? r.lockedBy : null,
           createdAt: r.createdAt,

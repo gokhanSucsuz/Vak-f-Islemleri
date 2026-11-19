@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import HelpType from "@/models/HelpType";
 import Log from "@/models/Log";
+import { invalidateHelpTypesCache } from "@/lib/referenceCache";
 
 export async function DELETE(req: Request, { params }: { params: Promise<{ id: string }> }) {
   await dbConnect();
@@ -19,13 +20,14 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     const resolvedParams = await params;
     const id = resolvedParams.id;
     const helpType = await HelpType.findByIdAndDelete(id);
+    invalidateHelpTypesCache();
 
     if (helpType) {
-      await Log.create({
+      void Log.create({
         userId: session.user.id,
         action: "HELP_TYPE_DELETED",
         details: `Deleted help type: ${helpType.name}`,
-      });
+      }).catch(() => {});
     }
 
     return NextResponse.json({ success: true });

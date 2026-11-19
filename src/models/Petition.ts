@@ -62,6 +62,8 @@ const PetitionSchema = new Schema<IPetition>(
 );
 
 PetitionSchema.index({ createdAt: -1 });
+PetitionSchema.index({ petitionType: 1, createdAt: -1 });
+PetitionSchema.index({ createdBy: 1, createdAt: -1 });
 
 applyFieldEncryption(PetitionSchema, {
   stringFields: ["citizenName", "tcNo", "subject"],
