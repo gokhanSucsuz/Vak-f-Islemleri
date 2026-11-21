@@ -106,26 +106,31 @@ export default function ModernConfirmDialog({
 
       {/* Modal Kutusu */}
       <div
-        className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-100 p-6 overflow-hidden animate-in zoom-in-95 duration-200"
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="confirm-dialog-title"
+        className="relative w-full max-w-lg bg-white rounded-3xl shadow-2xl border border-slate-200/90 p-6 overflow-hidden animate-in zoom-in-95 duration-200"
         style={{ zIndex: 100000 }}
       >
         <button
+          type="button"
+          aria-label="Kapat"
           onClick={onClose}
           disabled={isLoading}
           className="absolute top-4 right-4 p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-xl transition-colors disabled:opacity-50"
         >
-          <X className="w-5 h-5" />
+          <X className="w-5 h-5" aria-hidden="true" />
         </button>
 
         <div className="flex items-start gap-4">
           <div
             className={`w-12 h-12 rounded-2xl ${iconConfig.bg} ${iconConfig.color} flex items-center justify-center flex-shrink-0 shadow-inner`}
           >
-            <IconComponent className="w-6 h-6" />
+            <IconComponent className="w-6 h-6" aria-hidden="true" />
           </div>
 
           <div className="flex-1 min-w-0 pr-6">
-            <h3 className="text-lg font-bold text-slate-800 leading-snug">{title}</h3>
+            <h3 id="confirm-dialog-title" className="text-lg font-bold text-slate-800 leading-snug">{title}</h3>
             <div className="mt-2 text-sm text-slate-600 leading-relaxed space-y-2">
               {message}
             </div>

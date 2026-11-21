@@ -15,7 +15,14 @@ export async function PUT(req: Request) {
     const { currentPassword, newPassword } = await req.json();
 
     if (!currentPassword || !newPassword) {
-      return NextResponse.json({ error: "Eksik bilgi" }, { status: 400 });
+      return NextResponse.json({ error: "Mevcut ve yeni şifre zorunludur." }, { status: 400 });
+    }
+
+    if (typeof newPassword !== "string" || newPassword.trim().length < 6) {
+      return NextResponse.json(
+        { error: "Yeni şifre en az 6 karakter uzunluğunda olmalıdır." },
+        { status: 400 }
+      );
     }
 
     await dbConnect();
@@ -33,7 +40,17 @@ export async function PUT(req: Request) {
     user.password = await bcrypt.hash(newPassword, 10);
     await user.save();
 
-    return NextResponse.json({ message: "Şifre güncellendi" }, { status: 200 });
+    void import("@/models/Log")
+      .then(({ default: Log }) =>
+        Log.create({
+          userId: session.user.id,
+          action: "Şifre Güncellendi",
+          details: `${user.name} hesabının şifresi güncellendi.`,
+        })
+      )
+      .catch(() => {});
+
+    return NextResponse.json({ message: "Şifre başarıyla güncellendi" }, { status: 200 });
   } catch (error) {
     return NextResponse.json({ error: "Sunucu hatası" }, { status: 500 });
   }

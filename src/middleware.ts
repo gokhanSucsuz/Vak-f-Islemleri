@@ -8,7 +8,10 @@ const authMiddleware = withAuth(
     const path = req.nextUrl.pathname;
     const role = req.nextauth.token?.role;
 
-    if (path.startsWith("/dashboard/users") && role !== "superadmin") {
+    if (
+      (path.startsWith("/dashboard/users") || path.startsWith("/dashboard/logs")) &&
+      role !== "superadmin"
+    ) {
       return NextResponse.redirect(new URL("/dashboard", req.url));
     }
   },
@@ -24,6 +27,11 @@ const PROTECTED_APP_PATHS = [
   "/api/transactions",
   "/api/baby-food",
   "/api/in-kind-aid",
+  "/api/petitions",
+  "/api/presentations",
+  "/api/application-files",
+  "/api/logs",
+  "/api/admin",
 ];
 
 export default async function middleware(req: NextRequest, event: any) {

@@ -40,12 +40,15 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
     if (helpType) transaction.helpType = helpType;
     await transaction.save();
 
-    const Log = (await import("@/models/Log")).default;
-    await Log.create({
-      userId: session.user.id,
-      action: "Kayıt Düzenlendi",
-      details: `${citizenInfo} kişisinin işlemi güncellendi.`
-    });
+    void import("@/models/Log")
+      .then(({ default: Log }) =>
+        Log.create({
+          userId: session.user.id,
+          action: "Kayıt Düzenlendi",
+          details: `${citizenInfo} kişisinin işlemi güncellendi.`,
+        })
+      )
+      .catch(() => {});
 
     return NextResponse.json({ message: "İşlem güncellendi", transaction }, { status: 200 });
   } catch (error) {
@@ -82,12 +85,15 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
     const citizenInfo = transaction.citizenInfo;
     await Transaction.findByIdAndDelete(id);
 
-    const Log = (await import("@/models/Log")).default;
-    await Log.create({
-      userId: session.user.id,
-      action: "Kayıt Silindi",
-      details: `${citizenInfo} kişisinin işlemi silindi.`
-    });
+    void import("@/models/Log")
+      .then(({ default: Log }) =>
+        Log.create({
+          userId: session.user.id,
+          action: "Kayıt Silindi",
+          details: `${citizenInfo} kişisinin işlemi silindi.`,
+        })
+      )
+      .catch(() => {});
 
     return NextResponse.json({ message: "İşlem silindi" }, { status: 200 });
   } catch (error) {

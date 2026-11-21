@@ -6,27 +6,32 @@ import bcrypt from "bcryptjs";
 export async function GET() {
   try {
     await dbConnect();
-    
-    const email = "gokhansucsuz@gmail.com";
-    const existingAdmin = await User.findOne({ email });
-    
-    if (existingAdmin) {
-      return NextResponse.json({ message: "Süper admin zaten mevcut." }, { status: 200 });
+
+    const anySuperAdmin = await User.exists({ role: "superadmin" });
+    if (anySuperAdmin) {
+      return NextResponse.json(
+        { error: "Sistem kurulumu daha önce tamamlanmıştır." },
+        { status: 403 }
+      );
     }
-    
+
+    const email = "gokhansucsuz@gmail.com";
     const hashedPassword = await bcrypt.hash("Admin123!", 10);
-    
+
     const superadmin = new User({
       name: "Süper Admin",
       email,
       password: hashedPassword,
-      role: "superadmin"
+      role: "superadmin",
     });
-    
+
     await superadmin.save();
-    
-    return NextResponse.json({ message: "Süper admin başarıyla oluşturuldu. Şifre: Admin123!" }, { status: 201 });
-  } catch (error) {
+
+    return NextResponse.json(
+      { message: "İlk kurulum tamamlandı. Lütfen giriş yaptıktan sonra şifrenizi değiştirin." },
+      { status: 201 }
+    );
+  } catch {
     return NextResponse.json({ error: "Kurulum hatası" }, { status: 500 });
   }
 }

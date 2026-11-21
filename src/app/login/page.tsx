@@ -4,13 +4,23 @@ import { useState, useEffect } from "react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { Lock, User as UserIcon, ShieldAlert, KeyRound } from "lucide-react";
+import {
+  Lock,
+  User as UserIcon,
+  ShieldCheck,
+  KeyRound,
+  Eye,
+  EyeOff,
+  Building2,
+  ChevronDown,
+} from "lucide-react";
 
 export default function LoginPage() {
   const { data: session, status } = useSession();
   const [users, setUsers] = useState([]);
   const [selectedEmail, setSelectedEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(false);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
@@ -20,7 +30,7 @@ export default function LoginPage() {
     fetch("/api/settings/system")
       .then((res) => res.json())
       .then((data) => {
-        setGoogleLoginEnabled(data.googleLoginEnabled);
+        setGoogleLoginEnabled(Boolean(data.googleLoginEnabled));
         setSettingsLoaded(true);
       })
       .catch(() => {
@@ -33,7 +43,7 @@ export default function LoginPage() {
       const res = await fetch("/api/users");
       if (res.ok) {
         const data = await res.json();
-        setUsers(data.users);
+        setUsers(data.users || []);
       }
     } catch (e) {
       console.error(e);
@@ -62,7 +72,7 @@ export default function LoginPage() {
       toast.error("Lütfen bir personel seçin");
       return;
     }
-    
+
     setLoading(true);
 
     try {
@@ -80,7 +90,7 @@ export default function LoginPage() {
         router.push("/dashboard");
         router.refresh();
       }
-    } catch (error) {
+    } catch {
       toast.error("Bir hata oluştu");
     } finally {
       setLoading(false);
@@ -88,7 +98,12 @@ export default function LoginPage() {
   };
 
   if (status === "loading" || !settingsLoaded) {
-    return <div className="min-h-screen flex items-center justify-center bg-slate-100">Yükleniyor...</div>;
+    return (
+      <div className="min-h-screen flex flex-col items-center justify-center bg-[#f3f6fb] gap-3">
+        <div className="w-9 h-9 border-3 border-blue-700 border-t-transparent rounded-full animate-spin" />
+        <p className="text-sm font-semibold text-slate-600">Güvenli oturum hazırlanıyor...</p>
+      </div>
+    );
   }
 
   const isGoogleVerified = session && (session as any).googleVerified && !session.user?.role;
@@ -96,114 +111,183 @@ export default function LoginPage() {
   const canSeePersonnelForm = !isGoogleStepRequired || isGoogleVerified;
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-100 to-slate-200 relative overflow-hidden p-4">
-      <div className="absolute top-[-10%] left-[-10%] w-96 h-96 bg-blue-400 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
-      <div className="absolute top-[20%] right-[-10%] w-96 h-96 bg-purple-400 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-2000"></div>
-      <div className="absolute bottom-[-20%] left-[20%] w-96 h-96 bg-indigo-400 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob animation-delay-4000"></div>
+    <main className="min-h-screen flex flex-col bg-[#f3f6fb] gov-grid-bg relative">
+      {/* Üst Resmi Kurum Şeridi */}
+      <div className="h-1.5 w-full bg-gradient-to-r from-[#c81e1e] via-[#1d4ed8] to-[#059669]" />
 
-      <div className="glass-panel w-full max-w-md p-8 rounded-3xl z-10 relative">
-        <div className="flex justify-center mb-6">
-          <div className="bg-blue-600 p-4 rounded-2xl shadow-lg shadow-blue-500/30">
-            {canSeePersonnelForm ? (
-              <KeyRound className="text-white w-10 h-10" />
-            ) : (
-              <ShieldAlert className="text-white w-10 h-10" />
-            )}
+      <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
+        <div className="w-full max-w-md space-y-5">
+          {/* Kurum Başlığı */}
+          <div className="text-center space-y-2">
+            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-[#0b192c] to-[#1e3a5f] text-white shadow-xl shadow-slate-900/20 ring-4 ring-white">
+              <Building2 className="w-7 h-7" aria-hidden="true" />
+            </div>
+            <div>
+              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#c81e1e]">
+                T.C. Edirne Valiliği
+              </p>
+              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mt-0.5">
+                Sosyal Yardımlaşma ve Dayanışma Vakfı
+              </h1>
+              <p className="text-xs sm:text-sm font-medium text-slate-500 mt-1">
+                Vakıf İşlemleri Yönetim ve Evrak Portalı
+              </p>
+            </div>
           </div>
+
+          {/* Giriş Kartı */}
+          <div className="glass-panel rounded-3xl overflow-hidden">
+            <div className="px-6 py-4 bg-gradient-to-r from-[#0b192c] to-[#163053] text-white flex items-center justify-between">
+              <div className="flex items-center gap-2.5">
+                {canSeePersonnelForm ? (
+                  <KeyRound className="w-4 h-4 text-blue-300" aria-hidden="true" />
+                ) : (
+                  <ShieldCheck className="w-4 h-4 text-amber-300" aria-hidden="true" />
+                )}
+                <span className="text-sm font-bold tracking-tight">
+                  {canSeePersonnelForm ? "Personel Oturum Girişi" : "Kurumsal Kimlik Doğrulaması"}
+                </span>
+              </div>
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-400/30 text-[10px] font-bold text-emerald-200">
+                <ShieldCheck className="w-3 h-3" aria-hidden="true" />
+                KVKK
+              </span>
+            </div>
+
+            <div className="p-6 sm:p-7">
+              {!canSeePersonnelForm ? (
+                <div className="space-y-5">
+                  <div className="p-4 bg-amber-50/90 border border-amber-200 rounded-2xl text-amber-900 text-xs sm:text-sm font-medium leading-relaxed">
+                    Güvenlik politikası gereği sisteme erişim için önce yetkili kurumsal Google hesabınız ile doğrulama yapmanız gerekmektedir.
+                  </div>
+                  <button
+                    type="button"
+                    onClick={() => signIn("google", { callbackUrl: "/login" })}
+                    className="w-full flex items-center justify-center gap-3 py-3.5 px-4 border border-slate-300 rounded-xl shadow-sm text-sm font-bold text-slate-800 bg-white hover:bg-slate-50 transition-all active:scale-[0.99]"
+                  >
+                    <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
+                      <path
+                        d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
+                        fill="#4285F4"
+                      />
+                      <path
+                        d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
+                        fill="#34A853"
+                      />
+                      <path
+                        d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
+                        fill="#FBBC05"
+                      />
+                      <path
+                        d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
+                        fill="#EA4335"
+                      />
+                    </svg>
+                    Yetkili Kurum Hesabı ile Doğrula
+                  </button>
+                </div>
+              ) : (
+                <form onSubmit={handleSubmit} className="space-y-5">
+                  <div>
+                    <label
+                      className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5"
+                      htmlFor="personnel"
+                    >
+                      Personel Seçimi
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                        <UserIcon className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                      </div>
+                      <select
+                        id="personnel"
+                        required
+                        className="block w-full pl-10 pr-10 py-3 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 bg-slate-50/70 hover:bg-white focus:bg-white focus:border-blue-600 transition-colors appearance-none"
+                        value={selectedEmail}
+                        onChange={(e) => setSelectedEmail(e.target.value)}
+                      >
+                        <option value="" disabled>
+                          Adınızı seçiniz...
+                        </option>
+                        {users.map((u: any) => (
+                          <option key={u._id} value={u.email}>
+                            {u.name} ({u.role === "manager" ? "Müdür" : "Personel"})
+                          </option>
+                        ))}
+                      </select>
+                      <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+                        <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                      </div>
+                    </div>
+                  </div>
+
+                  <div>
+                    <label
+                      className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5"
+                      htmlFor="password"
+                    >
+                      Şifre
+                    </label>
+                    <div className="relative">
+                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                        <Lock className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                      </div>
+                      <input
+                        id="password"
+                        type={showPassword ? "text" : "password"}
+                        autoComplete="current-password"
+                        required
+                        className="block w-full pl-10 pr-11 py-3 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 bg-slate-50/70 hover:bg-white focus:bg-white focus:border-blue-600 placeholder-slate-400 transition-colors"
+                        placeholder="••••••••"
+                        value={password}
+                        onChange={(e) => setPassword(e.target.value)}
+                      />
+                      <button
+                        type="button"
+                        aria-label={showPassword ? "Şifreyi gizle" : "Şifreyi göster"}
+                        onClick={() => setShowPassword((v) => !v)}
+                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600"
+                      >
+                        {showPassword ? (
+                          <EyeOff className="w-4 h-4" aria-hidden="true" />
+                        ) : (
+                          <Eye className="w-4 h-4" aria-hidden="true" />
+                        )}
+                      </button>
+                    </div>
+                  </div>
+
+                  <button
+                    type="submit"
+                    disabled={loading}
+                    className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl shadow-md shadow-blue-900/15 text-sm font-bold text-white bg-gradient-to-r from-[#0b192c] to-[#1d4ed8] hover:from-[#122642] hover:to-[#1e40af] transition-all disabled:opacity-70 disabled:cursor-not-allowed active:scale-[0.99]"
+                  >
+                    {loading ? (
+                      <>
+                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                        Doğrulanıyor...
+                      </>
+                    ) : (
+                      "Güvenli Giriş Yap"
+                    )}
+                  </button>
+                </form>
+              )}
+            </div>
+          </div>
+
+          {/* Alt Güvenlik Bilgilendirmesi */}
+          <footer className="text-center space-y-1">
+            <p className="text-[11px] font-semibold text-slate-500 flex items-center justify-center gap-1.5">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
+              AES-256-GCM Şifreli Veri Güvenliği • 6 Saatlik Oturum Koruması
+            </p>
+            <p className="text-[11px] text-slate-400">
+              Tüm erişim ve işlemler 6698 sayılı KVKK kapsamında kayıt altına alınmaktadır.
+            </p>
+          </footer>
         </div>
-        <h2 className="text-3xl font-bold text-center text-slate-800 mb-2 tracking-tight">Sisteme Giriş</h2>
-        <p className="text-center text-slate-500 mb-8 text-sm font-medium">
-          {canSeePersonnelForm ? "Lütfen adınızı seçip şifrenizi girin." : "Vakıf İşlemleri Yönetim Paneli - Yetki Doğrulaması"}
-        </p>
-
-        {!canSeePersonnelForm ? (
-          // SADECE GOOGLE GİRİŞİ (1. AŞAMA)
-          <div className="space-y-4">
-            <div className="p-4 bg-amber-50 border border-amber-200 rounded-xl mb-6 text-amber-800 text-sm font-medium text-center">
-              Sisteme giriş yapabilmek için öncelikle yetkili Google hesabınızla doğrulanmanız gerekmektedir.
-            </div>
-            <button
-              onClick={() => signIn("google", { callbackUrl: "/login" })}
-              className="w-full flex items-center justify-center py-4 px-4 border border-slate-300 rounded-xl shadow-sm text-sm font-bold text-slate-700 bg-white hover:bg-slate-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 transform hover:-translate-y-0.5"
-            >
-              <svg className="w-5 h-5 mr-3" viewBox="0 0 24 24">
-                <path
-                  d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                  fill="#4285F4"
-                />
-                <path
-                  d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                  fill="#34A853"
-                />
-                <path
-                  d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                  fill="#FBBC05"
-                />
-                <path
-                  d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                  fill="#EA4335"
-                />
-                <path d="M1 1h22v22H1z" fill="none" />
-              </svg>
-              Yetkili Hesabı İle Doğrula
-            </button>
-          </div>
-        ) : (
-          // PERSONEL ŞİFRE GİRİŞİ (2. AŞAMA)
-          <form onSubmit={handleSubmit} className="space-y-5">
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="personnel">
-                Personel Seçimi
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <UserIcon className="h-5 w-5 text-slate-400" />
-                </div>
-                <select
-                  id="personnel"
-                  required
-                  className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white/80 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-all duration-200 appearance-none"
-                  value={selectedEmail}
-                  onChange={(e) => setSelectedEmail(e.target.value)}
-                >
-                  <option value="" disabled>Lütfen seçiniz...</option>
-                  {users.map((u: any) => (
-                    <option key={u._id} value={u.email}>{u.name} ({u.role === 'manager' ? 'Müdür' : 'Personel'})</option>
-                  ))}
-                </select>
-              </div>
-            </div>
-
-            <div>
-              <label className="block text-sm font-semibold text-slate-700 mb-1.5" htmlFor="password">
-                Şifre
-              </label>
-              <div className="relative">
-                <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                  <Lock className="h-5 w-5 text-slate-400" />
-                </div>
-                <input
-                  id="password"
-                  type="password"
-                  required
-                  className="block w-full pl-10 pr-3 py-3 border border-slate-200 rounded-xl leading-5 bg-white/80 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-blue-500 sm:text-sm transition-all duration-200"
-                  placeholder="••••••••"
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                />
-              </div>
-            </div>
-
-            <button
-              type="submit"
-              disabled={loading}
-              className="w-full flex justify-center py-3.5 px-4 border border-transparent rounded-xl shadow-sm text-sm font-bold text-white bg-blue-600 hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 transition-all duration-200 disabled:opacity-70 disabled:cursor-not-allowed mt-4 transform hover:-translate-y-0.5"
-            >
-              {loading ? "Giriş yapılıyor..." : "Sisteme Giriş Yap"}
-            </button>
-          </form>
-        )}
       </div>
-    </div>
+    </main>
   );
 }

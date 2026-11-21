@@ -20,8 +20,8 @@ export async function POST() {
   try {
     const session = await getServerSession(authOptions);
     const role = (session?.user as any)?.role;
-    if (!session?.user || (role !== "superadmin" && role !== "manager")) {
-      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 403 });
+    if (!session?.user || role !== "superadmin") {
+      return NextResponse.json({ error: "Bu işlem yalnızca Süper Admin yetkisiyle yapılabilir." }, { status: 403 });
     }
 
     if (!isEncryptionEnabled()) {

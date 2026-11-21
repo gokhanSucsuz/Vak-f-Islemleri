@@ -3,7 +3,25 @@
 import { useState, useEffect, useMemo, useRef } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
-import { Save, UserCircle, Activity, Clock, Trash2, Edit2, X, Check, AlertTriangle, Search } from "lucide-react";
+import Link from "next/link";
+import {
+  Save,
+  UserCircle,
+  Activity,
+  Clock,
+  Trash2,
+  Edit2,
+  X,
+  Check,
+  AlertTriangle,
+  Search,
+  FolderOpen,
+  ScrollText,
+  Presentation,
+  Gift,
+  ShieldCheck,
+  ArrowUpRight,
+} from "lucide-react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
 import { turkishIncludes, extractTC } from "@/lib/turkish";
@@ -74,7 +92,14 @@ export default function DashboardPage() {
         const list = data.transactions || [];
         setTransactions(list);
         const todayStartMs = new Date().setHours(0, 0, 0, 0);
-        const todayCount = list.filter((t: any) => new Date(t.createdAt).getTime() >= todayStartMs).length;
+        const isAdminOrMgr =
+          session?.user?.role === "superadmin" || session?.user?.role === "manager";
+        const todayCount = list.filter((t: any) => {
+          const isToday = new Date(t.createdAt).getTime() >= todayStartMs;
+          if (!isToday) return false;
+          if (isAdminOrMgr) return true;
+          return String(t.userId?._id || t.userId || "") === String(session?.user?.id || "");
+        }).length;
         setTodayStats(todayCount);
       }
     } catch (e) {
@@ -345,62 +370,124 @@ export default function DashboardPage() {
   const isSuperAdminOrManager = session?.user?.role === "superadmin" || session?.user?.role === "manager";
 
   return (
-    <div className="space-y-8">
-      {/* İstatistik ve Başlık */}
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div>
-          <h1 className="text-2xl font-bold text-slate-800">
-            {isSuperAdminOrManager ? "Sistem Genel Bakış" : "Yeni İşlem Kaydı"}
-          </h1>
-          <p className="text-slate-500 text-sm mt-1">
-            {isSuperAdminOrManager 
-              ? "Sistemdeki tüm personel işlemlerini canlı takip edin." 
-              : "Vatandaşla yapılan görüşme ve işlemi kayıt altına alın."}
-          </p>
-        </div>
-        
-        <div className="bg-white p-4 rounded-2xl shadow-sm border border-slate-100 flex items-center gap-4">
-          <div className="bg-blue-100 p-3 rounded-xl">
-            <Activity className="text-blue-600 w-6 h-6" />
-          </div>
+    <div className="space-y-6">
+      {/* Kurumsal Üst Özet & Hızlı Erişim */}
+      <div className="gov-card rounded-3xl p-5 sm:p-6 bg-gradient-to-r from-[#0b192c] via-[#132948] to-[#1a3a66] text-white border-0 shadow-lg shadow-slate-900/10">
+        <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div>
-            <p className="text-sm text-slate-500 font-medium">
-              {isSuperAdminOrManager ? "Bugünkü Toplam İşlemler" : "Bugünkü İşlemleriniz"}
+            <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15 text-[11px] font-semibold text-blue-200 mb-2">
+              <ShieldCheck className="w-3.5 h-3.5 text-emerald-300" aria-hidden="true" />
+              Güvenli Kurumsal Oturum
+            </div>
+            <h1 className="text-xl sm:text-2xl font-extrabold tracking-tight text-white">
+              {isSuperAdminOrManager ? "Sistem Genel Bakış" : "Günlük İşlem ve Kayıt Paneli"}
+            </h1>
+            <p className="text-slate-300 text-xs sm:text-sm mt-1">
+              {isSuperAdminOrManager
+                ? "Tüm personel işlemlerini, sosyal yardım süreçlerini ve kurum kayıtlarını anlık takip edin."
+                : "Vatandaş görüşmelerini ve yardım başvurularını hızlı ve güvenli şekilde kayıt altına alın."}
             </p>
-            <p className="text-2xl font-bold text-slate-800">{todayStats}</p>
           </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-2 gap-3 shrink-0">
+            <div className="bg-white/10 backdrop-blur-sm border border-white/15 px-4 py-3 rounded-2xl flex items-center gap-3">
+              <div className="bg-blue-500/25 p-2.5 rounded-xl border border-blue-400/30">
+                <Activity className="text-blue-200 w-5 h-5" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="text-[11px] text-blue-200/90 font-medium">
+                  {isSuperAdminOrManager ? "Bugünkü Toplam" : "Bugünkü İşleminiz"}
+                </p>
+                <p className="text-2xl font-extrabold text-white leading-tight">{todayStats}</p>
+              </div>
+            </div>
+
+            <div className="bg-white/10 backdrop-blur-sm border border-white/15 px-4 py-3 rounded-2xl flex items-center gap-3">
+              <div className="bg-emerald-500/25 p-2.5 rounded-xl border border-emerald-400/30">
+                <Clock className="text-emerald-200 w-5 h-5" aria-hidden="true" />
+              </div>
+              <div>
+                <p className="text-[11px] text-emerald-200/90 font-medium">Son 30 Gün</p>
+                <p className="text-2xl font-extrabold text-white leading-tight">{transactions.length}</p>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        {/* Hızlı Modül Geçişleri */}
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mt-5 pt-4 border-t border-white/10">
+          {[
+            { href: "/dashboard/applications", label: "Başvuru Dosyaları", icon: FolderOpen },
+            { href: "/dashboard/petitions", label: "Dilekçe İşlemleri", icon: ScrollText },
+            { href: "/dashboard/presentations", label: "Sunular", icon: Presentation },
+            { href: "/dashboard/in-kind-aid", label: "Ayni Yardım", icon: Gift },
+          ].map((q) => {
+            const QIcon = q.icon;
+            return (
+              <Link
+                key={q.href}
+                href={q.href}
+                className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-xl bg-white/[0.08] hover:bg-white/[0.15] border border-white/10 text-xs font-semibold text-white transition-all group"
+              >
+                <span className="flex items-center gap-2 truncate">
+                  <QIcon className="w-4 h-4 text-blue-300 shrink-0" aria-hidden="true" />
+                  <span className="truncate">{q.label}</span>
+                </span>
+                <ArrowUpRight className="w-3.5 h-3.5 text-slate-300 group-hover:translate-x-0.5 group-hover:-translate-y-0.5 transition-transform shrink-0" aria-hidden="true" />
+              </Link>
+            );
+          })}
         </div>
       </div>
 
       {/* Kayıt Formu - Sadece Personel Görebilir */}
       {session?.user?.role === "personnel" && (
-        <div className="bg-white rounded-3xl shadow-sm border border-slate-200 overflow-hidden">
-          <div className="p-6 md:p-8">
-            <form onSubmit={handleSubmit} className="space-y-6">
+        <div className="gov-card rounded-3xl overflow-hidden">
+          <div className="px-6 py-4 bg-slate-50/80 border-b border-slate-200/80 flex items-center justify-between">
+            <h2 className="text-sm font-bold text-slate-800 flex items-center gap-2">
+              <UserCircle className="w-4 h-4 text-blue-600" aria-hidden="true" />
+              Yeni Vatandaş İşlem Kaydı
+            </h2>
+            <span className="text-[11px] font-medium text-slate-500">
+              Son 30 gün mükerrer kontrolü aktiftir
+            </span>
+          </div>
+          <div className="p-6 md:p-7">
+            <form onSubmit={handleSubmit} className="space-y-5">
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Vatandaş Bilgisi (Ad Soyad ve TC Kimlik)</label>
+                <label
+                  htmlFor="citizenInfo"
+                  className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2"
+                >
+                  Vatandaş Bilgisi (Ad Soyad ve T.C. Kimlik No)
+                </label>
                 <div className="relative">
-                  <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                    <UserCircle className="h-5 w-5 text-slate-400" />
+                  <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
+                    <UserCircle className="h-5 w-5 text-slate-400" aria-hidden="true" />
                   </div>
                   <input
+                    id="citizenInfo"
                     type="text"
                     name="citizenInfo"
                     required
                     value={formData.citizenInfo}
                     onChange={handleChange}
-                    className={`block w-full pl-10 pr-3 py-3 border rounded-xl transition-all focus:outline-none focus:ring-2 ${
+                    className={`block w-full pl-11 pr-3.5 py-3 border rounded-xl text-sm font-medium transition-all focus:outline-none focus:ring-2 ${
                       matchingTodayTransactions.length > 0
                         ? "border-amber-400 bg-amber-50/40 focus:bg-white focus:ring-amber-500/30 focus:border-amber-500"
-                        : "border-slate-200 bg-slate-50 focus:bg-white focus:ring-blue-500 focus:border-blue-500"
+                        : "border-slate-200 bg-slate-50/70 focus:bg-white focus:ring-blue-500/30 focus:border-blue-600"
                     }`}
                     placeholder="Örn: Ahmet Yılmaz - 12345678901"
                   />
                 </div>
                 {matchingTodayTransactions.length > 0 && (
-                  <div className="mt-3 p-3.5 bg-amber-50 border border-amber-300 rounded-2xl text-amber-900 space-y-2">
+                  <div
+                    role="status"
+                    aria-live="polite"
+                    className="mt-3 p-3.5 bg-amber-50 border border-amber-300 rounded-2xl text-amber-900 space-y-2"
+                  >
                     <div className="flex items-center gap-2 text-xs font-bold text-amber-800">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" />
+                      <AlertTriangle className="w-4 h-4 text-amber-600 flex-shrink-0" aria-hidden="true" />
                       <span>
                         UYARI: Son 30 gün içinde bu kişi için {matchingTodayTransactions.length} işlem kaydı bulundu!
                       </span>
@@ -417,9 +504,9 @@ export default function DashboardPage() {
                           </span>
                         </div>
                       ))}
-                      {matchingTodayTransactions.length > 3 && (
+                      {matchingTodayTransactions.length > 4 && (
                         <p className="text-[11px] text-amber-700 font-medium pl-1">
-                          +{matchingTodayTransactions.length - 3} eşleşen kayıt daha...
+                          +{matchingTodayTransactions.length - 4} eşleşen kayıt daha...
                         </p>
                       )}
                     </div>
@@ -428,13 +515,19 @@ export default function DashboardPage() {
               </div>
 
               <div>
-                <label className="block text-sm font-semibold text-slate-700 mb-2">Yardım / Başvuru Türü</label>
+                <label
+                  htmlFor="helpType"
+                  className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-2"
+                >
+                  Yardım / Başvuru Türü
+                </label>
                 <select
+                  id="helpType"
                   name="helpType"
                   required
                   value={formData.helpType}
                   onChange={handleChange}
-                  className="block w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:ring-2 focus:ring-blue-500 focus:border-blue-500 transition-all"
+                  className="block w-full p-3 border border-slate-200 rounded-xl text-sm font-medium bg-slate-50/70 focus:bg-white focus:ring-2 focus:ring-blue-500/30 focus:border-blue-600 transition-all"
                 >
                   <option value="">Seçiniz...</option>
                   {helpTypes.map((ht: any) => (
@@ -534,7 +627,7 @@ export default function DashboardPage() {
                       {t.userId?.name || "-"}
                     </span>
                     <span className="font-mono">
-                      {format(new Date(t.createdAt), "dd/MM/yyyy HH:mm")}
+                      {format(new Date(t.createdAt), "dd.MM.yyyy HH:mm")}
                     </span>
                   </div>
 
