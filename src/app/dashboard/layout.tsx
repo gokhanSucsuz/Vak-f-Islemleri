@@ -33,7 +33,7 @@ export default function DashboardLayout({
               aria-hidden="true"
             />
             <p className="text-xs sm:text-sm font-bold text-slate-800 truncate">
-              Edirne Sosyal Yardımlaşma ve Dayanışma Vakfı
+              Vakıf İşlemleri
               <span className="hidden lg:inline font-medium text-slate-400">
                 {" "}• Dijital İşlem ve Evrak Yönetim Portalı
               </span>

@@ -61,7 +61,7 @@ export default function Sidebar() {
 
   const groups: Array<{ key: NavItem["group"]; label: string }> = [
     { key: "core", label: "Operasyonel İşlemler" },
-    { key: "aid", label: "Sosyal Yardım Modülleri" },
+    { key: "aid", label: "Yardım Modülleri" },
     { key: "admin", label: "Raporlama & Yönetim" },
   ];
 
@@ -102,7 +102,7 @@ export default function Sidebar() {
             </div>
             <div className="min-w-0">
               <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-blue-300/90 leading-tight">
-                T.C. Edirne SYDV
+                Yönetim Portalı
               </p>
               <p className="text-base font-extrabold tracking-tight text-white truncate">
                 Vakıf İşlemleri

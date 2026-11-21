@@ -78,7 +78,7 @@ export default function SuperAdminLoginPage() {
                     autoComplete="email"
                     required
                     className="block w-full pl-10 pr-3.5 py-3 border border-slate-700 rounded-xl text-sm bg-slate-900/80 text-white placeholder-slate-500 focus:border-red-500 transition-colors"
-                    placeholder="admin@sydv.gov.tr"
+                    placeholder="admin@vakif.local"
                     value={email}
                     onChange={(e) => setEmail(e.target.value)}
                   />

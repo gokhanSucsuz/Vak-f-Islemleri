@@ -123,14 +123,11 @@ export default function LoginPage() {
               <Building2 className="w-7 h-7" aria-hidden="true" />
             </div>
             <div>
-              <p className="text-[11px] font-bold uppercase tracking-[0.18em] text-[#c81e1e]">
-                T.C. Edirne Valiliği
-              </p>
-              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight mt-0.5">
-                Sosyal Yardımlaşma ve Dayanışma Vakfı
+              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
+                Vakıf İşlemleri
               </h1>
               <p className="text-xs sm:text-sm font-medium text-slate-500 mt-1">
-                Vakıf İşlemleri Yönetim ve Evrak Portalı
+                Yönetim ve Evrak Portalı
               </p>
             </div>
           </div>
