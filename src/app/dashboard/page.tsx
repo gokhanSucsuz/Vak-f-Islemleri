@@ -372,7 +372,7 @@ export default function DashboardPage() {
   return (
     <div className="space-y-6">
       {/* Kurumsal Üst Özet & Hızlı Erişim */}
-      <div className="gov-card rounded-3xl p-5 sm:p-6 bg-gradient-to-r from-[#0b192c] via-[#132948] to-[#1a3a66] text-white border-0 shadow-lg shadow-slate-900/10">
+      <div className="rounded-3xl p-5 sm:p-6 bg-gradient-to-r from-[#0b192c] via-[#132948] to-[#1a3a66] text-white border border-slate-800/60 shadow-xl shadow-slate-900/15">
         <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-5">
           <div>
             <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15 text-[11px] font-semibold text-blue-200 mb-2">
