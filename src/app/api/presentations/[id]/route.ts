@@ -8,7 +8,7 @@ import Log from "@/models/Log";
 import {
   compressSlides,
   decompressSlides,
-  purgeExpiredMeetingPhotos,
+  computeSlideStats,
 } from "@/lib/presentationUtils";
 
 export async function GET(
@@ -23,11 +23,11 @@ export async function GET(
 
     const { id } = await context.params;
     await dbConnect();
-    await purgeExpiredMeetingPhotos();
 
-    const record = await Presentation.findById(id)
+    const record = (await Presentation.findById(id)
       .populate("createdBy", "name")
-      .populate("meetingId", "title status");
+      .populate("meetingId", "title status")
+      .lean()) as any;
 
     if (!record) {
       return NextResponse.json({ error: "Sunu kaydı bulunamadı." }, { status: 404 });
@@ -65,7 +65,6 @@ export async function PUT(
   try {
     const session = await getServerSession(authOptions);
     const userId = (session?.user as any)?.id;
-    const role = (session?.user as any)?.role;
     if (!session?.user || !userId) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
@@ -82,12 +81,20 @@ export async function PUT(
     }
 
     await dbConnect();
-    const record = await Presentation.findById(id);
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    // HIZLANDIRMA: Eski slidesCompressed verisini veritabanından okumadan sadece üst veriyi al
+    const [record, perms] = await Promise.all([
+      Presentation.findById(id)
+        .select("meetingId createdBy lockedBy lockedAt")
+        .lean() as Promise<any>,
+      getEffectivePermissions(session),
+    ]);
+
     if (!record) {
       return NextResponse.json({ error: "Sunu bulunamadı." }, { status: 404 });
     }
 
-    const meeting = await PresentationMeeting.findById(record.meetingId);
+    const meeting = (await PresentationMeeting.findById(record.meetingId).lean()) as any;
     if (meeting?.status === "closed") {
       return NextResponse.json(
         { error: "Toplantı kapatıldığı için salt okunurdur; düzenleme yapılamaz." },
@@ -95,8 +102,6 @@ export async function PUT(
       );
     }
 
-    const { getEffectivePermissions } = await import("@/lib/permissions");
-    const perms = await getEffectivePermissions(session);
     const isManager = perms.canManagePresentations;
     const isAuthorizedStaff =
       perms.canManagePresentations ||
@@ -127,8 +132,11 @@ export async function PUT(
       record.lockedAt &&
       Date.now() - new Date(record.lockedAt).getTime() < LOCK_TTL_MS
     ) {
-      const populatedLock = await Presentation.findById(id).populate("lockedBy", "name");
-      const lockerName = (populatedLock?.lockedBy as any)?.name || "başka bir kullanıcı";
+      const populatedLock = (await Presentation.findById(id)
+        .select("lockedBy")
+        .populate("lockedBy", "name")
+        .lean()) as any;
+      const lockerName = populatedLock?.lockedBy?.name || "başka bir kullanıcı";
       return NextResponse.json(
         {
           error: `Bu sunu şu anda ${lockerName} tarafından düzenleniyor. Aynı anda yalnızca bir kişi düzenleme yapabilir.`,
@@ -190,27 +198,65 @@ export async function PUT(
       neighborhood: s.neighborhood || firstValidNeighborhood,
     }));
 
-    record.slidesCompressed = await compressSlides(finalSlides);
-    record.slideCount = finalSlides.length;
-    record.summaryTitle = Array.from(
+    const slidesCompressed = await compressSlides(finalSlides);
+    const stats = computeSlideStats(finalSlides, slidesCompressed.length);
+    const summaryTitle = Array.from(
       new Set(
         finalSlides.map((s) =>
           s.neighborhood ? `${s.fullName} (${s.neighborhood})` : s.fullName
         )
       )
     ).join(" | ");
-    record.updatedBy = userId;
-    record.lockedBy = null;
-    record.lockedAt = null;
-    await record.save();
 
-    await Log.create({
+    const updated = (await Presentation.findByIdAndUpdate(
+      id,
+      {
+        $set: {
+          slidesCompressed,
+          slideCount: finalSlides.length,
+          totalPhotos: stats.totalPhotos,
+          photoBytes: stats.photoBytes,
+          presentationBytes: stats.presentationBytes,
+          firstPhoto: stats.firstPhoto,
+          summaryTitle,
+          updatedBy: userId,
+          lockedBy: null,
+          lockedAt: null,
+        },
+      },
+      { new: true }
+    )
+      .select("-slidesCompressed")
+      .populate("createdBy", "name")
+      .populate("meetingId", "title status")
+      .lean()) as any;
+
+    void Log.create({
       userId,
       action: "SUNU_GUNCELLENDI",
-      details: `Sunu güncellendi: ${record.summaryTitle}`,
-    });
+      details: `Sunu güncellendi: ${summaryTitle}`,
+    }).catch(() => {});
 
-    return NextResponse.json({ success: true });
+    const presentationCard = updated
+      ? {
+          _id: updated._id,
+          meetingId: (updated.meetingId as any)?._id || updated.meetingId,
+          meetingTitle: (updated.meetingId as any)?.title || "",
+          meetingStatus: (updated.meetingId as any)?.status || "open",
+          summaryTitle: updated.summaryTitle,
+          slideCount: updated.slideCount,
+          totalPhotos: stats.totalPhotos,
+          photoBytes: stats.photoBytes,
+          presentationBytes: stats.presentationBytes,
+          firstPhoto: stats.firstPhoto,
+          createdBy: updated.createdBy,
+          lockedBy: null,
+          createdAt: updated.createdAt,
+          updatedAt: updated.updatedAt,
+        }
+      : null;
+
+    return NextResponse.json({ success: true, presentationCard });
   } catch (error: any) {
     console.error("PUT /api/presentations/[id] error:", error);
     return NextResponse.json(
@@ -237,33 +283,37 @@ export async function PATCH(
     const LOCK_TTL_MS = 3 * 60 * 1000;
 
     await dbConnect();
-    const record = await Presentation.findById(id);
-    if (!record) {
-      return NextResponse.json({ error: "Sunu bulunamadı." }, { status: 404 });
-    }
 
     if (action === "unlock") {
-      if (String(record.lockedBy || "") === String(userId)) {
-        await Presentation.updateOne(
-          { _id: id, lockedBy: userId },
-          { $set: { lockedBy: null, lockedAt: null } }
-        );
-      }
+      await Presentation.updateOne(
+        { _id: id, lockedBy: userId },
+        { $set: { lockedBy: null, lockedAt: null } }
+      );
       return NextResponse.json({ success: true });
     }
 
     if (action === "heartbeat") {
-      if (String(record.lockedBy || "") === String(userId)) {
-        await Presentation.updateOne(
-          { _id: id, lockedBy: userId },
-          { $set: { lockedAt: new Date() } }
-        );
-      }
+      await Presentation.updateOne(
+        { _id: id, lockedBy: userId },
+        { $set: { lockedAt: new Date() } }
+      );
       return NextResponse.json({ success: true });
     }
 
     if (action === "lock") {
-      const meeting = await PresentationMeeting.findById(record.meetingId);
+      const record = (await Presentation.findById(id)
+        .select("meetingId createdBy")
+        .lean()) as any;
+      if (!record) {
+        return NextResponse.json({ error: "Sunu bulunamadı." }, { status: 404 });
+      }
+
+      const { getEffectivePermissions } = await import("@/lib/permissions");
+      const [meeting, perms] = await Promise.all([
+        PresentationMeeting.findById(record.meetingId).lean() as Promise<any>,
+        getEffectivePermissions(session),
+      ]);
+
       if (meeting?.status === "closed") {
         return NextResponse.json(
           { error: "Toplantı kapatıldığı için salt okunurdur; düzenleme yapılamaz." },
@@ -271,8 +321,6 @@ export async function PATCH(
         );
       }
 
-      const { getEffectivePermissions } = await import("@/lib/permissions");
-      const perms = await getEffectivePermissions(session);
       const isManager = perms.canManagePresentations;
       const isAuthorizedStaff =
         perms.canManagePresentations ||
@@ -310,11 +358,16 @@ export async function PATCH(
         },
         { $set: { lockedBy: userId, lockedAt: new Date() } },
         { new: true }
-      );
+      )
+        .select("_id")
+        .lean();
 
       if (!locked) {
-        const current = await Presentation.findById(id).populate("lockedBy", "name");
-        const lockerName = (current?.lockedBy as any)?.name || "başka bir kullanıcı";
+        const current = (await Presentation.findById(id)
+          .select("lockedBy")
+          .populate("lockedBy", "name")
+          .lean()) as any;
+        const lockerName = current?.lockedBy?.name || "başka bir kullanıcı";
         return NextResponse.json(
           {
             error: `Bu sunu şu anda ${lockerName} tarafından düzenleniyor. Aynı anda yalnızca bir kişi düzenleme yapabilir.`,
@@ -344,19 +397,25 @@ export async function DELETE(
   try {
     const session = await getServerSession(authOptions);
     const userId = (session?.user as any)?.id;
-    const role = (session?.user as any)?.role;
     if (!session?.user || !userId) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 
     const { id } = await context.params;
     await dbConnect();
-    const record = await Presentation.findById(id);
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const [record, perms] = await Promise.all([
+      Presentation.findById(id)
+        .select("meetingId createdBy summaryTitle slideCount")
+        .lean() as Promise<any>,
+      getEffectivePermissions(session),
+    ]);
+
     if (!record) {
       return NextResponse.json({ error: "Sunu bulunamadı." }, { status: 404 });
     }
 
-    const meeting = await PresentationMeeting.findById(record.meetingId);
+    const meeting = (await PresentationMeeting.findById(record.meetingId).lean()) as any;
     if (meeting?.status === "closed") {
       return NextResponse.json(
         { error: "Toplantı kapatıldığı için salt okunurdur; silme yapılamaz." },
@@ -364,8 +423,6 @@ export async function DELETE(
       );
     }
 
-    const { getEffectivePermissions } = await import("@/lib/permissions");
-    const perms = await getEffectivePermissions(session);
     const isManager = perms.canManagePresentations;
     const isAuthorizedStaff =
       perms.canManagePresentations ||
@@ -390,13 +447,17 @@ export async function DELETE(
     }
 
     await Presentation.findByIdAndDelete(id);
-    await Log.create({
+    void Log.create({
       userId,
       action: "SUNU_SILINDI",
       details: `Sunu kaydı silindi: ${record.summaryTitle}`,
-    });
+    }).catch(() => {});
 
-    return NextResponse.json({ success: true });
+    return NextResponse.json({
+      success: true,
+      deletedId: id,
+      slideCount: record.slideCount || 1,
+    });
   } catch (error: any) {
     console.error("DELETE /api/presentations/[id] error:", error);
     return NextResponse.json(

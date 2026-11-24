@@ -797,6 +797,7 @@ export default function PresentationsPage() {
   const [staffUsers, setStaffUsers] = useState<StaffUserOption[]>([]);
   const [presentations, setPresentations] = useState<PresentationListItem[]>([]);
   const [search, setSearch] = useState("");
+  const [debouncedSearch, setDebouncedSearch] = useState("");
   const [selectedPersonnelId, setSelectedPersonnelId] = useState<string>("");
   const [presPage, setPresPage] = useState(1);
   const [presPageSize, setPresPageSize] = useState(12);
@@ -858,20 +859,22 @@ export default function PresentationsPage() {
   // Silme Onayı
   const [deleteTarget, setDeleteTarget] = useState<PresentationListItem | null>(null);
 
-  const fetchAll = useCallback(async () => {
-    setLoading(true);
-    try {
-      const [tplRes, meetRes] = await Promise.all([
-        fetch("/api/presentations/template"),
-        fetch("/api/presentations/meetings"),
-      ]);
-      const tplData = await tplRes.json();
-      const meetData = await meetRes.json();
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedSearch(search), 180);
+    return () => clearTimeout(t);
+  }, [search]);
 
-      if (tplRes.ok) {
-        const rawTpls: PresentationTemplateClient[] =
-          tplData.templates || (tplData.template ? [tplData.template] : []);
-        const cleanedTpls = await Promise.all(
+  const fetchTemplates = useCallback(async () => {
+    try {
+      const tplRes = await fetch("/api/presentations/template");
+      if (!tplRes.ok) return;
+      const tplData = await tplRes.json();
+      const rawTpls: PresentationTemplateClient[] =
+        tplData.templates || (tplData.template ? [tplData.template] : []);
+      // Önce ham şablonları anında göster, filigran temizliğini ana iş parçacığını bloklamadan arka planda uygula
+      setTemplates(rawTpls);
+      setTimeout(() => {
+        void Promise.all(
           rawTpls.map(async (t) =>
             t.backgroundImageBase64
               ? {
@@ -882,40 +885,58 @@ export default function PresentationsPage() {
                 }
               : t
           )
-        );
-        setTemplates(cleanedTpls);
-      }
-      if (meetRes.ok) {
-        const list: MeetingItem[] = meetData.meetings || [];
-        setMeetings(list);
-        setSelectedMeetingId((prev) => {
-          if (prev && list.some((m) => m._id === prev)) return prev;
-          const openOne = list.find((m) => m.status === "open");
-          return openOne?._id || list[0]?._id || "";
-        });
-      }
+        ).then((cleaned) => setTemplates(cleaned));
+      }, 0);
     } catch {
-      toast.error("Veriler yüklenirken hata oluştu.");
-    } finally {
-      setLoading(false);
+      // sessiz
     }
   }, []);
 
+  const fetchAll = useCallback(
+    async (opts?: { includeTemplates?: boolean; silent?: boolean }) => {
+      if (!opts?.silent) setLoading(true);
+      try {
+        const tasks: Promise<any>[] = [fetch("/api/presentations/meetings")];
+        if (opts?.includeTemplates) {
+          tasks.push(fetchTemplates());
+        }
+        const [meetRes] = await Promise.all(tasks);
+        const meetData = await meetRes.json();
+
+        if (meetRes.ok) {
+          const list: MeetingItem[] = meetData.meetings || [];
+          setMeetings(list);
+          setSelectedMeetingId((prev) => {
+            if (prev && list.some((m) => m._id === prev)) return prev;
+            const openOne = list.find((m) => m.status === "open");
+            return openOne?._id || list[0]?._id || "";
+          });
+        }
+      } catch {
+        if (!opts?.silent) toast.error("Veriler yüklenirken hata oluştu.");
+      } finally {
+        if (!opts?.silent) setLoading(false);
+      }
+    },
+    [fetchTemplates]
+  );
+
   const fetchPresentations = useCallback(async () => {
+    if (!selectedMeetingId) return;
     try {
       const params = new URLSearchParams();
-      if (selectedMeetingId) params.set("meetingId", selectedMeetingId);
-      if (search.trim()) params.set("search", search.trim());
+      params.set("meetingId", selectedMeetingId);
+      if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
       const res = await fetch(`/api/presentations?${params.toString()}`);
       const data = await res.json();
       if (res.ok) setPresentations(data.presentations || []);
     } catch {
       // sessiz
     }
-  }, [selectedMeetingId, search]);
+  }, [selectedMeetingId, debouncedSearch]);
 
   useEffect(() => {
-    fetchAll();
+    void fetchAll({ includeTemplates: true });
   }, [fetchAll]);
 
   useEffect(() => {
@@ -956,7 +977,7 @@ export default function PresentationsPage() {
       if (!res.ok) throw new Error(data.error || "Şablon yüklenemedi");
       setNewTemplateName("");
       toast.success("Sunu şablonu eklendi.");
-      await fetchAll();
+      await fetchTemplates();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -973,7 +994,7 @@ export default function PresentationsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Şablon silinemedi");
       toast.success("Şablon silindi.");
-      await fetchAll();
+      await fetchTemplates();
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -1040,14 +1061,54 @@ export default function PresentationsPage() {
     setEditorMode(true);
   };
 
-  // Mevcut Sunuyu Düzenle / Önizle / İndir
+  // Mevcut Sunuyu Düzenle / Önizle / İndir (Paralel kilit + veri çekimi ile çok hızlı)
   const handleOpenRecord = async (
     item: PresentationListItem,
     mode: "preview" | "edit" | "download"
   ) => {
+    const loadingToast =
+      mode === "edit"
+        ? toast.loading("Sunu düzenleyici açılıyor...")
+        : mode === "preview"
+          ? toast.loading("Önizleme hazırlanıyor...")
+          : toast.loading("Sunu (.pptx) hazırlanıyor...");
     try {
+      if (mode === "edit") {
+        const [res, lockRes] = await Promise.all([
+          fetch(`/api/presentations/${item._id}`),
+          fetch(`/api/presentations/${item._id}`, {
+            method: "PATCH",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ action: "lock" }),
+          }),
+        ]);
+        const [data, lockData] = await Promise.all([
+          res.json(),
+          lockRes.json().catch(() => ({})),
+        ]);
+        toast.dismiss(loadingToast);
+
+        if (!lockRes.ok) {
+          toast.error(
+            lockData.error || "Bu sunu şu anda başka bir kullanıcı tarafından düzenleniyor."
+          );
+          void fetchPresentations();
+          return;
+        }
+        if (!res.ok) throw new Error(data.error || "Sunu alınamadı");
+
+        const loadedSlides: SlideItem[] = data.presentation.slides || [];
+        setEditingId(item._id);
+        setEditorMeetingId(data.presentation.meetingId);
+        setSlides(loadedSlides.length > 0 ? loadedSlides : [emptySlide(templates[0]?._id)]);
+        setActiveSlideIdx(0);
+        setEditorMode(true);
+        return;
+      }
+
       const res = await fetch(`/api/presentations/${item._id}`);
       const data = await res.json();
+      toast.dismiss(loadingToast);
       if (!res.ok) throw new Error(data.error || "Sunu alınamadı");
       const loadedSlides: SlideItem[] = data.presentation.slides || [];
 
@@ -1065,23 +1126,6 @@ export default function PresentationsPage() {
           slides: loadedSlides,
         });
         setPreviewSlideIdx(0);
-      } else if (mode === "edit") {
-        const lockRes = await fetch(`/api/presentations/${item._id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "lock" }),
-        });
-        const lockData = await lockRes.json().catch(() => ({}));
-        if (!lockRes.ok) {
-          toast.error(lockData.error || "Bu sunu şu anda başka bir kullanıcı tarafından düzenleniyor.");
-          await fetchPresentations();
-          return;
-        }
-        setEditingId(item._id);
-        setEditorMeetingId(data.presentation.meetingId);
-        setSlides(loadedSlides.length > 0 ? loadedSlides : [emptySlide(templates[0]?._id)]);
-        setActiveSlideIdx(0);
-        setEditorMode(true);
       } else if (mode === "download") {
         await exportSlidesToPptx({
           slides: loadedSlides,
@@ -1092,6 +1136,7 @@ export default function PresentationsPage() {
         toast.success("Sunu (.pptx) indirildi.");
       }
     } catch (err: any) {
+      toast.dismiss(loadingToast);
       toast.error(err.message);
     }
   };
@@ -1108,11 +1153,14 @@ export default function PresentationsPage() {
 
   const handleExitEditor = () => {
     if (editingId) {
-      releaseEditLock(editingId);
+      const unlockedId = editingId;
+      releaseEditLock(unlockedId);
+      setPresentations((prev) =>
+        prev.map((p) => (p._id === unlockedId ? { ...p, lockedBy: null } : p))
+      );
     }
     setEditorMode(false);
     setEditingId(null);
-    fetchPresentations();
   };
 
   useEffect(() => {
@@ -1207,10 +1255,49 @@ export default function PresentationsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Sunu kaydedilemedi");
 
-      toast.success(editingId ? "Sunu güncellendi." : "Sunu toplantı klasörüne kaydedildi.");
+      const wasEditingId = editingId;
+      const card = data.presentationCard as PresentationListItem | undefined;
+
+      if (card) {
+        if (wasEditingId) {
+          const oldItem = presentations.find((p) => p._id === wasEditingId);
+          const slideDelta = card.slideCount - (oldItem?.slideCount || card.slideCount);
+          setPresentations((prev) =>
+            prev.map((p) => (p._id === wasEditingId ? card : p))
+          );
+          if (slideDelta !== 0) {
+            setMeetings((prev) =>
+              prev.map((m) =>
+                m._id === String(card.meetingId)
+                  ? { ...m, totalSlides: Math.max(0, m.totalSlides + slideDelta) }
+                  : m
+              )
+            );
+          }
+        } else {
+          if (!selectedMeetingId || String(card.meetingId) === String(selectedMeetingId)) {
+            setPresentations((prev) => [card, ...prev]);
+          }
+          setMeetings((prev) =>
+            prev.map((m) =>
+              m._id === String(card.meetingId)
+                ? {
+                    ...m,
+                    recordCount: m.recordCount + 1,
+                    totalSlides: m.totalSlides + card.slideCount,
+                  }
+                : m
+            )
+          );
+        }
+      } else {
+        void fetchAll({ silent: true });
+        void fetchPresentations();
+      }
+
+      toast.success(wasEditingId ? "Sunu anında güncellendi." : "Sunu toplantı klasörüne eklendi.");
+      setEditingId(null);
       setEditorMode(false);
-      await fetchAll();
-      await fetchPresentations();
     } catch (err: any) {
       toast.error(err.message);
     } finally {
@@ -1478,17 +1565,36 @@ export default function PresentationsPage() {
 
   const handleDeletePresentation = async () => {
     if (!deleteTarget) return;
+    const target = deleteTarget;
+    const prevPresentations = presentations;
+    const prevMeetings = meetings;
+
+    // İyimser (Optimistic) anlık silme: arayüzden sıfır beklemeyle kaldır
+    setDeleteTarget(null);
+    setPresentations((prev) => prev.filter((p) => p._id !== target._id));
+    setMeetings((prev) =>
+      prev.map((m) =>
+        m._id === String(target.meetingId)
+          ? {
+              ...m,
+              recordCount: Math.max(0, m.recordCount - 1),
+              totalSlides: Math.max(0, m.totalSlides - (target.slideCount || 1)),
+            }
+          : m
+      )
+    );
+
     try {
-      const res = await fetch(`/api/presentations/${deleteTarget._id}`, {
+      const res = await fetch(`/api/presentations/${target._id}`, {
         method: "DELETE",
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Silinemedi");
       toast.success("Sunu kaydı silindi.");
-      setDeleteTarget(null);
-      await fetchAll();
-      await fetchPresentations();
     } catch (err: any) {
+      // Hata durumunda geri al
+      setPresentations(prevPresentations);
+      setMeetings(prevMeetings);
       toast.error(err.message);
     }
   };

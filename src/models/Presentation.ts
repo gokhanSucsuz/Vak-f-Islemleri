@@ -25,6 +25,10 @@ export interface IPresentation extends Document {
   meetingId: mongoose.Types.ObjectId;
   summaryTitle: string;
   slideCount: number;
+  totalPhotos?: number | null;
+  photoBytes?: number | null;
+  presentationBytes?: number | null;
+  firstPhoto?: string;
   slidesCompressed: Buffer;
   createdBy: mongoose.Types.ObjectId;
   updatedBy?: mongoose.Types.ObjectId;
@@ -50,6 +54,22 @@ const PresentationSchema = new Schema<IPresentation>(
     slideCount: {
       type: Number,
       default: 1,
+    },
+    totalPhotos: {
+      type: Number,
+      default: null,
+    },
+    photoBytes: {
+      type: Number,
+      default: null,
+    },
+    presentationBytes: {
+      type: Number,
+      default: null,
+    },
+    firstPhoto: {
+      type: String,
+      default: "",
     },
     // Gzip + AES-256-GCM ile şifrelenmiş slayt dizisi (metin + sıkıştırılmış fotoğraflar)
     slidesCompressed: {
@@ -83,7 +103,7 @@ PresentationSchema.index({ meetingId: 1, createdAt: -1 });
 PresentationSchema.index({ createdBy: 1, createdAt: -1 });
 
 applyFieldEncryption(PresentationSchema, {
-  stringFields: ["summaryTitle"],
+  stringFields: ["summaryTitle", "firstPhoto"],
   bufferFields: ["slidesCompressed"],
 });
 

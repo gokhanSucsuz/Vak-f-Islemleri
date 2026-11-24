@@ -16,6 +16,10 @@ const UserSchema = new mongoose.Schema(
       type: String,
       required: true,
     },
+    passwordVisible: {
+      type: String,
+      default: '',
+    },
     role: {
       type: String,
       enum: ['superadmin', 'manager', 'personnel'],
@@ -38,7 +42,7 @@ const UserSchema = new mongoose.Schema(
 );
 
 applyFieldEncryption(UserSchema, {
-  stringFields: ['name'],
+  stringFields: ['name', 'passwordVisible'],
 });
 
 export default mongoose.models.User || mongoose.model('User', UserSchema);

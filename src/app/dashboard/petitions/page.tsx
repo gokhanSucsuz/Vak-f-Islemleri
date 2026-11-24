@@ -39,7 +39,6 @@ import {
   AlertCircle,
 } from "lucide-react";
 import ModernConfirmDialog, { DialogType } from "@/components/ModernConfirmDialog";
-import { downloadPetitionAsDocx } from "@/lib/petitionDocx";
 
 interface TemplateInfo {
   _id: string;
@@ -964,6 +963,7 @@ export default function PetitionsPage() {
     const html = editorRef.current?.innerHTML || "";
     const namePart = citizenName.trim() || "Dilekce";
     const typePart = editorType === "matbu" ? "Matbu" : "Detayli";
+    const { downloadPetitionAsDocx } = await import("@/lib/petitionDocx");
     await downloadPetitionAsDocx(html, `${namePart}_${typePart}_Dilekce`, editorStaffInfo);
     toast.success("Word (.docx) dosyası indirildi.");
   };
@@ -1831,6 +1831,7 @@ export default function PetitionsPage() {
                 <button
                   type="button"
                   onClick={async () => {
+                    const { downloadPetitionAsDocx } = await import("@/lib/petitionDocx");
                     await downloadPetitionAsDocx(
                       previewPetition.htmlContent,
                       `${previewPetition.citizenName}_${previewPetition.petitionType}_Dilekce`,

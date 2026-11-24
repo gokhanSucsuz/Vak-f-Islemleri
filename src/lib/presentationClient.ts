@@ -1,7 +1,5 @@
 "use client";
 
-import PptxGenJS from "pptxgenjs";
-
 const cleanedBgCache = new Map<string, string>();
 
 /**
@@ -551,6 +549,7 @@ export async function exportSlidesToPptx(params: {
   meetingBackgroundPreset?: string;
 }) {
   const { slides, fileName, templates = [], template = null, meetingBackgroundPreset } = params;
+  const { default: PptxGenJS } = await import("pptxgenjs");
   const pptx = new PptxGenJS();
 
   const defaultTpl = templates[0] || template;
@@ -852,7 +851,7 @@ export async function exportSlidesToPptx(params: {
           ? Number(item.fontSize)
           : computeAutoFontSizePt(textLinesForSizing, descW, descH);
 
-      const pptxRuns: PptxGenJS.TextProps[] = [];
+      const pptxRuns: any[] = [];
 
       if (richLines.length > 0) {
         richLines.forEach((runs, lineIdx) => {

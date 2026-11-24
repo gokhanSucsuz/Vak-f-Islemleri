@@ -67,13 +67,20 @@ export async function GET(req: Request) {
     let petitions: any[] = [];
     let totalMatched = 0;
 
+    const statsPromise = Petition.aggregate([
+      { $group: { _id: "$petitionType", count: { $sum: 1 } } },
+    ]);
+
     if (search) {
-      const rawMatched = await Petition.find(query)
-        .select("-contentCompressed")
-        .populate("createdBy", "name email title")
-        .populate("updatedBy", "name email")
-        .sort(sortOptions)
-        .lean();
+      const [rawMatched, typeCounts] = await Promise.all([
+        Petition.find(query)
+          .select("-contentCompressed")
+          .populate("createdBy", "name email title")
+          .populate("updatedBy", "name email")
+          .sort(sortOptions)
+          .lean(),
+        statsPromise,
+      ]);
 
       const normSearch = normalizeTurkish(search.replace(/\s+/g, " "));
       const normTokens = normSearch.split(/\s+/).filter(Boolean);
@@ -97,26 +104,42 @@ export async function GET(req: Request) {
       totalMatched = ranked.length;
       const skip = (page - 1) * limit;
       petitions = ranked.slice(skip, skip + limit);
-    } else {
-      const skip = (page - 1) * limit;
-      [petitions, totalMatched] = await Promise.all([
-        Petition.find(query)
-          .select("-contentCompressed")
-          .populate("createdBy", "name email title")
-          .populate("updatedBy", "name email")
-          .sort(sortOptions)
-          .skip(skip)
-          .limit(limit)
-          .lean(),
-        Petition.countDocuments(query),
-      ]);
+
+      const detayliCount = typeCounts.find((c: any) => c._id === "detayli")?.count || 0;
+      const matbuCount = typeCounts.find((c: any) => c._id === "matbu")?.count || 0;
+      const totalCount = detayliCount + matbuCount;
+
+      return NextResponse.json({
+        petitions,
+        pagination: {
+          page,
+          limit,
+          totalRecords: totalMatched,
+          totalPages: Math.ceil(totalMatched / limit) || 1,
+        },
+        stats: { totalCount, detayliCount, matbuCount },
+      });
     }
 
-    const [totalCount, detayliCount, matbuCount] = await Promise.all([
-      Petition.countDocuments(),
-      Petition.countDocuments({ petitionType: "detayli" }),
-      Petition.countDocuments({ petitionType: "matbu" }),
+    const skip = (page - 1) * limit;
+    const [pagePetitions, matchedCount, typeCounts] = await Promise.all([
+      Petition.find(query)
+        .select("-contentCompressed")
+        .populate("createdBy", "name email title")
+        .populate("updatedBy", "name email")
+        .sort(sortOptions)
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Petition.countDocuments(query),
+      statsPromise,
     ]);
+    petitions = pagePetitions;
+    totalMatched = matchedCount;
+
+    const detayliCount = typeCounts.find((c: any) => c._id === "detayli")?.count || 0;
+    const matbuCount = typeCounts.find((c: any) => c._id === "matbu")?.count || 0;
+    const totalCount = detayliCount + matbuCount;
 
     return NextResponse.json({
       petitions,

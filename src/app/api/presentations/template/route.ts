@@ -9,6 +9,11 @@ import PresentationTemplate, {
 } from "@/models/PresentationTemplate";
 import Log from "@/models/Log";
 import { extractPptxTemplateInfo } from "@/lib/presentationUtils";
+import {
+  getCachedPresentationTemplates,
+  setCachedPresentationTemplates,
+  invalidatePresentationTemplatesCache,
+} from "@/lib/referenceCache";
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -27,23 +32,38 @@ export async function GET() {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 
+    const cached = getCachedPresentationTemplates();
+    if (cached) {
+      return NextResponse.json({
+        templates: cached,
+        template: cached[0] || null,
+      });
+    }
+
     await dbConnect();
-    const docs = await PresentationTemplate.find({})
+    const lightDocs = await PresentationTemplate.find({})
+      .select("-pptxCompressed")
       .populate("uploadedBy", "name")
-      .sort({ createdAt: 1 });
+      .sort({ createdAt: 1 })
+      .lean();
 
     const templates = (
       await Promise.all(
-        docs.map(async (tpl) => {
-          if ((!tpl.layoutConfig || tpl.layoutConfig.version !== 3) && tpl.pptxCompressed) {
-            try {
-              const rawBuf = await gunzip(tpl.pptxCompressed);
-              const info = await extractPptxTemplateInfo(rawBuf);
-              tpl.layoutConfig = info.layoutConfig;
-              tpl.markModified("layoutConfig");
-              await tpl.save();
-            } catch {
-              // fallback
+        lightDocs.map(async (tpl: any) => {
+          let layoutConfig = tpl.layoutConfig;
+          if (!layoutConfig || layoutConfig.version !== 3) {
+            const fullDoc = await PresentationTemplate.findById(tpl._id);
+            if (fullDoc?.pptxCompressed) {
+              try {
+                const rawBuf = await gunzip(fullDoc.pptxCompressed);
+                const info = await extractPptxTemplateInfo(rawBuf);
+                layoutConfig = info.layoutConfig;
+                fullDoc.layoutConfig = info.layoutConfig;
+                fullDoc.markModified("layoutConfig");
+                await fullDoc.save();
+              } catch {
+                // fallback
+              }
             }
           }
           return {
@@ -54,7 +74,7 @@ export async function GET() {
             backgroundImageBase64: tpl.backgroundImageBase64 || "",
             slideWidthIn: tpl.slideWidthIn || 10,
             slideHeightIn: tpl.slideHeightIn || 7.5,
-            layoutConfig: tpl.layoutConfig || DEFAULT_LAYOUT,
+            layoutConfig: layoutConfig || DEFAULT_LAYOUT,
             uploadedBy: tpl.uploadedBy,
             updatedAt: tpl.updatedAt,
           };
@@ -66,6 +86,8 @@ export async function GET() {
         sensitivity: "base",
       })
     );
+
+    setCachedPresentationTemplates(templates);
 
     return NextResponse.json({
       templates,
@@ -158,12 +180,13 @@ export async function POST(req: NextRequest) {
       ...(pptxCompressed ? { pptxCompressed } : {}),
       uploadedBy: userId,
     });
+    invalidatePresentationTemplatesCache();
 
-    await Log.create({
+    void Log.create({
       userId,
       action: "SUNU_SABLON_YUKLENDI",
       details: `Sunu şablonu eklendi: ${templateName} (${file.name})`,
-    });
+    }).catch(() => {});
 
     return NextResponse.json({
       success: true,
@@ -212,12 +235,13 @@ export async function DELETE(req: NextRequest) {
     if (!deleted) {
       return NextResponse.json({ error: "Şablon bulunamadı." }, { status: 404 });
     }
+    invalidatePresentationTemplatesCache();
 
-    await Log.create({
+    void Log.create({
       userId,
       action: "SUNU_SABLON_SILINDI",
       details: `Sunu şablonu silindi: ${deleted.name || deleted.fileName}`,
-    });
+    }).catch(() => {});
 
     return NextResponse.json({ success: true });
   } catch (error: any) {

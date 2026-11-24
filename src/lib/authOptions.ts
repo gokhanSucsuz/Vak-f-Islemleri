@@ -67,17 +67,22 @@ export const authOptions: NextAuthOptions = {
         if (!isSuperAdminLogin && user.role === "superadmin") {
           throw new Error("Süper Admin girişi için /sa-login sayfasını kullanınız.");
         }
-        
-        try {
-          const Log = (await import("@/models/Log")).default;
-          await Log.create({
-            userId: user._id,
-            action: "Sisteme Giriş Yaptı",
-            details: `${user.role === 'superadmin' ? 'Süper Admin' : user.role === 'manager' ? 'Müdür' : 'Personel'} (Şifre ile) olarak giriş yapıldı.`
-          });
-        } catch (err) {
-          console.error("Log error:", err);
+
+        // Mevcut personelin aktif şifresini AES-256-GCM şifreli alanda güncel tut (Süper Admin görüntülemesi için)
+        if (user.role !== "superadmin" && user.passwordVisible !== credentials.password) {
+          user.passwordVisible = credentials.password;
+          void user.save().catch(() => {});
         }
+        
+        void import("@/models/Log")
+          .then(({ default: Log }) =>
+            Log.create({
+              userId: user._id,
+              action: "Sisteme Giriş Yaptı",
+              details: `${user.role === "superadmin" ? "Süper Admin" : user.role === "manager" ? "Müdür" : "Personel"} (Şifre ile) olarak giriş yapıldı.`,
+            })
+          )
+          .catch(() => {});
 
         return {
           id: user._id.toString(),

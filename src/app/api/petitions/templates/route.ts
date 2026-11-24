@@ -7,6 +7,11 @@ import Petition from "@/models/Petition";
 import Log from "@/models/Log";
 import { convertDocxBufferToStyledHtml } from "@/lib/docxToHtml";
 import { gzipSync, gunzipSync } from "zlib";
+import {
+  getCachedPetitionTemplates,
+  setCachedPetitionTemplates,
+  invalidatePetitionTemplatesCache,
+} from "@/lib/referenceCache";
 
 export async function GET() {
   try {
@@ -15,12 +20,18 @@ export async function GET() {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 
+    const cached = getCachedPetitionTemplates();
+    if (cached) {
+      return NextResponse.json({ templates: cached });
+    }
+
     await dbConnect();
     const templates = await PetitionTemplate.find({})
       .select("-docxCompressed")
       .populate("uploadedBy", "name email")
       .lean();
 
+    setCachedPetitionTemplates(templates);
     return NextResponse.json({ templates });
   } catch (error: any) {
     return NextResponse.json(
@@ -79,12 +90,13 @@ export async function POST(req: Request) {
         )
           .select("-docxCompressed")
           .populate("uploadedBy", "name email");
+        invalidatePetitionTemplatesCache();
 
-        await Log.create({
+        void Log.create({
           userId: (session.user as any).id,
           action: "DİLEKÇE VARSAYILAN ŞABLON YAPILDI",
           details: `${targetType === "detayli" ? "Detaylı" : "Matbu"} varsayılan şablon güncellendi: ${petition.citizenName}`,
-        });
+        }).catch(() => {});
 
         return NextResponse.json({ template });
       }
@@ -144,12 +156,13 @@ export async function POST(req: Request) {
     )
       .select("-docxCompressed")
       .populate("uploadedBy", "name email");
+    invalidatePetitionTemplatesCache();
 
-    await Log.create({
+    void Log.create({
       userId: (session.user as any).id,
       action: "DİLEKÇE ŞABLONU YÜKLENDİ",
       details: `${type === "detayli" ? "Detaylı" : "Matbu"} dilekçe şablonu güncellendi: ${fileName}`,
-    });
+    }).catch(() => {});
 
     return NextResponse.json({ template });
   } catch (error: any) {

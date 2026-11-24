@@ -3,8 +3,6 @@
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
-import jsPDF from "jspdf";
-import autoTable from "jspdf-autotable";
 import {
   Download,
   Filter,
@@ -635,8 +633,12 @@ export default function ReportsPage() {
 
   const exportPDF = async () => {
     try {
+      const [{ default: jsPDF }, { default: autoTable }] = await Promise.all([
+        import("jspdf"),
+        import("jspdf-autotable"),
+      ]);
       const doc = new jsPDF({ orientation: "landscape", unit: "mm", format: "a4" });
-      await registerTurkishFont(doc);
+      const fontName = await registerTurkishFont(doc);
 
       const titleMap: Record<ReportTab, string> = {
         transactions: "VAKIF İŞLEMLERİ RESMİ İSTATİSTİK VE FAALİYET RAPORU",
@@ -724,7 +726,7 @@ export default function ReportsPage() {
         body,
         startY: 33,
         styles: {
-          font: "Roboto",
+          font: fontName,
           fontSize: 8.5,
           cellPadding: 2.5,
         },

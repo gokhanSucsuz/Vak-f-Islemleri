@@ -15,23 +15,24 @@ export async function GET() {
     }
 
     await dbConnect();
-    await purgeExpiredMeetingPhotos();
 
-    const meetings = await PresentationMeeting.find({})
-      .populate("openedBy", "name")
-      .populate("closedBy", "name")
-      .populate("authorizedUserId", "name email")
-      .sort({ createdAt: -1 })
-      .limit(50);
-
-    const presCounts = await Presentation.aggregate([
-      {
-        $group: {
-          _id: "$meetingId",
-          recordCount: { $sum: 1 },
-          totalSlides: { $sum: "$slideCount" },
+    const [meetings, presCounts] = await Promise.all([
+      PresentationMeeting.find({})
+        .populate("openedBy", "name")
+        .populate("closedBy", "name")
+        .populate("authorizedUserId", "name email")
+        .sort({ createdAt: -1 })
+        .limit(50)
+        .lean(),
+      Presentation.aggregate([
+        {
+          $group: {
+            _id: "$meetingId",
+            recordCount: { $sum: 1 },
+            totalSlides: { $sum: "$slideCount" },
+          },
         },
-      },
+      ]),
     ]);
 
     const countMap = new Map<string, { recordCount: number; totalSlides: number }>();
@@ -119,11 +120,11 @@ export async function POST(req: NextRequest) {
       openedBy: userId,
     });
 
-    await Log.create({
+    void Log.create({
       userId,
       action: "TOPLANTI_ACILDI",
       details: `Sunu toplantısı açıldı: ${title}`,
-    });
+    }).catch(() => {});
 
     return NextResponse.json({ success: true, meeting }, { status: 201 });
   } catch (error: any) {

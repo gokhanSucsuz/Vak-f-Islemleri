@@ -1,6 +1,3 @@
-import * as XLSX from "xlsx";
-import toast from "react-hot-toast";
-
 /**
  * Türkçe karakter uyumlu küçük harfe dönüştürme
  */
@@ -218,12 +215,14 @@ export function parseDateOrExtractDate(val: any): { date: Date | null; remaining
 /**
  * Verileri Türkçe karakter uyumlu şekilde Excel (.xlsx) dosyası olarak dışa aktarır
  */
-export function exportToExcel(data: any[], fileName: string, sheetName = "Sayfa1") {
+export async function exportToExcel(data: any[], fileName: string, sheetName = "Sayfa1") {
+  const { default: toast } = await import("react-hot-toast");
   if (!data || data.length === 0) {
     toast.error("Dışa aktarılacak veri bulunamadı.");
     return;
   }
 
+  const XLSX = await import("xlsx");
   const worksheet = XLSX.utils.json_to_sheet(data);
 
   // Otomatik sütun genişliği hesaplama
@@ -246,7 +245,7 @@ export function exportToExcel(data: any[], fileName: string, sheetName = "Sayfa1
 /**
  * Başvuru ve Hane Dosyaları için Kurumsal Başlıklı, Otomatik Sütun Genişlikli ve Özet Satırlı Şık Excel Çıktısı
  */
-export function exportStyledApplicationExcel(
+export async function exportStyledApplicationExcel(
   records: any[],
   fileName: string,
   options?: {
@@ -255,10 +254,12 @@ export function exportStyledApplicationExcel(
     filterInfo?: string;
   }
 ) {
+  const { default: toast } = await import("react-hot-toast");
   if (!records || records.length === 0) {
     toast.error("Dışa aktarılacak kayıt bulunamadı.");
     return;
   }
+  const XLSX = await import("xlsx");
 
   // Antet ve Başlık Satırları
   const title1 = options?.institutionName || "T.C. SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞI";

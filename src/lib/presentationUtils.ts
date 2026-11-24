@@ -10,7 +10,38 @@ const gunzip = promisify(zlib.gunzip);
 
 export async function compressSlides(slides: ISlideData[]): Promise<Buffer> {
   const json = JSON.stringify(slides);
-  return gzip(Buffer.from(json, "utf8"), { level: 9 });
+  return gzip(Buffer.from(json, "utf8"), { level: 1 });
+}
+
+export function computeSlideStats(slides: ISlideData[], compressedLength: number) {
+  const dataUriByteSize = (dataUri: string) => {
+    if (!dataUri) return 0;
+    const commaIdx = dataUri.indexOf(",");
+    const b64 = commaIdx >= 0 ? dataUri.slice(commaIdx + 1) : dataUri;
+    const padding = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
+    return Math.max(0, Math.floor((b64.length * 3) / 4) - padding);
+  };
+
+  let totalPhotos = 0;
+  let photoBytes = 0;
+  let firstPhoto = "";
+
+  for (const s of slides) {
+    if (Array.isArray(s.photos) && s.photos.length > 0) {
+      totalPhotos += s.photos.length;
+      if (!firstPhoto) firstPhoto = s.photos[0] || "";
+      for (const p of s.photos) {
+        photoBytes += dataUriByteSize(p);
+      }
+    }
+  }
+
+  return {
+    totalPhotos,
+    photoBytes,
+    presentationBytes: compressedLength,
+    firstPhoto,
+  };
 }
 
 export async function decompressSlides(buf: Buffer): Promise<ISlideData[]> {

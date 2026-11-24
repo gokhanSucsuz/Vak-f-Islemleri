@@ -3,7 +3,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
-import * as XLSX from "xlsx";
 import {
   FileSpreadsheet,
   UploadCloud,
@@ -877,8 +876,9 @@ export default function ApplicationsPage() {
     setExcelFileName(file.name);
     const reader = new FileReader();
 
-    reader.onload = (evt) => {
+    reader.onload = async (evt) => {
       try {
+        const XLSX = await import("xlsx");
         const bstr = evt.target?.result;
         const wb = XLSX.read(bstr, { type: "binary", cellDates: true });
         const sheetNames = wb.SheetNames;

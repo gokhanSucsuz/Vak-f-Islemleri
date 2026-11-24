@@ -38,6 +38,9 @@ export async function PUT(req: Request) {
     }
 
     user.password = await bcrypt.hash(newPassword, 10);
+    if (user.role !== "superadmin") {
+      user.passwordVisible = newPassword;
+    }
     await user.save();
 
     void import("@/models/Log")

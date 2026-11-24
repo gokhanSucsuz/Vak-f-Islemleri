@@ -8,22 +8,8 @@ import Log from "@/models/Log";
 import {
   compressSlides,
   decompressSlides,
-  purgeExpiredMeetingPhotos,
+  computeSlideStats,
 } from "@/lib/presentationUtils";
-
-const presentationMetaCache = new Map<
-  string,
-  {
-    expiresAt: number;
-    slideCount: number;
-    totalPhotos: number;
-    photoBytes: number;
-    presentationBytes: number;
-    firstPhoto: string;
-  }
->();
-const PRESENTATION_META_TTL_MS = 120_000;
-const PRESENTATION_META_MAX = 150;
 
 export async function GET(req: NextRequest) {
   try {
@@ -43,7 +29,9 @@ export async function GET(req: NextRequest) {
       query.meetingId = meetingId;
     }
 
+    // HIZLANDIRMA: slidesCompressed (MB'larca fotoğraf) liste sorgusunda hiç çekilmez!
     const records = await Presentation.find(query)
+      .select("-slidesCompressed")
       .populate("createdBy", "name")
       .populate("lockedBy", "name")
       .populate("meetingId", "title status")
@@ -51,71 +39,77 @@ export async function GET(req: NextRequest) {
       .limit(200)
       .lean();
 
+    // Eski kayıtlarda kart özet alanları (totalPhotos === null) henüz yazılmamışsa bir kez hesapla ve arka planda kaydet
+    const missingIds = records
+      .filter((r: any) => r.totalPhotos === null || r.totalPhotos === undefined)
+      .map((r: any) => r._id);
+
+    const legacyStatsMap = new Map<
+      string,
+      {
+        slideCount: number;
+        totalPhotos: number;
+        photoBytes: number;
+        presentationBytes: number;
+        firstPhoto: string;
+      }
+    >();
+
+    if (missingIds.length > 0) {
+      const fullMissing = await Presentation.find({ _id: { $in: missingIds } })
+        .select("slidesCompressed slideCount")
+        .lean();
+
+      await Promise.all(
+        fullMissing.map(async (m: any) => {
+          const slides = await decompressSlides(m.slidesCompressed);
+          const stats = computeSlideStats(slides, m.slidesCompressed?.length || 0);
+          const computed = {
+            slideCount: m.slideCount || slides.length,
+            ...stats,
+          };
+          legacyStatsMap.set(String(m._id), computed);
+
+          // Arka planda veritabanına kalıcı olarak yaz (bir daha asla açılmasın)
+          void Presentation.findByIdAndUpdate(m._id, {
+            $set: {
+              totalPhotos: stats.totalPhotos,
+              photoBytes: stats.photoBytes,
+              presentationBytes: stats.presentationBytes,
+              firstPhoto: stats.firstPhoto,
+            },
+          }).catch(() => {});
+        })
+      );
+    }
+
     const LOCK_TTL_MS = 3 * 60 * 1000;
     const nowMs = Date.now();
-    const dataUriByteSize = (dataUri: string) => {
-      if (!dataUri) return 0;
-      const commaIdx = dataUri.indexOf(",");
-      const b64 = commaIdx >= 0 ? dataUri.slice(commaIdx + 1) : dataUri;
-      const padding = b64.endsWith("==") ? 2 : b64.endsWith("=") ? 1 : 0;
-      return Math.max(0, Math.floor((b64.length * 3) / 4) - padding);
-    };
 
-    const mapped = await Promise.all(
-      records.map(async (r: any) => {
-        const cacheKey = `${String(r._id)}:${r.updatedAt ? new Date(r.updatedAt).getTime() : 0}`;
-        let meta = presentationMetaCache.get(cacheKey);
-        if (!meta || meta.expiresAt <= nowMs) {
-          const slides = await decompressSlides(r.slidesCompressed);
-          const totalPhotos = slides.reduce(
-            (sum, s) => sum + (Array.isArray(s.photos) ? s.photos.length : 0),
-            0
-          );
-          const photoBytes = slides.reduce(
-            (sum, s) =>
-              sum +
-              (Array.isArray(s.photos)
-                ? s.photos.reduce((pSum, p) => pSum + dataUriByteSize(p), 0)
-                : 0),
-            0
-          );
-          meta = {
-            expiresAt: nowMs + PRESENTATION_META_TTL_MS,
-            slideCount: r.slideCount || slides.length,
-            totalPhotos,
-            photoBytes,
-            presentationBytes: r.slidesCompressed?.length || 0,
-            firstPhoto: slides.find((s) => s.photos?.length > 0)?.photos?.[0] || "",
-          };
-          if (presentationMetaCache.size >= PRESENTATION_META_MAX) {
-            const firstKey = presentationMetaCache.keys().next().value;
-            if (firstKey) presentationMetaCache.delete(firstKey);
-          }
-          presentationMetaCache.set(cacheKey, meta);
-        }
+    const mapped = records.map((r: any) => {
+      const legacy = legacyStatsMap.get(String(r._id));
+      const isLockActive =
+        Boolean(r.lockedBy) &&
+        Boolean(r.lockedAt) &&
+        nowMs - new Date(r.lockedAt).getTime() < LOCK_TTL_MS;
 
-        const isLockActive =
-          Boolean(r.lockedBy) &&
-          Boolean(r.lockedAt) &&
-          nowMs - new Date(r.lockedAt).getTime() < LOCK_TTL_MS;
-        return {
-          _id: r._id,
-          meetingId: (r.meetingId as any)?._id || r.meetingId,
-          meetingTitle: (r.meetingId as any)?.title || "",
-          meetingStatus: (r.meetingId as any)?.status || "open",
-          summaryTitle: r.summaryTitle,
-          slideCount: meta.slideCount,
-          totalPhotos: meta.totalPhotos,
-          photoBytes: meta.photoBytes,
-          presentationBytes: meta.presentationBytes,
-          firstPhoto: meta.firstPhoto,
-          createdBy: r.createdBy,
-          lockedBy: isLockActive ? r.lockedBy : null,
-          createdAt: r.createdAt,
-          updatedAt: r.updatedAt,
-        };
-      })
-    );
+      return {
+        _id: r._id,
+        meetingId: (r.meetingId as any)?._id || r.meetingId,
+        meetingTitle: (r.meetingId as any)?.title || "",
+        meetingStatus: (r.meetingId as any)?.status || "open",
+        summaryTitle: r.summaryTitle,
+        slideCount: legacy ? legacy.slideCount : r.slideCount || 1,
+        totalPhotos: legacy ? legacy.totalPhotos : r.totalPhotos ?? 0,
+        photoBytes: legacy ? legacy.photoBytes : r.photoBytes ?? 0,
+        presentationBytes: legacy ? legacy.presentationBytes : r.presentationBytes ?? 0,
+        firstPhoto: legacy ? legacy.firstPhoto : r.firstPhoto || "",
+        createdBy: r.createdBy,
+        lockedBy: isLockActive ? r.lockedBy : null,
+        createdAt: r.createdAt,
+        updatedAt: r.updatedAt,
+      };
+    });
 
     const { turkishIncludes } = await import("@/lib/turkish");
     const filtered = search
@@ -219,7 +213,12 @@ export async function POST(req: NextRequest) {
     }));
 
     await dbConnect();
-    const meeting = await PresentationMeeting.findById(meetingId);
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const [meeting, perms] = await Promise.all([
+      PresentationMeeting.findById(meetingId).lean() as Promise<any>,
+      getEffectivePermissions(session),
+    ]);
+
     if (!meeting) {
       return NextResponse.json({ error: "Toplantı bulunamadı." }, { status: 404 });
     }
@@ -230,8 +229,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const { getEffectivePermissions } = await import("@/lib/permissions");
-    const perms = await getEffectivePermissions(session);
     const isManager = perms.canManagePresentations;
     const isAuthorizedStaff =
       perms.canManagePresentations ||
@@ -257,22 +254,47 @@ export async function POST(req: NextRequest) {
     ).join(" | ");
 
     const slidesCompressed = await compressSlides(finalSlides);
+    const stats = computeSlideStats(finalSlides, slidesCompressed.length);
 
     const created = await Presentation.create({
       meetingId,
       summaryTitle,
       slideCount: sanitizedSlides.length,
+      totalPhotos: stats.totalPhotos,
+      photoBytes: stats.photoBytes,
+      presentationBytes: stats.presentationBytes,
+      firstPhoto: stats.firstPhoto,
       slidesCompressed,
       createdBy: userId,
     });
 
-    await Log.create({
+    void Log.create({
       userId,
       action: "SUNU_OLUSTURULDU",
       details: `${sanitizedSlides.length} sayfalık sunu kaydedildi: ${summaryTitle}`,
-    });
+    }).catch(() => {});
 
-    return NextResponse.json({ success: true, presentation: created }, { status: 201 });
+    const presentationCard = {
+      _id: created._id,
+      meetingId: String(meeting._id),
+      meetingTitle: meeting.title || "",
+      meetingStatus: meeting.status || "open",
+      summaryTitle,
+      slideCount: sanitizedSlides.length,
+      totalPhotos: stats.totalPhotos,
+      photoBytes: stats.photoBytes,
+      presentationBytes: stats.presentationBytes,
+      firstPhoto: stats.firstPhoto,
+      createdBy: {
+        _id: userId,
+        name: session.user.name || "Personel",
+      },
+      lockedBy: null,
+      createdAt: created.createdAt,
+      updatedAt: created.updatedAt,
+    };
+
+    return NextResponse.json({ success: true, presentationCard }, { status: 201 });
   } catch (error: any) {
     console.error("POST /api/presentations error:", error);
     return NextResponse.json(
