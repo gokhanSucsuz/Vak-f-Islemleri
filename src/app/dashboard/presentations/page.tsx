@@ -32,6 +32,8 @@ import {
   Underline,
   Eraser,
   Maximize2,
+  LayoutGrid,
+  List,
 } from "lucide-react";
 import ModernConfirmDialog from "@/components/ModernConfirmDialog";
 import PaginationControls from "@/components/PaginationControls";
@@ -950,6 +952,7 @@ export default function PresentationsPage() {
   const [selectedPersonnelId, setSelectedPersonnelId] = useState<string>("");
   const [presPage, setPresPage] = useState(1);
   const [presPageSize, setPresPageSize] = useState(12);
+  const [presViewMode, setPresViewMode] = useState<"card" | "list">("card");
   const [loading, setLoading] = useState(true);
 
   // Şablon Modalı
@@ -2907,6 +2910,40 @@ export default function PresentationsPage() {
                   </div>
 
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
+                    {/* Görünüm Seçici: Kart (Varsayılan) / Liste */}
+                    <div
+                      role="group"
+                      aria-label="Görünüm modu"
+                      className="inline-flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 self-start sm:self-auto shrink-0"
+                    >
+                      <button
+                        type="button"
+                        aria-pressed={presViewMode === "card"}
+                        onClick={() => setPresViewMode("card")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold inline-flex items-center gap-1.5 transition-all ${
+                          presViewMode === "card"
+                            ? "bg-white text-blue-700 shadow-xs ring-1 ring-slate-200"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        <LayoutGrid className="w-3.5 h-3.5" />
+                        Kart
+                      </button>
+                      <button
+                        type="button"
+                        aria-pressed={presViewMode === "list"}
+                        onClick={() => setPresViewMode("list")}
+                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold inline-flex items-center gap-1.5 transition-all ${
+                          presViewMode === "list"
+                            ? "bg-white text-blue-700 shadow-xs ring-1 ring-slate-200"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                      >
+                        <List className="w-3.5 h-3.5" />
+                        Liste
+                      </button>
+                    </div>
+
                     {authorOptions.length > 0 && (
                       <select
                         value={selectedPersonnelId}
@@ -2961,124 +2998,271 @@ export default function PresentationsPage() {
                   </div>
                 ) : (
                   <>
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                      {paginatedPresentations.map((item) => {
-                        const isOwnRecord = String(item.createdBy?._id) === String(userId);
-                        const canModify =
-                          selectedMeeting.status === "open" &&
-                          (canManageSelectedMeeting ||
-                            (!selectedMeeting.isLocked && isOwnRecord));
-                        return (
-                          <div
-                            key={item._id}
-                            onClick={() => handleOpenRecord(item, "preview")}
-                            title="Görüntülemek için tıklayın"
-                            className="p-4 rounded-2xl border border-slate-200/90 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-900/8 hover:-translate-y-0.5 bg-white flex flex-col justify-between gap-3.5 transition-all cursor-pointer group"
-                          >
-                            <div className="flex items-start gap-3.5">
-                              <div className="relative w-24 h-18 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shrink-0 shadow-xs">
-                                {item.firstPhoto ? (
-                                  <img
-                                    src={item.firstPhoto}
-                                    alt="Slayt Önizleme"
-                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
-                                  />
-                                ) : (
-                                  <div className="w-full h-full flex items-center justify-center text-slate-400 bg-gradient-to-br from-slate-50 to-slate-100">
-                                    <PresentationIcon className="w-6 h-6" />
-                                  </div>
-                                )}
-                                <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-md bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-extrabold">
-                                  {item.slideCount} Sayfa
-                                </span>
-                              </div>
-
-                              <div className="min-w-0 flex-1">
-                                <div className="font-extrabold text-slate-900 group-hover:text-blue-700 text-sm line-clamp-2 leading-snug transition-colors">
-                                  {item.summaryTitle}
-                                </div>
-                                <div className="inline-flex items-center gap-1.5 mt-1.5 px-2 py-0.5 rounded-md bg-blue-50/80 text-[11px] font-bold text-blue-700">
-                                  <span>{item.createdBy?.name || "Personel"}</span>
-                                </div>
-                                <div className="text-[11px] text-slate-400 mt-1">
-                                  {new Date(item.createdAt).toLocaleDateString("tr-TR")}
-                                </div>
-                              </div>
-                            </div>
-
-                            <div className="flex flex-wrap items-center gap-1.5">
-                              <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-600">
-                                {item.totalPhotos} Fotoğraf
-                                {(item.photoBytes || 0) > 0
-                                  ? ` (${formatBytesLabel(item.photoBytes)})`
-                                  : ""}
-                              </span>
-                              {typeof item.presentationBytes === "number" && (
-                                <span
-                                  className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-sky-50 text-sky-700"
-                                  title="Sununun sistemdeki toplam boyutu"
-                                >
-                                  {formatBytesLabel(item.presentationBytes)}
-                                </span>
-                              )}
-                              {!canModify && (
-                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200/80">
-                                  Salt Görüntüleme
-                                </span>
-                              )}
-                              {item.lockedBy && String(item.lockedBy._id) !== String(userId) && (
-                                <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                  Düzenleniyor: {item.lockedBy.name}
-                                </span>
-                              )}
-                            </div>
-
+                    {presViewMode === "card" ? (
+                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                        {paginatedPresentations.map((item) => {
+                          const isOwnRecord = String(item.createdBy?._id) === String(userId);
+                          const canModify =
+                            selectedMeeting.status === "open" &&
+                            (canManageSelectedMeeting ||
+                              (!selectedMeeting.isLocked && isOwnRecord));
+                          return (
                             <div
-                              className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100"
-                              onClick={(e) => e.stopPropagation()}
+                              key={item._id}
+                              onClick={() => handleOpenRecord(item, "preview")}
+                              title="Görüntülemek için tıklayın"
+                              className="p-4 rounded-2xl border border-slate-200/90 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-900/8 hover:-translate-y-0.5 bg-white flex flex-col justify-between gap-3.5 transition-all cursor-pointer group"
                             >
-                              <div className="flex items-center gap-1.5">
-                                <button
-                                  onClick={() => handleOpenRecord(item, "preview")}
-                                  title="Sunuyu Görüntüle"
-                                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1 transition-colors"
-                                >
-                                  <Eye className="w-3.5 h-3.5 text-slate-600" />
-                                  Görüntüle
-                                </button>
-                                <button
-                                  onClick={() => handleOpenRecord(item, "download")}
-                                  title=".pptx Olarak İndir"
-                                  className="p-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/70 transition-colors"
-                                >
-                                  <Download className="w-4 h-4" />
-                                </button>
+                              <div className="flex items-start gap-3.5">
+                                <div className="relative w-24 h-18 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shrink-0 shadow-xs">
+                                  {item.firstPhoto ? (
+                                    <img
+                                      src={item.firstPhoto}
+                                      alt="Slayt Önizleme"
+                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                    />
+                                  ) : (
+                                    <div className="w-full h-full flex items-center justify-center text-slate-400 bg-gradient-to-br from-slate-50 to-slate-100">
+                                      <PresentationIcon className="w-6 h-6" />
+                                    </div>
+                                  )}
+                                  <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-md bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-extrabold">
+                                    {item.slideCount} Sayfa
+                                  </span>
+                                </div>
+
+                                <div className="min-w-0 flex-1">
+                                  <div className="font-extrabold text-slate-900 group-hover:text-blue-700 text-sm line-clamp-2 leading-snug transition-colors">
+                                    {item.summaryTitle}
+                                  </div>
+                                  <div className="inline-flex items-center gap-1.5 mt-1.5 px-2 py-0.5 rounded-md bg-blue-50/80 text-[11px] font-bold text-blue-700">
+                                    <span>{item.createdBy?.name || "Personel"}</span>
+                                  </div>
+                                  <div className="text-[11px] text-slate-400 mt-1">
+                                    {new Date(item.createdAt).toLocaleDateString("tr-TR")}
+                                  </div>
+                                </div>
                               </div>
 
-                              {canModify && (
+                              <div className="flex flex-wrap items-center gap-1.5">
+                                <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-600">
+                                  {item.totalPhotos} Fotoğraf
+                                  {(item.photoBytes || 0) > 0
+                                    ? ` (${formatBytesLabel(item.photoBytes)})`
+                                    : ""}
+                                </span>
+                                {typeof item.presentationBytes === "number" && (
+                                  <span
+                                    className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-sky-50 text-sky-700"
+                                    title="Sununun sistemdeki toplam boyutu"
+                                  >
+                                    {formatBytesLabel(item.presentationBytes)}
+                                  </span>
+                                )}
+                                {!canModify && (
+                                  <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200/80">
+                                    Salt Görüntüleme
+                                  </span>
+                                )}
+                                {item.lockedBy && String(item.lockedBy._id) !== String(userId) && (
+                                  <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                    Düzenleniyor: {item.lockedBy.name}
+                                  </span>
+                                )}
+                              </div>
+
+                              <div
+                                className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100"
+                                onClick={(e) => e.stopPropagation()}
+                              >
                                 <div className="flex items-center gap-1.5">
                                   <button
-                                    onClick={() => handleOpenRecord(item, "edit")}
-                                    title="Sunuyu Düzenle"
-                                    className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1 shadow-xs transition-colors"
+                                    onClick={() => handleOpenRecord(item, "preview")}
+                                    title="Sunuyu Görüntüle"
+                                    className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1 transition-colors"
                                   >
-                                    <Edit3 className="w-3.5 h-3.5" />
-                                    Düzenle
+                                    <Eye className="w-3.5 h-3.5 text-slate-600" />
+                                    Görüntüle
                                   </button>
                                   <button
-                                    onClick={() => setDeleteTarget(item)}
-                                    title="Sunuyu Sil"
-                                    className="p-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/70 transition-colors"
+                                    onClick={() => handleOpenRecord(item, "download")}
+                                    title=".pptx Olarak İndir"
+                                    className="p-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/70 transition-colors"
                                   >
-                                    <Trash2 className="w-4 h-4" />
+                                    <Download className="w-4 h-4" />
                                   </button>
                                 </div>
-                              )}
+
+                                {canModify && (
+                                  <div className="flex items-center gap-1.5">
+                                    <button
+                                      onClick={() => handleOpenRecord(item, "edit")}
+                                      title="Sunuyu Düzenle"
+                                      className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1 shadow-xs transition-colors"
+                                    >
+                                      <Edit3 className="w-3.5 h-3.5" />
+                                      Düzenle
+                                    </button>
+                                    <button
+                                      onClick={() => setDeleteTarget(item)}
+                                      title="Sunuyu Sil"
+                                      className="p-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/70 transition-colors"
+                                    >
+                                      <Trash2 className="w-4 h-4" />
+                                    </button>
+                                  </div>
+                                )}
+                              </div>
                             </div>
-                          </div>
-                        );
-                      })}
-                    </div>
+                          );
+                        })}
+                      </div>
+                    ) : (
+                      <div className="overflow-x-auto rounded-2xl border border-slate-200/90 bg-white">
+                        <table className="w-full text-left border-collapse">
+                          <thead>
+                            <tr className="bg-slate-50/95 border-b border-slate-200/80 text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
+                              <th scope="col" className="py-3 px-4 w-12">
+                                #
+                              </th>
+                              <th scope="col" className="py-3 px-4">
+                                Sunu / Hane Bilgisi
+                              </th>
+                              <th scope="col" className="py-3 px-4">
+                                Hazırlayan
+                              </th>
+                              <th scope="col" className="py-3 px-4">
+                                İçerik & Boyut
+                              </th>
+                              <th scope="col" className="py-3 px-4">
+                                Tarih
+                              </th>
+                              <th scope="col" className="py-3 px-4 text-right">
+                                İşlemler
+                              </th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-slate-100">
+                            {paginatedPresentations.map((item, rowIdx) => {
+                              const globalIdx = (safePresPage - 1) * presPageSize + rowIdx + 1;
+                              const isOwnRecord = String(item.createdBy?._id) === String(userId);
+                              const canModify =
+                                selectedMeeting.status === "open" &&
+                                (canManageSelectedMeeting ||
+                                  (!selectedMeeting.isLocked && isOwnRecord));
+
+                              return (
+                                <tr
+                                  key={item._id}
+                                  onClick={() => handleOpenRecord(item, "preview")}
+                                  className="even:bg-slate-50/40 odd:bg-white hover:bg-blue-50/40 transition-colors cursor-pointer group"
+                                >
+                                  <td className="py-3 px-4 text-xs font-bold text-slate-400 tabular-nums">
+                                    {globalIdx}
+                                  </td>
+                                  <td className="py-3 px-4">
+                                    <div className="flex items-center gap-3 min-w-[220px]">
+                                      <div className="w-14 h-10 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shrink-0">
+                                        {item.firstPhoto ? (
+                                          <img
+                                            src={item.firstPhoto}
+                                            alt=""
+                                            className="w-full h-full object-cover"
+                                          />
+                                        ) : (
+                                          <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                            <PresentationIcon className="w-4 h-4" />
+                                          </div>
+                                        )}
+                                      </div>
+                                      <div className="min-w-0">
+                                        <div className="text-sm font-extrabold text-slate-900 group-hover:text-blue-700 truncate max-w-md transition-colors">
+                                          {item.summaryTitle}
+                                        </div>
+                                        {item.lockedBy &&
+                                          String(item.lockedBy._id) !== String(userId) && (
+                                            <span className="inline-block mt-0.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                              Düzenleniyor: {item.lockedBy.name}
+                                            </span>
+                                          )}
+                                      </div>
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4 whitespace-nowrap">
+                                    <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-blue-50/80 text-xs font-bold text-blue-700">
+                                      {item.createdBy?.name || "Personel"}
+                                    </span>
+                                  </td>
+                                  <td className="py-3 px-4 whitespace-nowrap">
+                                    <div className="flex items-center gap-1.5">
+                                      <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-indigo-50 text-indigo-700">
+                                        {item.slideCount} Sayfa
+                                      </span>
+                                      <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-600">
+                                        {item.totalPhotos} Fotoğraf
+                                      </span>
+                                      {typeof item.presentationBytes === "number" && (
+                                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-sky-50 text-sky-700">
+                                          {formatBytesLabel(item.presentationBytes)}
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                  <td className="py-3 px-4 whitespace-nowrap text-xs font-medium text-slate-500 tabular-nums">
+                                    {new Date(item.createdAt).toLocaleDateString("tr-TR")}
+                                  </td>
+                                  <td
+                                    className="py-3 px-4 whitespace-nowrap text-right"
+                                    onClick={(e) => e.stopPropagation()}
+                                  >
+                                    <div className="inline-flex items-center justify-end gap-1.5">
+                                      <button
+                                        onClick={() => handleOpenRecord(item, "preview")}
+                                        title="Sunuyu Görüntüle"
+                                        className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1 transition-colors"
+                                      >
+                                        <Eye className="w-3.5 h-3.5 text-slate-600" />
+                                        Görüntüle
+                                      </button>
+                                      <button
+                                        onClick={() => handleOpenRecord(item, "download")}
+                                        title=".pptx Olarak İndir"
+                                        className="p-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/70 transition-colors"
+                                      >
+                                        <Download className="w-4 h-4" />
+                                      </button>
+                                      {canModify ? (
+                                        <>
+                                          <button
+                                            onClick={() => handleOpenRecord(item, "edit")}
+                                            title="Sunuyu Düzenle"
+                                            className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1 shadow-xs transition-colors"
+                                          >
+                                            <Edit3 className="w-3.5 h-3.5" />
+                                            Düzenle
+                                          </button>
+                                          <button
+                                            onClick={() => setDeleteTarget(item)}
+                                            title="Sunuyu Sil"
+                                            className="p-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/70 transition-colors"
+                                          >
+                                            <Trash2 className="w-4 h-4" />
+                                          </button>
+                                        </>
+                                      ) : (
+                                        <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200/80">
+                                          Salt Görüntüleme
+                                        </span>
+                                      )}
+                                    </div>
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                          </tbody>
+                        </table>
+                      </div>
+                    )}
                   <PaginationControls
                     currentPage={safePresPage}
                     totalPages={presTotalPages}
