@@ -196,6 +196,8 @@ export async function PUT(
       ...s,
       fullName: s.fullName || firstValidName,
       neighborhood: s.neighborhood || firstValidNeighborhood,
+      // Normal kullanıcılar yazı tipini değiştiremez (sabit Verdana)
+      fontFamily: !isManager && !isAuthorizedStaff ? "Verdana" : s.fontFamily,
     }));
 
     const slidesCompressed = await compressSlides(finalSlides);

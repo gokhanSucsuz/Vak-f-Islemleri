@@ -378,6 +378,7 @@ export default function ApplicationsPage() {
     "HANE VE BAŞVURU DOSYALARI CETVELİ"
   );
 
+  const [isSuperAdminSyncing, setIsSuperAdminSyncing] = useState(false);
   const isSuperAdmin = session?.user?.role === "superadmin";
 
   // Önbellek Sıfırlama
@@ -385,13 +386,13 @@ export default function ApplicationsPage() {
     cacheRef.current.clear();
   }, []);
 
-  // Kayıtları Sunucudan veya Önbellekten Çekme
-  const fetchRecords = useCallback(async (ignoreCache = false) => {
+  // Kayıtları Sunucudan veya Önbellekten Çekme (İlk açılışta en büyük numaralı dosyaları anında lazy-load getirir, geri kalanını arka planda tamamlar)
+  const fetchRecords = useCallback(async (ignoreCache = false, backgroundHydrate = false) => {
     const cleanSearch = debouncedSearch.trim();
     const cacheKey = `${selectedSheet}_${currentPage}_${pageSize}_${filterTab}_${statusFilter}_${cleanSearch}_${dateStart}_${dateEnd}_${minNo}_${maxNo}_${sortBy}`;
 
     // Önbellek kontrolü (Hemen Ara-Bul)
-    if (!ignoreCache && cacheRef.current.has(cacheKey)) {
+    if (!ignoreCache && !backgroundHydrate && cacheRef.current.has(cacheKey)) {
       const cached = cacheRef.current.get(cacheKey)!;
       setRecords(cached.records);
       setTotalPages(cached.pagination.totalPages);
@@ -404,18 +405,25 @@ export default function ApplicationsPage() {
       return;
     }
 
-    if (abortControllerRef.current) {
+    if (!backgroundHydrate && abortControllerRef.current) {
       abortControllerRef.current.abort();
     }
     const controller = new AbortController();
-    abortControllerRef.current = controller;
+    if (!backgroundHydrate) {
+      abortControllerRef.current = controller;
+      setLoading(true);
+    } else {
+      setIsSuperAdminSyncing(true);
+    }
 
-    setLoading(true);
     try {
       const params = new URLSearchParams();
       params.append("page", String(currentPage));
       params.append("limit", String(pageSize));
       params.append("sortBy", sortBy);
+      if (!backgroundHydrate && !cleanSearch && sortBy === "no_desc" && !dateStart && !dateEnd) {
+        params.append("fast", "1");
+      }
       if (selectedSheet) params.append("sheet", selectedSheet);
 
       if (cleanSearch) params.append("search", cleanSearch);
@@ -468,25 +476,37 @@ export default function ApplicationsPage() {
           setStats(data.stats);
         }
 
-        // Önbelleğe kaydet
-        cacheRef.current.set(cacheKey, {
-          records: recs,
-          pagination: data.pagination || { page: currentPage, limit: pageSize, totalRecords: recs.length, totalPages: 1 },
-          stats: data.stats || { totalCount: 0, emptyCount: 0, activeCount: 0, nextApplicationNo: "1", nextSeqNumber: 1, sheetPrefix: "" },
-          sheets: data.sheets,
-          activeColumns: data.activeColumns,
-          canManage: Boolean(data.canManage),
-        });
-      } else {
+        if (data.cacheWarm !== false) {
+          // Tam önbellek hazırsa istemci önbelleğine kaydet
+          cacheRef.current.set(cacheKey, {
+            records: recs,
+            pagination: data.pagination || { page: currentPage, limit: pageSize, totalRecords: recs.length, totalPages: 1 },
+            stats: data.stats || { totalCount: 0, emptyCount: 0, activeCount: 0, nextApplicationNo: "1", nextSeqNumber: 1, sheetPrefix: "" },
+            sheets: data.sheets,
+            activeColumns: data.activeColumns,
+            canManage: Boolean(data.canManage),
+          });
+        } else if (!backgroundHydrate) {
+          // İlk sayfa (en büyük numaralı dosyalar) anında ekrana basıldı; şimdi ekranı bloklamadan tam arşivi arka planda tamamla
+          setTimeout(() => {
+            void fetchRecords(true, true);
+          }, 120);
+        }
+      } else if (!backgroundHydrate) {
         toast.error("Dosya kayıtları yüklenemedi.");
       }
     } catch (e: any) {
       if (e?.name === "AbortError") return;
-      console.error(e);
-      toast.error("Sunucu ile bağlantı kurulamadı.");
+      if (!backgroundHydrate) {
+        console.error(e);
+        toast.error("Sunucu ile bağlantı kurulamadı.");
+      }
     } finally {
-      if (abortControllerRef.current === controller) {
+      if (!backgroundHydrate && abortControllerRef.current === controller) {
         setLoading(false);
+      }
+      if (backgroundHydrate) {
+        setIsSuperAdminSyncing(false);
       }
     }
   }, [selectedSheet, currentPage, pageSize, filterTab, statusFilter, debouncedSearch, dateStart, dateEnd, minNo, maxNo, sortBy]);
@@ -1397,8 +1417,14 @@ export default function ApplicationsPage() {
               <FolderOpen className="w-7 h-7" />
             </div>
             <div>
-              <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">
-                Hane ve Başvuru Dosyaları
+              <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight flex flex-wrap items-center gap-2.5">
+                <span>Hane ve Başvuru Dosyaları</span>
+                {isSuperAdminSyncing && (
+                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-[11px] font-semibold text-blue-700">
+                    <RefreshCw className="w-3 h-3 animate-spin" />
+                    Tüm arşiv arka planda hazırlanıyor...
+                  </span>
+                )}
               </h1>
               <p className="text-slate-500 text-sm mt-0.5">
                 Başvuru ve hane kayıtlarını yönetin, gelişmiş arama ve hızlı sayfalama yapın, kurumsal Excel raporu alın.

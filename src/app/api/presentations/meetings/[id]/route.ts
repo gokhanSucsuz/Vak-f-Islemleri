@@ -22,20 +22,22 @@ export async function GET(
 
     const { id } = await context.params;
     await dbConnect();
-    await purgeExpiredMeetingPhotos();
 
-    const meeting = await PresentationMeeting.findById(id)
-      .populate("openedBy", "name")
-      .populate("closedBy", "name")
-      .populate("authorizedUserId", "name email");
+    const [meeting, presentations] = await Promise.all([
+      PresentationMeeting.findById(id)
+        .populate("openedBy", "name")
+        .populate("closedBy", "name")
+        .populate("authorizedUserId", "name email")
+        .lean() as Promise<any>,
+      Presentation.find({ meetingId: id })
+        .populate("createdBy", "name")
+        .sort({ createdAt: 1 })
+        .lean() as Promise<any[]>,
+    ]);
 
     if (!meeting) {
       return NextResponse.json({ error: "Toplantı bulunamadı." }, { status: 404 });
     }
-
-    const presentations = await Presentation.find({ meetingId: id })
-      .populate("createdBy", "name")
-      .sort({ createdAt: 1 });
 
     // Çok sayfalı sunu kayıtlarını birbirinden koparmadan kayıt bazlı sırala
     type RecordGroup = {
@@ -248,11 +250,11 @@ export async function PATCH(
       );
     }
 
-    // Yetkili personel atama sadece yöneticiye aittir
+    // Yetkili personel atama ve değiştirme yalnızca Süper Admin'e aittir
     if (action === "setAuthorizedUser") {
-      if (!isManager) {
+      if (role !== "superadmin") {
         return NextResponse.json(
-          { error: "Yetkili personel belirleme işlemi sadece yöneticilere aittir." },
+          { error: "Yetkili personel belirleme işlemi yalnızca Süper Admin'e aittir." },
           { status: 403 }
         );
       }

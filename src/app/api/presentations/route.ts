@@ -235,6 +235,13 @@ export async function POST(req: NextRequest) {
       (Boolean(meeting.authorizedUserId) &&
         String(meeting.authorizedUserId) === String(userId));
 
+    // Normal kullanıcılar yazı tipini değiştiremez (sabit Verdana)
+    if (!isManager && !isAuthorizedStaff) {
+      for (const s of finalSlides) {
+        s.fontFamily = "Verdana";
+      }
+    }
+
     if (meeting.isLocked && !isManager && !isAuthorizedStaff) {
       return NextResponse.json(
         {

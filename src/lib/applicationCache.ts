@@ -35,23 +35,35 @@ const g = globalThis as unknown as {
   __appFilesCachePromise?: Promise<ApplicationCacheData> | null;
 };
 
+const FRESH_TTL_MS = 5 * 60 * 1000;
+const MAX_STALE_TTL_MS = 30 * 60 * 1000;
+
 export function invalidateApplicationCache() {
   g.__appFilesCache = null;
   g.__appFilesCachePromise = null;
 }
 
+export function peekApplicationCache(): ApplicationCacheData | null {
+  const existing = g.__appFilesCache;
+  if (!existing) return null;
+  const age = Date.now() - existing.loadedAt;
+  if (age >= FRESH_TTL_MS && !g.__appFilesCachePromise) {
+    // Stale-while-revalidate: mevcut önbelleği 0ms'de dön, arka planda sessizce tazele
+    void refreshApplicationCacheInBackground();
+  }
+  if (age < MAX_STALE_TTL_MS) {
+    return existing;
+  }
+  return null;
+}
+
 export function warmApplicationCache() {
   if (!g.__appFilesCache && !g.__appFilesCachePromise) {
-    void getApplicationCache().catch(() => {});
+    void refreshApplicationCacheInBackground();
   }
 }
 
-const CACHE_TTL_MS = 5 * 60 * 1000;
-
-export async function getApplicationCache(): Promise<ApplicationCacheData> {
-  if (g.__appFilesCache && Date.now() - g.__appFilesCache.loadedAt < CACHE_TTL_MS) {
-    return g.__appFilesCache;
-  }
+async function refreshApplicationCacheInBackground(): Promise<ApplicationCacheData> {
   if (g.__appFilesCachePromise) {
     return g.__appFilesCachePromise;
   }
@@ -168,7 +180,16 @@ export async function getApplicationCache(): Promise<ApplicationCacheData> {
     g.__appFilesCache = cacheData;
     g.__appFilesCachePromise = null;
     return cacheData;
-  })();
+  })().catch((err) => {
+    g.__appFilesCachePromise = null;
+    throw err;
+  });
 
   return g.__appFilesCachePromise;
+}
+
+export async function getApplicationCache(): Promise<ApplicationCacheData> {
+  const ready = peekApplicationCache();
+  if (ready) return ready;
+  return refreshApplicationCacheInBackground();
 }

@@ -940,14 +940,14 @@ export default function PresentationsPage() {
   }, [fetchAll]);
 
   useEffect(() => {
-    if (!isManager) return;
+    if (!isSuperAdmin) return;
     fetch("/api/users")
       .then((r) => r.json())
       .then((d) => {
         if (Array.isArray(d.users)) setStaffUsers(d.users);
       })
       .catch(() => {});
-  }, [isManager]);
+  }, [isSuperAdmin]);
 
   useEffect(() => {
     fetchPresentations();
@@ -1625,25 +1625,26 @@ export default function PresentationsPage() {
 
     return (
       <div className="space-y-5 max-w-[1440px] mx-auto">
-        <div className="bg-white p-4 sm:p-5 rounded-3xl shadow-sm border border-slate-200 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
+        <div className="rounded-3xl p-4 sm:p-5 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white shadow-xl shadow-slate-900/15 border border-slate-800/60 flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-3.5">
             <button
               onClick={handleExitEditor}
-              className="p-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 transition-colors"
+              className="px-3.5 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/15 text-white text-xs font-bold flex items-center gap-1.5 transition-all"
             >
-              <ChevronLeft className="w-5 h-5" />
+              <ChevronLeft className="w-4 h-4" />
+              Klasöre Dön
             </button>
             <div>
-              <h1 className="text-lg font-bold text-slate-900">
+              <h1 className="text-lg sm:text-xl font-extrabold text-white tracking-tight">
                 {editingId ? "Sunuyu Düzenle" : "Yeni Sunu Slaytları Hazırla"}
               </h1>
-              <p className="text-xs text-slate-500">
-                Çok sayfalı slaytlar hazırlayabilir, şablon ve yazı puntosunu dilediğiniz gibi ayarlayabilirsiniz
+              <p className="text-xs text-blue-200/90">
+                Çok sayfalı slaytlar hazırlayabilir, fotoğraf yerleşimini ve açıklamaları canlı önizleyebilirsiniz
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2.5">
             <button
               onClick={() =>
                 exportSlidesToPptx({
@@ -1653,15 +1654,15 @@ export default function PresentationsPage() {
                   meetingBackgroundPreset: editorBgPreset,
                 })
               }
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold transition-colors"
+              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs sm:text-sm font-bold transition-all"
             >
-              <Download className="w-4 h-4" />
+              <Download className="w-4 h-4 text-emerald-300" />
               Önizleme İndir (.pptx)
             </button>
             <button
               onClick={handleSavePresentation}
               disabled={saving}
-              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-lg shadow-blue-500/20 disabled:opacity-60 transition-colors"
+              className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-emerald-950/30 ring-1 ring-white/25 disabled:opacity-60 transition-all active:scale-95"
             >
               <Save className="w-4 h-4" />
               {saving ? "Kaydediliyor..." : "Sisteme Kaydet"}
@@ -1775,17 +1776,27 @@ export default function PresentationsPage() {
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
                   Yazı Tipi (Font)
                 </label>
-                <select
-                  value={activeSlide.fontFamily || "Verdana"}
-                  onChange={(e) => updateCurrentSlide({ fontFamily: e.target.value })}
-                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                >
-                  {SLIDE_FONT_OPTIONS.map((f) => (
-                    <option key={f} value={f}>
-                      {f}
-                    </option>
-                  ))}
-                </select>
+                {canManageSelectedMeeting ? (
+                  <select
+                    value={activeSlide.fontFamily || "Verdana"}
+                    onChange={(e) => updateCurrentSlide({ fontFamily: e.target.value })}
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                  >
+                    {SLIDE_FONT_OPTIONS.map((f) => (
+                      <option key={f} value={f}>
+                        {f}
+                      </option>
+                    ))}
+                  </select>
+                ) : (
+                  <div
+                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm font-semibold text-slate-600 flex items-center justify-between"
+                    title="Standart kurum yazı tipi sabittir; yalnızca yetkili kullanıcılar değiştirebilir."
+                  >
+                    <span>{activeSlide.fontFamily || "Verdana"} (Sabit)</span>
+                    <Lock className="w-3.5 h-3.5 text-slate-400" />
+                  </div>
+                )}
               </div>
             </div>
 
@@ -2230,85 +2241,95 @@ export default function PresentationsPage() {
 
   return (
     <div className="space-y-6 max-w-[1440px] mx-auto">
-      {/* Başlık ve Aksiyonlar */}
-      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4">
-        <div className="flex items-center gap-4">
-          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-indigo-600 to-blue-600 text-white shadow-lg shadow-blue-500/20">
+      {/* Başlık ve Dikkat Çekici Kurumsal Aksiyon Barı */}
+      <div className="rounded-3xl p-6 sm:p-7 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white shadow-xl shadow-slate-900/15 border border-slate-800/60 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5">
+        <div className="flex items-start sm:items-center gap-4">
+          <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-950/50 ring-2 ring-white/20 shrink-0">
             <PresentationIcon className="w-7 h-7" />
           </div>
           <div>
-            <h1 className="text-2xl font-bold text-slate-900">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15 text-[11px] font-bold text-blue-200">
+                <Sparkles className="w-3 h-3 text-amber-300" />
+                Mütevelli Heyeti Sunu Sistemi
+              </span>
+              {hasOpenMeeting && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-[11px] font-bold text-emerald-200">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Aktif Toplantı Açık
+                </span>
+              )}
+            </div>
+            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
               Sunular & Toplantı Slaytları
             </h1>
-            <p className="text-sm text-slate-500 mt-0.5">
-              Tüm personellerin hazırladığı slaytları tek ekranda görün, sıralayın ve toplantı sonunda tek .pptx dosyası olarak indirin.
+            <p className="text-xs sm:text-sm text-blue-100/85 mt-1 max-w-2xl">
+              Hazırlanan hane sunularını anlık görüntüleyin, tek tıkla önizleyin ve toplantı sonunda tek bir PowerPoint (.pptx) dosyası olarak birleştirin.
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5">
+        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
           {isSuperAdmin && (
             <button
               onClick={() => setIsTemplateModalOpen(true)}
-              className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-sm font-semibold transition-colors"
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs sm:text-sm font-bold backdrop-blur-xs transition-all active:scale-95"
             >
-              <Upload className="w-4 h-4" />
+              <Upload className="w-4 h-4 text-blue-200" />
               Şablonları Yönet ({templates.length})
             </button>
           )}
           {isManager && (
-            <>
-              <button
-                onClick={() => {
-                  if (hasOpenMeeting) {
-                    toast.error(
-                      "Açık bir toplantı varken yeni toplantı açılamaz. Önce mevcut toplantıyı kapatın."
-                    );
-                    return;
-                  }
-                  setIsNewMeetingOpen(true);
-                }}
-                disabled={hasOpenMeeting}
-                title={
-                  hasOpenMeeting
-                    ? "Açık toplantı kapatılmadan yeni toplantı açılamaz"
-                    : "Yeni Toplantı Aç"
+            <button
+              onClick={() => {
+                if (hasOpenMeeting) {
+                  toast.error(
+                    "Açık bir toplantı varken yeni toplantı açılamaz. Önce mevcut toplantıyı kapatın."
+                  );
+                  return;
                 }
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:bg-slate-300 disabled:text-slate-500 text-white text-sm font-semibold shadow-md shadow-emerald-500/20 disabled:shadow-none transition-colors"
-              >
-                <FolderOpen className="w-4 h-4" />
-                Toplantı Aç
-              </button>
-            </>
+                setIsNewMeetingOpen(true);
+              }}
+              disabled={hasOpenMeeting}
+              title={
+                hasOpenMeeting
+                  ? "Açık toplantı kapatılmadan yeni toplantı açılamaz"
+                  : "Yeni Toplantı Aç"
+              }
+              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:from-slate-600 disabled:to-slate-700 disabled:text-slate-300 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-emerald-950/35 ring-1 ring-white/20 disabled:shadow-none transition-all active:scale-95"
+            >
+              <FolderOpen className="w-4 h-4" />
+              Yeni Toplantı Aç
+            </button>
           )}
           <button
             onClick={handleStartNew}
-            className="flex items-center gap-2 px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-sm font-semibold shadow-lg shadow-blue-500/20 transition-colors"
+            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:via-orange-500 hover:to-rose-400 text-white text-xs sm:text-sm font-extrabold shadow-xl shadow-orange-950/40 ring-2 ring-white/25 transition-all hover:-translate-y-0.5 active:scale-95"
           >
-            <Plus className="w-4 h-4" />
-            Sunu Hazırla
+            <Plus className="w-4.5 h-4.5 stroke-[2.6]" />
+            Yeni Sunu Hazırla
           </button>
         </div>
       </div>
 
       {/* Toplantı Dosyaları Klasör Görünümü veya Seçili Toplantı Dosyasının İçi */}
       {(!insideFolder || !selectedMeeting) ? (
-        <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 space-y-4">
+        <div className="gov-card p-6 rounded-3xl space-y-5">
           <div className="flex items-center justify-between">
-            <h2 className="text-sm font-bold uppercase tracking-wider text-slate-600 flex items-center gap-2">
-              <FolderOpen className="w-4 h-4 text-blue-600" />
-              Toplantı Dosyaları (Klasörler) — Önce bir toplantı dosyasına girin
+            <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-2">
+              <FolderOpen className="w-4.5 h-4.5 text-blue-600" />
+              Toplantı Klasörleri — İşlem yapmak için bir klasör seçin
             </h2>
           </div>
 
           {loading ? (
-            <div className="text-sm text-slate-500 py-4">Toplantılar yükleniyor...</div>
+            <div className="text-sm text-slate-500 py-8 text-center">Toplantılar yükleniyor...</div>
           ) : meetings.length === 0 ? (
-            <div className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-6 text-center border border-dashed border-slate-200">
-              Henüz açılmış toplantı bulunmuyor. Yönetici <strong>Toplantı Aç</strong> butonundan toplantı oluşturabilir.
+            <div className="text-sm text-slate-500 bg-slate-50 rounded-2xl p-8 text-center border border-dashed border-slate-200">
+              Henüz açılmış toplantı bulunmuyor. Yetkili yönetici <strong>Yeni Toplantı Aç</strong> butonundan toplantı oluşturabilir.
             </div>
           ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-3.5">
+            <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
               {meetings.map((m) => (
                 <div
                   key={m._id}
@@ -2316,31 +2337,49 @@ export default function PresentationsPage() {
                     setSelectedMeetingId(m._id);
                     setInsideFolder(true);
                   }}
-                  className="cursor-pointer p-4 rounded-2xl border-2 border-slate-100 bg-slate-50/50 hover:border-blue-400 hover:bg-blue-50/30 transition-all"
+                  className="group relative cursor-pointer p-5 rounded-2xl border border-slate-200/90 bg-white hover:border-blue-500 hover:shadow-xl hover:shadow-blue-900/8 hover:-translate-y-0.5 transition-all overflow-hidden"
                 >
-                  <div className="flex items-start justify-between gap-2">
+                  <div
+                    className={`absolute inset-x-0 top-0 h-1.5 ${
+                      m.status === "open"
+                        ? m.isLocked
+                          ? "bg-gradient-to-r from-amber-400 to-orange-500"
+                          : "bg-gradient-to-r from-emerald-400 to-teal-500"
+                        : "bg-slate-300"
+                    }`}
+                  />
+                  <div className="flex items-start justify-between gap-3 pt-1">
                     <div className="min-w-0">
-                      <div className="font-bold text-slate-900 text-sm truncate flex items-center gap-1.5">
-                        <FolderOpen className="w-4 h-4 text-blue-600 shrink-0" />
-                        {m.title}
+                      <div className="font-extrabold text-slate-900 group-hover:text-blue-700 text-base truncate flex items-center gap-2 transition-colors">
+                        <div className="p-2 rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors shrink-0">
+                          <FolderOpen className="w-4 h-4" />
+                        </div>
+                        <span className="truncate">{m.title}</span>
                       </div>
-                      <div className="text-xs text-slate-500 mt-1">
-                        {new Date(m.meetingDate).toLocaleDateString("tr-TR")} •{" "}
-                        {m.recordCount} Kayıt • {m.totalSlides} Slayt
+                      <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                        <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold">
+                          {new Date(m.meetingDate).toLocaleDateString("tr-TR")}
+                        </span>
+                        <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-bold">
+                          {m.recordCount} Sunu
+                        </span>
+                        <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-[11px] font-bold">
+                          {m.totalSlides} Sayfa
+                        </span>
                       </div>
-                      {m.authorizedUserId?.name && (
-                        <div className="text-[11px] text-indigo-700 font-medium mt-1">
-                          Yetkili Personel: {m.authorizedUserId.name}
+                      {isSuperAdmin && m.authorizedUserId?.name && (
+                        <div className="text-[11px] text-indigo-700 font-semibold mt-2">
+                          Yetkili: {m.authorizedUserId.name}
                         </div>
                       )}
                     </div>
                     <span
-                      className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                      className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
                         m.status === "open"
                           ? m.isLocked
-                            ? "bg-amber-100 text-amber-800"
-                            : "bg-emerald-100 text-emerald-700"
-                          : "bg-slate-200 text-slate-700"
+                            ? "bg-amber-100 text-amber-800 border border-amber-200"
+                            : "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                          : "bg-slate-100 text-slate-600 border border-slate-200"
                       }`}
                     >
                       {m.status === "open" ? (
@@ -2355,7 +2394,7 @@ export default function PresentationsPage() {
                         )
                       ) : (
                         <>
-                          <Lock className="w-3 h-3" /> Salt Okunur
+                          <Lock className="w-3 h-3" /> Kapatıldı
                         </>
                       )}
                     </span>
@@ -2366,29 +2405,29 @@ export default function PresentationsPage() {
           )}
         </div>
       ) : (
-        <div className="space-y-4">
-          {/* Toplantı Dosyası Üst Bilgi & Yetki / Kilit Çubuğu */}
-          <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <div className="flex items-center gap-3">
+        <div className="space-y-5">
+          {/* Toplantı Dosyası Üst Bilgi & Dikkat Çekici Kontrol Merkezi */}
+          <div className="gov-card p-5 sm:p-6 rounded-3xl space-y-4">
+            <div className="flex flex-wrap items-center justify-between gap-4">
+              <div className="flex items-center gap-3.5">
                 <button
                   onClick={() => setInsideFolder(false)}
-                  className="px-3 py-2 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                  className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 border border-slate-200/80 transition-all active:scale-95"
                 >
                   <ChevronLeft className="w-4 h-4" />
-                  Tüm Toplantı Klasörleri
+                  Tüm Klasörler
                 </button>
                 <div>
-                  <div className="flex items-center gap-2">
-                    <h2 className="text-lg font-bold text-slate-900">
+                  <div className="flex flex-wrap items-center gap-2">
+                    <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
                       {selectedMeeting.title}
                     </h2>
                     <span
-                      className={`inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-semibold ${
+                      className={`inline-flex items-center gap-1 px-3 py-0.5 rounded-full text-[11px] font-bold ${
                         selectedMeeting.status === "open"
                           ? selectedMeeting.isLocked
-                            ? "bg-amber-100 text-amber-800"
-                            : "bg-emerald-100 text-emerald-700"
+                            ? "bg-amber-100 text-amber-800 border border-amber-200"
+                            : "bg-emerald-100 text-emerald-700 border border-emerald-200"
                           : "bg-slate-200 text-slate-700"
                       }`}
                     >
@@ -2399,27 +2438,33 @@ export default function PresentationsPage() {
                         : "Kapatıldı • Salt Okunur"}
                     </span>
                   </div>
-                  <p className="text-xs text-slate-500 mt-0.5">
+                  <p className="text-xs font-medium text-slate-500 mt-1">
                     {new Date(selectedMeeting.meetingDate).toLocaleDateString("tr-TR")} •{" "}
-                    {selectedPersonnelId
-                      ? presentations.filter(
-                          (p) => String(p.createdBy?._id || "") === selectedPersonnelId
-                        ).length
-                      : selectedMeeting.recordCount}{" "}
-                    Kayıt •{" "}
-                    {selectedPersonnelId
-                      ? presentations
-                          .filter((p) => String(p.createdBy?._id || "") === selectedPersonnelId)
-                          .reduce((sum, p) => sum + (p.slideCount || 0), 0)
-                      : selectedMeeting.totalSlides}{" "}
-                    Slayt
-                    {selectedMeeting.authorizedUserId?.name &&
-                      ` • Yetkili Personel: ${selectedMeeting.authorizedUserId.name}`}
+                    <strong className="text-slate-700">
+                      {selectedPersonnelId
+                        ? presentations.filter(
+                            (p) => String(p.createdBy?._id || "") === selectedPersonnelId
+                          ).length
+                        : selectedMeeting.recordCount}{" "}
+                      Sunu Kaydı
+                    </strong>{" "}
+                    •{" "}
+                    <strong className="text-slate-700">
+                      {selectedPersonnelId
+                        ? presentations
+                            .filter((p) => String(p.createdBy?._id || "") === selectedPersonnelId)
+                            .reduce((sum, p) => sum + (p.slideCount || 0), 0)
+                        : selectedMeeting.totalSlides}{" "}
+                      Slayt Sayfası
+                    </strong>
+                    {isSuperAdmin &&
+                      selectedMeeting.authorizedUserId?.name &&
+                      ` • Yetkili: ${selectedMeeting.authorizedUserId.name}`}
                   </p>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2.5">
                 <button
                   type="button"
                   onClick={() => {
@@ -2431,28 +2476,29 @@ export default function PresentationsPage() {
                     openBulkPreview(selectedMeeting, selAuthor);
                   }}
                   disabled={loadingMeetingSlides}
-                  className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-900 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors"
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 text-white text-xs font-extrabold shadow-md shadow-slate-900/15 flex items-center gap-2 transition-all active:scale-95"
                 >
-                  <Eye className="w-4 h-4" />
-                  Toplu Önizle (
-                  {selectedPersonnelId
-                    ? presentations.filter(
-                        (p) => String(p.createdBy?._id || "") === selectedPersonnelId
-                      ).length
-                    : selectedMeeting.recordCount}
-                  )
+                  <Eye className="w-4 h-4 text-sky-300" />
+                  <span>Toplu Önizle</span>
+                  <span className="px-1.5 py-0.5 rounded-md bg-white/15 text-[11px] font-extrabold">
+                    {selectedPersonnelId
+                      ? presentations.filter(
+                          (p) => String(p.createdBy?._id || "") === selectedPersonnelId
+                        ).length
+                      : selectedMeeting.recordCount}
+                  </span>
                 </button>
 
-                {isManager && selectedMeeting.status === "open" && (
+                {isSuperAdmin && selectedMeeting.status === "open" && (
                   <select
                     value={selectedMeeting.authorizedUserId?._id || ""}
                     onChange={(e) =>
                       handleAssignAuthorizedUser(selectedMeeting._id, e.target.value)
                     }
-                    className="px-3 py-2 rounded-xl border border-slate-200 text-xs font-medium bg-slate-50 text-slate-700 outline-none focus:ring-2 focus:ring-blue-500"
-                    title="Yönetici ile birlikte sıralama, düzenleme ve silme yetkisi verilecek personel"
+                    className="px-3.5 py-2.5 rounded-xl border border-indigo-200 text-xs font-bold bg-indigo-50/70 hover:bg-indigo-50 text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
+                    title="Süper Admin: Toplantı için yetkili kullanıcı ata veya değiştir"
                   >
-                    <option value="">Yetkili Personel Seç (Opsiyonel)</option>
+                    <option value="">Yetkili Kullanıcı Ata (Süper Admin)</option>
                     {staffUsers.map((u) => (
                       <option key={u._id} value={u._id}>
                         Yetkili: {u.name}
@@ -2465,13 +2511,13 @@ export default function PresentationsPage() {
                   <button
                     type="button"
                     onClick={() => setIsBgPickerOpen((p) => !p)}
-                    className={`px-3.5 py-2 rounded-xl text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors border ${
+                    className={`px-3.5 py-2.5 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all border ${
                       isBgPickerOpen
-                        ? "bg-blue-600 text-white border-blue-600"
+                        ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20"
                         : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200"
                     }`}
                   >
-                    <ImageIcon className="w-4 h-4" />
+                    <ImageIcon className="w-4 h-4 text-blue-500" />
                     Arka Plan:{" "}
                     {BACKGROUND_PRESETS.find(
                       (p) => p.id === (selectedMeeting.backgroundPreset || "template")
@@ -2484,10 +2530,10 @@ export default function PresentationsPage() {
                     type="button"
                     onClick={() => openManageMeeting(selectedMeeting)}
                     disabled={loadingMeetingSlides}
-                    className="px-4 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors"
+                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-extrabold shadow-md shadow-indigo-600/25 flex items-center gap-2 transition-all active:scale-95"
                   >
                     <Layers className="w-4 h-4" />
-                    Sırala / Kilitle & Toplantıyı Kapat
+                    Sırala / Kilitle & Toplantıyı Sonlandır
                   </button>
                 )}
 
@@ -2497,7 +2543,7 @@ export default function PresentationsPage() {
                       type="button"
                       onClick={() => openManageMeeting(selectedMeeting)}
                       disabled={loadingMeetingSlides}
-                      className="px-4 py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors"
+                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-extrabold shadow-md shadow-blue-600/25 flex items-center gap-2 transition-all active:scale-95"
                     >
                       <Download className="w-4 h-4" />
                       Birleştirilmiş Sunuyu İndir (.pptx)
@@ -2509,7 +2555,7 @@ export default function PresentationsPage() {
                         <button
                           type="button"
                           onClick={() => handleReopenMeeting(selectedMeeting)}
-                          className="px-4 py-2 rounded-xl bg-emerald-600 hover:bg-emerald-700 text-white text-xs font-semibold shadow-sm flex items-center gap-1.5 transition-colors"
+                          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-md shadow-emerald-600/25 flex items-center gap-1.5 transition-all active:scale-95"
                           title="Kapatıldıktan sonraki 12 saat içinde tekrar açılabilir"
                         >
                           <Unlock className="w-4 h-4" />
@@ -2586,7 +2632,7 @@ export default function PresentationsPage() {
               <div className="text-xs text-amber-800 bg-amber-50 border border-amber-200 rounded-2xl px-4 py-2.5 flex items-center gap-2">
                 <Lock className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>
-                  Toplantı slaytları sıralama ve kapatma işlemi için <strong>kilitlenmiştir</strong>. Sadece Yönetici ve Yetkili Personel ({selectedMeeting.authorizedUserId?.name || "belirlenmedi"}) işlem yapabilir.
+                  Toplantı slaytları sıralama ve sonlandırma işlemi için <strong>kilitlenmiştir</strong>. Sadece Süper Admin, Müdür ve Yetkili Kullanıcı işlem yapabilir.
                 </span>
               </div>
             )}
@@ -2629,11 +2675,14 @@ export default function PresentationsPage() {
             )?.name;
 
             return (
-              <div className="bg-white p-5 rounded-3xl shadow-sm border border-slate-100 space-y-4">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
-                  <div className="flex flex-wrap items-center gap-2.5">
-                    <h3 className="text-base font-bold text-slate-900">
-                      Toplantıdaki Tüm Slaytlar ({filteredPresentations.length})
+              <div className="gov-card p-5 sm:p-6 rounded-3xl space-y-5">
+                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 pb-3 border-b border-slate-100">
+                  <div className="flex flex-wrap items-center gap-3">
+                    <h3 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                      <span>Toplantıdaki Sunular</span>
+                      <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-extrabold border border-blue-200/80">
+                        {filteredPresentations.length}
+                      </span>
                     </h3>
                     {((session?.user as any)?.role === "superadmin" || canManageSelectedMeeting) &&
                       selectedPersonnelId &&
@@ -2642,7 +2691,7 @@ export default function PresentationsPage() {
                           type="button"
                           onClick={() => openBulkPreview(selectedMeeting, selectedAuthorName)}
                           disabled={loadingMeetingSlides}
-                          className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-700 text-white text-xs font-bold shadow-sm inline-flex items-center gap-1.5 transition-colors"
+                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-extrabold shadow-md shadow-indigo-600/20 inline-flex items-center gap-1.5 transition-all active:scale-95"
                         >
                           <Eye className="w-3.5 h-3.5" />
                           {selectedAuthorName} Sunularını Toplu Görüntüle / Düzenle
@@ -2651,14 +2700,14 @@ export default function PresentationsPage() {
                   </div>
 
                   <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
-                    {((session?.user as any)?.role === "superadmin" || canManageSelectedMeeting) && (
+                    {authorOptions.length > 0 && (
                       <select
                         value={selectedPersonnelId}
                         onChange={(e) => {
                           setSelectedPersonnelId(e.target.value);
                           setPresPage(1);
                         }}
-                        className="px-3 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm font-semibold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none"
+                        className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-white text-xs sm:text-sm font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                       >
                         <option value="">Tüm Personeller</option>
                         {authorOptions.map((a) => (
@@ -2679,127 +2728,150 @@ export default function PresentationsPage() {
                           setPresPage(1);
                         }}
                         placeholder="Adı Soyadı, mahalle veya personel ara..."
-                        className="w-full pl-10 pr-4 py-2 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
+                        className="w-full pl-10 pr-8 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                       />
+                      {search && (
+                        <button
+                          type="button"
+                          onClick={() => {
+                            setSearch("");
+                            setPresPage(1);
+                          }}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                        >
+                          <X className="w-4 h-4" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 </div>
 
                 {filteredPresentations.length === 0 ? (
-                  <div className="text-center py-10 text-sm text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  <div className="text-center py-12 text-sm text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
                     {selectedPersonnelId
                       ? "Seçili personele ait sunu kaydı bulunmuyor."
-                      : "Bu toplantı dosyasında henüz slayt bulunmuyor."}
+                      : "Bu toplantı dosyasında henüz sunu bulunmuyor."}
                   </div>
                 ) : (
                   <>
                     <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                       {paginatedPresentations.map((item) => {
-                  const canModify =
-                    selectedMeeting.status === "open" &&
-                    (canManageSelectedMeeting ||
-                      (!selectedMeeting.isLocked &&
-                        String(item.createdBy?._id) === String(userId)));
-                  return (
-                    <div
-                      key={item._id}
-                      onClick={() => handleOpenRecord(item, "preview")}
-                      title="Önizlemek için tıklayın"
-                      className="p-4 rounded-2xl border border-slate-200 hover:border-blue-400 hover:shadow-md bg-white shadow-sm flex flex-col justify-between gap-3 transition-all cursor-pointer group"
-                    >
-                      <div className="flex items-start gap-3">
-                        {item.firstPhoto ? (
-                          <img
-                            src={item.firstPhoto}
-                            alt="Slayt Thumbnail"
-                            className="w-20 h-15 rounded-xl object-cover border border-slate-200 shrink-0 shadow-xs"
-                          />
-                        ) : (
-                          <div className="w-20 h-15 rounded-xl bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
-                            <PresentationIcon className="w-6 h-6" />
-                          </div>
-                        )}
-                        <div className="min-w-0 flex-1">
-                          <div className="font-bold text-slate-900 group-hover:text-blue-700 text-sm line-clamp-2 transition-colors">
-                            {item.summaryTitle}
-                          </div>
-                          <div className="text-xs font-medium text-blue-700 mt-1">
-                            Hazırlayan: {item.createdBy?.name || "Personel"}
-                          </div>
-                          <div className="text-[11px] text-slate-400">
-                            {new Date(item.createdAt).toLocaleDateString("tr-TR")}
-                          </div>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center justify-between gap-2 pt-2 border-t border-slate-100">
-                        <div className="flex flex-wrap items-center gap-1.5">
-                          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-indigo-50 text-indigo-700">
-                            {item.slideCount} Sayfa
-                          </span>
-                          <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-slate-100 text-slate-600">
-                            {item.totalPhotos} Fotoğraf
-                            {(item.photoBytes || 0) > 0
-                              ? ` (${formatBytesLabel(item.photoBytes)})`
-                              : ""}
-                          </span>
-                          {typeof item.presentationBytes === "number" && (
-                            <span
-                              className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-sky-50 text-sky-700"
-                              title="Sununun sistemdeki toplam boyutu"
-                            >
-                              Sunu: {formatBytesLabel(item.presentationBytes)}
-                            </span>
-                          )}
-                          {item.lockedBy && String(item.lockedBy._id) !== String(userId) && (
-                            <span className="px-2 py-0.5 rounded-full text-[11px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
-                              Düzenleniyor: {item.lockedBy.name}
-                            </span>
-                          )}
-                        </div>
-
-                        <div
-                          className="flex items-center gap-1"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          <button
+                        const isOwnRecord = String(item.createdBy?._id) === String(userId);
+                        const canModify =
+                          selectedMeeting.status === "open" &&
+                          (canManageSelectedMeeting ||
+                            (!selectedMeeting.isLocked && isOwnRecord));
+                        return (
+                          <div
+                            key={item._id}
                             onClick={() => handleOpenRecord(item, "preview")}
-                            title="Önizle"
-                            className="p-1.5 rounded-lg text-slate-600 hover:bg-slate-100"
+                            title="Görüntülemek için tıklayın"
+                            className="p-4 rounded-2xl border border-slate-200/90 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-900/8 hover:-translate-y-0.5 bg-white flex flex-col justify-between gap-3.5 transition-all cursor-pointer group"
                           >
-                            <Eye className="w-4 h-4" />
-                          </button>
-                          <button
-                            onClick={() => handleOpenRecord(item, "download")}
-                            title=".pptx İndir"
-                            className="p-1.5 rounded-lg text-emerald-600 hover:bg-emerald-50"
-                          >
-                            <Download className="w-4 h-4" />
-                          </button>
-                          {canModify && (
-                            <>
-                              <button
-                                onClick={() => handleOpenRecord(item, "edit")}
-                                title="Düzenle"
-                                className="p-1.5 rounded-lg text-blue-600 hover:bg-blue-50"
-                              >
-                                <Edit3 className="w-4 h-4" />
-                              </button>
-                              <button
-                                onClick={() => setDeleteTarget(item)}
-                                title="Sil"
-                                className="p-1.5 rounded-lg text-red-600 hover:bg-red-50"
-                              >
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </>
-                          )}
-                        </div>
-                      </div>
+                            <div className="flex items-start gap-3.5">
+                              <div className="relative w-24 h-18 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shrink-0 shadow-xs">
+                                {item.firstPhoto ? (
+                                  <img
+                                    src={item.firstPhoto}
+                                    alt="Slayt Önizleme"
+                                    className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                  />
+                                ) : (
+                                  <div className="w-full h-full flex items-center justify-center text-slate-400 bg-gradient-to-br from-slate-50 to-slate-100">
+                                    <PresentationIcon className="w-6 h-6" />
+                                  </div>
+                                )}
+                                <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-md bg-slate-900/80 backdrop-blur-xs text-white text-[10px] font-extrabold">
+                                  {item.slideCount} Sayfa
+                                </span>
+                              </div>
+
+                              <div className="min-w-0 flex-1">
+                                <div className="font-extrabold text-slate-900 group-hover:text-blue-700 text-sm line-clamp-2 leading-snug transition-colors">
+                                  {item.summaryTitle}
+                                </div>
+                                <div className="inline-flex items-center gap-1.5 mt-1.5 px-2 py-0.5 rounded-md bg-blue-50/80 text-[11px] font-bold text-blue-700">
+                                  <span>{item.createdBy?.name || "Personel"}</span>
+                                </div>
+                                <div className="text-[11px] text-slate-400 mt-1">
+                                  {new Date(item.createdAt).toLocaleDateString("tr-TR")}
+                                </div>
+                              </div>
+                            </div>
+
+                            <div className="flex flex-wrap items-center gap-1.5">
+                              <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-600">
+                                {item.totalPhotos} Fotoğraf
+                                {(item.photoBytes || 0) > 0
+                                  ? ` (${formatBytesLabel(item.photoBytes)})`
+                                  : ""}
+                              </span>
+                              {typeof item.presentationBytes === "number" && (
+                                <span
+                                  className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-sky-50 text-sky-700"
+                                  title="Sununun sistemdeki toplam boyutu"
+                                >
+                                  {formatBytesLabel(item.presentationBytes)}
+                                </span>
+                              )}
+                              {!canModify && (
+                                <span className="px-2 py-0.5 rounded-md text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200/80">
+                                  Salt Görüntüleme
+                                </span>
+                              )}
+                              {item.lockedBy && String(item.lockedBy._id) !== String(userId) && (
+                                <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
+                                  Düzenleniyor: {item.lockedBy.name}
+                                </span>
+                              )}
+                            </div>
+
+                            <div
+                              className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100"
+                              onClick={(e) => e.stopPropagation()}
+                            >
+                              <div className="flex items-center gap-1.5">
+                                <button
+                                  onClick={() => handleOpenRecord(item, "preview")}
+                                  title="Sunuyu Görüntüle"
+                                  className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1 transition-colors"
+                                >
+                                  <Eye className="w-3.5 h-3.5 text-slate-600" />
+                                  Görüntüle
+                                </button>
+                                <button
+                                  onClick={() => handleOpenRecord(item, "download")}
+                                  title=".pptx Olarak İndir"
+                                  className="p-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/70 transition-colors"
+                                >
+                                  <Download className="w-4 h-4" />
+                                </button>
+                              </div>
+
+                              {canModify && (
+                                <div className="flex items-center gap-1.5">
+                                  <button
+                                    onClick={() => handleOpenRecord(item, "edit")}
+                                    title="Sunuyu Düzenle"
+                                    className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1 shadow-xs transition-colors"
+                                  >
+                                    <Edit3 className="w-3.5 h-3.5" />
+                                    Düzenle
+                                  </button>
+                                  <button
+                                    onClick={() => setDeleteTarget(item)}
+                                    title="Sunuyu Sil"
+                                    className="p-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/70 transition-colors"
+                                  >
+                                    <Trash2 className="w-4 h-4" />
+                                  </button>
+                                </div>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
                     </div>
-                      );
-                    })}
-                  </div>
                   <PaginationControls
                     currentPage={safePresPage}
                     totalPages={presTotalPages}
@@ -2932,23 +3004,25 @@ export default function PresentationsPage() {
                 className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
               />
             </div>
-            <div>
-              <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                Yetkili Personel (Opsiyonel)
-              </label>
-              <select
-                value={newMeetingAuthorizedId}
-                onChange={(e) => setNewMeetingAuthorizedId(e.target.value)}
-                className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-              >
-                <option value="">Seçilmedi (Sonradan atanabilir)</option>
-                {staffUsers.map((u) => (
-                  <option key={u._id} value={u._id}>
-                    {u.name}
-                  </option>
-                ))}
-              </select>
-            </div>
+            {isSuperAdmin && (
+              <div>
+                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
+                  Yetkili Kullanıcı (Opsiyonel — Sadece Süper Admin)
+                </label>
+                <select
+                  value={newMeetingAuthorizedId}
+                  onChange={(e) => setNewMeetingAuthorizedId(e.target.value)}
+                  className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
+                >
+                  <option value="">Seçilmedi (Sonradan atanabilir)</option>
+                  {staffUsers.map((u) => (
+                    <option key={u._id} value={u._id}>
+                      {u.name}
+                    </option>
+                  ))}
+                </select>
+              </div>
+            )}
             <div className="flex justify-end gap-2">
               <button
                 type="button"
@@ -3159,11 +3233,11 @@ export default function PresentationsPage() {
 
             <div className="pt-4 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2">
               {manageMeetingModal.meeting.status === "open" ? (
-                <div className="flex flex-wrap items-center gap-2">
+                <div className="flex flex-wrap items-center gap-2.5">
                   {!manageMeetingModal.meeting.isLocked ? (
                     <button
                       onClick={() => handleMeetingAction("lock")}
-                      className="px-4 py-2.5 rounded-xl bg-amber-500 hover:bg-amber-600 text-white text-xs font-semibold flex items-center gap-1.5"
+                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-amber-500 to-orange-500 hover:from-amber-400 hover:to-orange-400 text-white text-xs font-extrabold shadow-md shadow-amber-500/25 flex items-center gap-1.5 transition-all active:scale-95"
                     >
                       <Lock className="w-3.5 h-3.5" />
                       Sıralama İçin Kilitle
@@ -3171,7 +3245,7 @@ export default function PresentationsPage() {
                   ) : (
                     <button
                       onClick={() => handleMeetingAction("unlock")}
-                      className="px-4 py-2.5 rounded-xl bg-slate-600 hover:bg-slate-700 text-white text-xs font-semibold flex items-center gap-1.5"
+                      className="px-4 py-2.5 rounded-xl bg-slate-700 hover:bg-slate-800 text-white text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95"
                     >
                       <Unlock className="w-3.5 h-3.5" />
                       Kilidi Aç
@@ -3179,16 +3253,16 @@ export default function PresentationsPage() {
                   )}
                   <button
                     onClick={() => handleMeetingAction("reorder")}
-                    className="px-4 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold"
+                    className="px-4 py-2.5 rounded-xl bg-indigo-50 hover:bg-indigo-100 text-indigo-800 border border-indigo-200 text-xs font-extrabold transition-all active:scale-95"
                   >
                     Sıralamayı Kaydet
                   </button>
                   <button
                     onClick={() => handleMeetingAction("close")}
-                    className="px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-700 text-white text-xs font-semibold flex items-center gap-1.5"
+                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-red-600 to-rose-600 hover:from-red-500 hover:to-rose-500 text-white text-xs font-extrabold shadow-md shadow-red-600/25 flex items-center gap-1.5 transition-all active:scale-95"
                   >
                     <Lock className="w-3.5 h-3.5" />
-                    Toplantıyı Kapat (Salt Okunur Yap)
+                    Toplantıyı Sonlandır (Kapat)
                   </button>
                 </div>
               ) : (

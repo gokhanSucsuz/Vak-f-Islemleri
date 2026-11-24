@@ -21,7 +21,7 @@ import {
   BarChart3,
   Layers,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import clsx from "clsx";
 
 interface NavItem {
@@ -37,6 +37,15 @@ export default function Sidebar() {
   const pathname = usePathname();
   const { data: session } = useSession();
   const [isOpen, setIsOpen] = useState(false);
+
+  // Arka planda Başvuru Dosyaları önbelleğini sessizce ısıt (kullanıcı sekmeye tıkladığında 0ms açılış)
+  useEffect(() => {
+    if (!session?.user?.id) return;
+    const t = setTimeout(() => {
+      fetch("/api/application-files?warm=1").catch(() => {});
+    }, 900);
+    return () => clearTimeout(t);
+  }, [session?.user?.id]);
 
   const navItems: NavItem[] = [
     { name: "Ana Ekran", href: "/dashboard", icon: LayoutDashboard, roles: ["superadmin", "manager", "personnel"], group: "core" },

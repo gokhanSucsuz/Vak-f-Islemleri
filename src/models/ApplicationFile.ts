@@ -104,6 +104,8 @@ const ApplicationFileSchema = new mongoose.Schema(
 
 // Her sekmedeki başvuru kayıt numarası kendi sekmesi içinde birincil ve tekil anahtardır
 ApplicationFileSchema.index({ applicationNo: 1, sheetName: 1 }, { unique: true });
+ApplicationFileSchema.index({ sheetName: 1, applicationNoSeq: -1, createdAt: -1 });
+ApplicationFileSchema.index({ applicationNoSeq: -1, createdAt: -1 });
 
 // Pre-save hook: compute applicationNoSeq if numeric
 ApplicationFileSchema.pre('save', function () {

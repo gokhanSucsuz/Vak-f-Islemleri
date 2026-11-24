@@ -9,6 +9,8 @@ import { toTurkishRegexPattern, normalizeTurkish } from "@/lib/turkish";
 import { isEncryptionEnabled } from "@/lib/encryption";
 import {
   getApplicationCache,
+  peekApplicationCache,
+  warmApplicationCache,
   invalidateApplicationCache,
   type CachedAppRecord,
 } from "@/lib/applicationCache";
@@ -79,9 +81,139 @@ export async function GET(req: Request) {
     const page = Math.max(parseInt(searchParams.get("page") || "1", 10), 1);
     const limit = Math.max(parseInt(searchParams.get("limit") || "50", 10), 1);
     const fetchAll = searchParams.get("all") === "true";
+    const isWarmPing = searchParams.get("warm") === "1";
+    const isFastInit = searchParams.get("fast") === "1";
+
+    if (isWarmPing) {
+      warmApplicationCache();
+      return NextResponse.json({ warming: true, cacheWarm: Boolean(peekApplicationCache()) });
+    }
 
     const canManage = await checkManagePermission(session);
-    const cache = await getApplicationCache();
+    const readyCache = peekApplicationCache();
+
+    // HIZLI LAZY-LOAD YOLU: Önbellek henüz soğuksa sayfanın açılışını veya dosya numarası aramasını ASLA bekletme!
+    // Arka planda önbelleği ısıtırken en büyük numaralı dosyaları doğrudan MongoDB indeksinden ~15ms'de döndür.
+    const isPureFileNoSearch = Boolean(search) && /^[#0-9\-]+$/.test(search) && search.replace(/\D/g, "").length <= 10;
+    if (!readyCache && !fetchAll && (isFastInit || isPureFileNoSearch)) {
+      warmApplicationCache();
+
+      const sheetNamesRaw: string[] = await ApplicationFile.distinct("sheetName");
+      const cleanSheetNames = sheetNamesRaw
+        .map((s) => String(s || "").trim())
+        .filter(Boolean)
+        .sort((a, b) => {
+          if (a === "YENİ BAŞVURU KAYIT") return -1;
+          if (b === "YENİ BAŞVURU KAYIT") return 1;
+          return a.localeCompare(b, "tr");
+        });
+
+      let activeSheet = sheet && sheet !== "all" ? sheet : "";
+      if (!activeSheet && cleanSheetNames.length > 0) {
+        activeSheet = cleanSheetNames.includes("YENİ BAŞVURU KAYIT")
+          ? "YENİ BAŞVURU KAYIT"
+          : cleanSheetNames[0];
+      }
+
+      const fastQuery: any = {};
+      if (activeSheet) fastQuery.sheetName = activeSheet;
+
+      if (isPureFileNoSearch) {
+        const rawNo = search.replace(/^#/, "").trim();
+        const digits = rawNo.replace(/\D/g, "");
+        const seqNum = digits ? parseInt(digits, 10) : NaN;
+        const escaped = rawNo.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+        fastQuery.$or = [
+          { applicationNo: rawNo },
+          { applicationNo: { $regex: escaped, $options: "i" } },
+          ...(!isNaN(seqNum) ? [{ applicationNoSeq: seqNum }] : []),
+        ];
+      } else if (status === "empty") {
+        fastQuery.fileStatus = "Boş Dosya";
+      } else if (status === "active") {
+        fastQuery.fileStatus = "Aktif";
+      } else if (status === "passive") {
+        fastQuery.fileStatus = "Pasif";
+      } else if (status === "archive") {
+        fastQuery.fileStatus = "Arşiv";
+      }
+
+      const skip = (page - 1) * limit;
+      const [fastRecords, fastMatchedCount, totalEst] = await Promise.all([
+        ApplicationFile.find(fastQuery)
+          .sort({ applicationNoSeq: -1, createdAt: -1 })
+          .skip(skip)
+          .limit(limit)
+          .lean(),
+        ApplicationFile.countDocuments(fastQuery),
+        ApplicationFile.estimatedDocumentCount(),
+      ]);
+
+      const highestDoc = fastRecords[0] || null;
+      let sheetPrefix = "";
+      let nextSeqNumber = 1;
+      let fullNextApplicationNo = "1";
+      if (highestDoc && (highestDoc as any).applicationNo) {
+        const match = String((highestDoc as any).applicationNo)
+          .trim()
+          .match(/^(.*?)(0*[1-9]\d*|0)$/);
+        if (match) {
+          sheetPrefix = match[1];
+          const num = parseInt(match[2], 10);
+          nextSeqNumber = !isNaN(num) ? num + 1 : 1;
+          fullNextApplicationNo = `${sheetPrefix}${nextSeqNumber}`;
+        }
+      } else if (activeSheet === "YENİ BAŞVURU KAYIT") {
+        sheetPrefix = "102201-";
+        nextSeqNumber = 1;
+        fullNextApplicationNo = "102201-1";
+      }
+
+      let activeColumns: string[] = [];
+      if (fastRecords.length > 0) {
+        const r0: any = fastRecords[0];
+        activeColumns =
+          Array.isArray(r0.columnHeaders) && r0.columnHeaders.length > 0
+            ? r0.columnHeaders
+            : r0.extraData && typeof r0.extraData === "object"
+            ? Object.keys(r0.extraData)
+            : [];
+      }
+      activeColumns = activeColumns
+        .filter((c) => c && typeof c === "string" && !c.startsWith("__EMPTY") && c.trim() !== "")
+        .slice(0, 6);
+
+      const fastSheets = cleanSheetNames.map((name) => ({
+        name,
+        count: name === activeSheet ? fastMatchedCount : 0,
+        columnHeaders: name === activeSheet ? activeColumns : [],
+      }));
+
+      return NextResponse.json({
+        records: fastRecords,
+        canManage,
+        cacheWarm: false,
+        activeSheet,
+        activeColumns,
+        sheets: fastSheets,
+        pagination: {
+          page,
+          limit,
+          totalRecords: fastMatchedCount,
+          totalPages: Math.ceil(fastMatchedCount / limit) || 1,
+        },
+        stats: {
+          totalCount: totalEst || fastMatchedCount,
+          emptyCount: 0,
+          activeCount: fastMatchedCount,
+          nextApplicationNo: fullNextApplicationNo,
+          nextSeqNumber,
+          sheetPrefix,
+        },
+      });
+    }
+
+    const cache = readyCache || (await getApplicationCache());
 
     let activeSheet = sheet && sheet !== "all" ? sheet : "";
     if (!activeSheet && cache.sheets.length > 0) {
@@ -238,6 +370,7 @@ export async function GET(req: Request) {
     return NextResponse.json({
       records,
       canManage,
+      cacheWarm: true,
       sheets,
       activeSheet,
       activeColumns,
