@@ -34,6 +34,7 @@ import {
   Maximize2,
   LayoutGrid,
   List,
+  GripVertical,
 } from "lucide-react";
 import ModernConfirmDialog from "@/components/ModernConfirmDialog";
 import PaginationControls from "@/components/PaginationControls";
@@ -782,8 +783,34 @@ function SlidePreviewCard({
   );
 }
 
+type BulkFlatSlideItem = {
+  presentationId: string;
+  slideIndex: number;
+  groupIndex: number;
+  groupSlideCount: number;
+  authorName: string;
+  slide: SlideItem;
+};
+
+function buildBulkFlatSlides(groups: OrderedPresentationGroup[]): BulkFlatSlideItem[] {
+  const flat: BulkFlatSlideItem[] = [];
+  groups.forEach((grp, gIdx) => {
+    grp.slides.forEach((s, idx) => {
+      flat.push({
+        presentationId: grp.presentationId,
+        slideIndex: idx,
+        groupIndex: gIdx,
+        groupSlideCount: grp.slides.length,
+        authorName: grp.authorName,
+        slide: s,
+      });
+    });
+  });
+  return flat;
+}
+
 /**
- * PowerPoint Sol Şerit İçin Hafif ve Çok Hızlı Mini Slayt Önizleme Kartı
+ * PowerPoint Sol Şerit İçin Hafif, Çok Hızlı ve Tut-Sürükle Sıralama Destekli Mini Slayt Önizleme Kartı
  */
 function SlideMiniThumbnail({
   index,
@@ -793,6 +820,19 @@ function SlideMiniThumbnail({
   templates,
   meetingBackgroundPreset,
   onClick,
+  groupIndex,
+  groupSlideIndex,
+  groupSlideCount,
+  canReorder,
+  canMovePrev,
+  canMoveNext,
+  isBeingDragged,
+  dragTranslateX,
+  dragTranslateY,
+  showDropBefore,
+  showDropAfter,
+  onDragHandlePointerDown,
+  onMoveGroupStep,
 }: {
   index: number;
   isActive: boolean;
@@ -801,6 +841,19 @@ function SlideMiniThumbnail({
   templates: PresentationTemplateClient[];
   meetingBackgroundPreset?: string;
   onClick: () => void;
+  groupIndex?: number;
+  groupSlideIndex?: number;
+  groupSlideCount?: number;
+  canReorder?: boolean;
+  canMovePrev?: boolean;
+  canMoveNext?: boolean;
+  isBeingDragged?: boolean;
+  dragTranslateX?: number;
+  dragTranslateY?: number;
+  showDropBefore?: boolean;
+  showDropAfter?: boolean;
+  onDragHandlePointerDown?: (e: React.PointerEvent<HTMLButtonElement>) => void;
+  onMoveGroupStep?: (delta: -1 | 1) => void;
 }) {
   const defaultTpl = templates[0] || null;
   const activeTpl =
@@ -817,29 +870,124 @@ function SlideMiniThumbnail({
     .filter(Boolean)
     .slice(0, 3);
 
+  const isMultiSlideGroup = (groupSlideCount || 1) > 1;
+  const isFirstInGroup = (groupSlideIndex || 0) === 0;
+
   return (
-    <button
-      type="button"
+    <div
       data-filmstrip-idx={index}
-      onClick={onClick}
-      className={`group w-44 lg:w-full shrink-0 text-left rounded-2xl p-2 transition-all duration-150 relative flex items-start gap-2 ${
-        isActive
-          ? "bg-blue-600/12 ring-2 ring-blue-600 shadow-md shadow-blue-900/10"
-          : "bg-white hover:bg-slate-100/90 border border-slate-200/80 hover:border-slate-300"
+      data-filmstrip-group-idx={groupIndex}
+      style={
+        isBeingDragged
+          ? {
+              transform: `translate3d(${dragTranslateX || 0}px, ${dragTranslateY || 0}px, 0)`,
+              zIndex: 35,
+            }
+          : undefined
+      }
+      className={`group w-36 sm:w-44 lg:w-full shrink-0 rounded-2xl p-1.5 sm:p-2 transition-shadow duration-150 relative flex items-start gap-1.5 sm:gap-2 ${
+        isBeingDragged
+          ? "bg-blue-50 ring-2 ring-blue-600 shadow-2xl shadow-blue-900/25 opacity-95"
+          : isActive
+            ? "bg-blue-600/12 ring-2 ring-blue-600 shadow-md shadow-blue-900/10"
+            : "bg-white hover:bg-slate-100/90 border border-slate-200/80 hover:border-slate-300"
       }`}
     >
-      {/* Sol sıra numarası */}
-      <span
-        className={`w-5 h-5 rounded-md text-[10px] font-extrabold flex items-center justify-center shrink-0 mt-0.5 transition-colors ${
-          isActive
-            ? "bg-blue-600 text-white shadow-xs"
-            : "bg-slate-200/80 text-slate-600 group-hover:bg-slate-300"
-        }`}
-      >
-        {index + 1}
-      </span>
+      {/* PowerPoint Bırakma Hedefi Çizgisi (Üst / Sol Boşluk) */}
+      {showDropBefore && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -left-1.5 inset-y-1 w-1 lg:inset-x-1 lg:-top-1.5 lg:bottom-auto lg:w-auto lg:h-1 rounded-full bg-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.85)] z-40"
+        />
+      )}
 
-      <div className="flex-1 min-w-0 space-y-1.5">
+      {/* PowerPoint Bırakma Hedefi Çizgisi (Alt / Sağ Boşluk) */}
+      {showDropAfter && (
+        <div
+          aria-hidden="true"
+          className="pointer-events-none absolute -right-1.5 inset-y-1 w-1 lg:inset-x-1 lg:-bottom-1.5 lg:top-auto lg:w-auto lg:h-1 rounded-full bg-blue-600 shadow-[0_0_10px_rgba(37,99,235,0.85)] z-40"
+        />
+      )}
+
+      {/* Sol Şerit: Sıra Numarası + Tut-Sürükle Tutamacı + Hızlı Taşıma Okları */}
+      <div className="flex flex-col items-center gap-1 shrink-0 pt-0.5">
+        <span
+          className={`w-5 h-5 rounded-md text-[10px] font-extrabold flex items-center justify-center transition-colors ${
+            isActive
+              ? "bg-blue-600 text-white shadow-xs"
+              : "bg-slate-200/80 text-slate-600 group-hover:bg-slate-300"
+          }`}
+        >
+          {index + 1}
+        </span>
+
+        {canReorder && isFirstInGroup && (
+          <>
+            <button
+              type="button"
+              data-drag-handle="true"
+              aria-label={`${index + 1}. slaytı tut ve sürükleyerek sırala (${slide.fullName || "Slayt"})`}
+              title="Tut ve sürükleyerek sırala (Alt + Yukarı/Aşağı Ok ile klavyeden taşı)"
+              onPointerDown={onDragHandlePointerDown}
+              onKeyDown={(e) => {
+                if (e.altKey && (e.key === "ArrowUp" || e.key === "ArrowLeft")) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (canMovePrev) onMoveGroupStep?.(-1);
+                } else if (e.altKey && (e.key === "ArrowDown" || e.key === "ArrowRight")) {
+                  e.preventDefault();
+                  e.stopPropagation();
+                  if (canMoveNext) onMoveGroupStep?.(1);
+                }
+              }}
+              style={{
+                touchAction: "none",
+                WebkitUserSelect: "none",
+                userSelect: "none",
+              }}
+              className="w-6 h-7 rounded-lg bg-slate-100 hover:bg-blue-100 active:bg-blue-200 text-slate-500 hover:text-blue-700 border border-slate-200/90 flex items-center justify-center cursor-grab active:cursor-grabbing transition-colors"
+            >
+              <GripVertical className="w-3.5 h-3.5" />
+            </button>
+
+            <div className="flex lg:flex-col items-center gap-0.5">
+              <button
+                type="button"
+                disabled={!canMovePrev}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMoveGroupStep?.(-1);
+                }}
+                aria-label={`${slide.fullName || "Slayt"} kaydını bir sıra yukarı taşı`}
+                title="Bir sıra öne taşı"
+                className="w-5 h-5 rounded-md bg-slate-100 hover:bg-blue-50 text-slate-500 hover:text-blue-700 disabled:opacity-30 flex items-center justify-center transition-colors"
+              >
+                <ArrowUp className="w-3 h-3 -rotate-90 lg:rotate-0" />
+              </button>
+              <button
+                type="button"
+                disabled={!canMoveNext}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onMoveGroupStep?.(1);
+                }}
+                aria-label={`${slide.fullName || "Slayt"} kaydını bir sıra aşağı taşı`}
+                title="Bir sıra arkaya taşı"
+                className="w-5 h-5 rounded-md bg-slate-100 hover:bg-blue-50 text-slate-500 hover:text-blue-700 disabled:opacity-30 flex items-center justify-center transition-colors"
+              >
+                <ArrowDown className="w-3 h-3 -rotate-90 lg:rotate-0" />
+              </button>
+            </div>
+          </>
+        )}
+      </div>
+
+      {/* Ana Tıklanabilir Önizleme Gövdesi */}
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex-1 min-w-0 text-left space-y-1 sm:space-y-1.5 cursor-pointer focus:outline-none"
+      >
         {/* 4:3 Mini Slayt Sahnesi */}
         <div
           className={`w-full aspect-[4/3] rounded-lg overflow-hidden relative border transition-all ${
@@ -860,6 +1008,12 @@ function SlideMiniThumbnail({
             />
           )}
 
+          {isMultiSlideGroup && (
+            <span className="absolute right-1 top-1 z-10 px-1 py-0.5 rounded bg-slate-900/75 text-white text-[7px] font-bold leading-none">
+              {(groupSlideIndex || 0) + 1}/{groupSlideCount}
+            </span>
+          )}
+
           {/* Üst Kısım: Fotoğraf + Başlık */}
           <div className="absolute inset-x-1.5 top-1.5 h-[42%] flex items-center gap-1.5">
             {firstPhoto ? (
@@ -867,10 +1021,16 @@ function SlideMiniThumbnail({
                 <img
                   src={firstPhoto}
                   alt=""
+                  draggable={false}
                   className={secondPhoto ? "w-1/2 h-full object-cover" : "w-full h-full object-cover"}
                 />
                 {secondPhoto && (
-                  <img src={secondPhoto} alt="" className="w-1/2 h-full object-cover" />
+                  <img
+                    src={secondPhoto}
+                    alt=""
+                    draggable={false}
+                    className="w-1/2 h-full object-cover"
+                  />
                 )}
               </div>
             ) : (
@@ -926,8 +1086,8 @@ function SlideMiniThumbnail({
             </div>
           )}
         </div>
-      </div>
-    </button>
+      </button>
+    </div>
   );
 }
 
@@ -988,16 +1148,35 @@ export default function PresentationsPage() {
   // Toplantı Toplu Önizleme & Anında Açıklama Düzenleme Modalı
   const [bulkPreviewModal, setBulkPreviewModal] = useState<{
     meeting: MeetingItem;
+    allGroups: OrderedPresentationGroup[];
+    initialOrderIds: string[];
     groups: OrderedPresentationGroup[];
-    flatSlides: Array<{
-      presentationId: string;
-      slideIndex: number;
-      authorName: string;
-      slide: SlideItem;
-    }>;
+    flatSlides: BulkFlatSlideItem[];
   } | null>(null);
   const [bulkIdx, setBulkIdx] = useState(0);
   const [savingBulkEdit, setSavingBulkEdit] = useState(false);
+  const [savingBulkOrder, setSavingBulkOrder] = useState(false);
+  const [isBulkOrderConfirmOpen, setIsBulkOrderConfirmOpen] = useState(false);
+  const [mobileBulkTab, setMobileBulkTab] = useState<"preview" | "edit">("preview");
+  const [reorderLiveMsg, setReorderLiveMsg] = useState("");
+  const [filmstripDrag, setFilmstripDrag] = useState<{
+    fromGroupIdx: number;
+    dropInsertIdx: number;
+    dx: number;
+    dy: number;
+  } | null>(null);
+  const filmstripDragRef = useRef<{
+    pointerId: number;
+    fromGroupIdx: number;
+    dropInsertIdx: number;
+    startX: number;
+    startY: number;
+    lastX: number;
+    lastY: number;
+    isHorizontal: boolean;
+    rafId: number | null;
+  } | null>(null);
+  const touchSwipeRef = useRef<{ x: number; y: number } | null>(null);
 
   // Toplantı Yönetimi / Sıralama / Birleştirme / İndirme Modalı
   const [manageMeetingModal, setManageMeetingModal] = useState<{
@@ -1013,14 +1192,31 @@ export default function PresentationsPage() {
   const bulkFilmstripRef = useRef<HTMLDivElement | null>(null);
   const singleFilmstripRef = useRef<HTMLDivElement | null>(null);
 
+  const isBulkOrderDirty = useMemo(() => {
+    if (!bulkPreviewModal) return false;
+    return (
+      bulkPreviewModal.allGroups.map((g) => g.presentationId).join(",") !==
+      bulkPreviewModal.initialOrderIds.join(",")
+    );
+  }, [bulkPreviewModal]);
+
+  const requestCloseBulkPreview = useCallback(() => {
+    if (!bulkPreviewModal) return;
+    if (isBulkOrderDirty) {
+      setIsBulkOrderConfirmOpen(true);
+      return;
+    }
+    setBulkPreviewModal(null);
+  }, [bulkPreviewModal, isBulkOrderDirty]);
+
   // Aktif slayt değiştiğinde sol PowerPoint film şeridinde ilgili küçük slaytı görünür alana kaydır
   useEffect(() => {
-    if (!bulkPreviewModal || !bulkFilmstripRef.current) return;
+    if (!bulkPreviewModal || !bulkFilmstripRef.current || filmstripDrag) return;
     const activeBtn = bulkFilmstripRef.current.querySelector<HTMLElement>(
       `[data-filmstrip-idx="${bulkIdx}"]`
     );
     activeBtn?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
-  }, [bulkIdx, bulkPreviewModal]);
+  }, [bulkIdx, bulkPreviewModal, filmstripDrag]);
 
   useEffect(() => {
     if (!previewRecord || !singleFilmstripRef.current) return;
@@ -1034,6 +1230,7 @@ export default function PresentationsPage() {
   useEffect(() => {
     if (!bulkPreviewModal && !previewRecord) return;
     const onKeyDown = (e: KeyboardEvent) => {
+      if (isBulkOrderConfirmOpen || filmstripDragRef.current) return;
       const target = e.target as HTMLElement | null;
       if (
         target &&
@@ -1044,8 +1241,9 @@ export default function PresentationsPage() {
       ) {
         return;
       }
+      if (e.altKey) return;
       if (e.key === "Escape") {
-        if (bulkPreviewModal) setBulkPreviewModal(null);
+        if (bulkPreviewModal) requestCloseBulkPreview();
         else if (previewRecord) setPreviewRecord(null);
         return;
       }
@@ -1067,7 +1265,7 @@ export default function PresentationsPage() {
     };
     window.addEventListener("keydown", onKeyDown);
     return () => window.removeEventListener("keydown", onKeyDown);
-  }, [bulkPreviewModal, previewRecord]);
+  }, [bulkPreviewModal, previewRecord, isBulkOrderConfirmOpen, requestCloseBulkPreview]);
 
   useEffect(() => {
     const t = setTimeout(() => setDebouncedSearch(search), 180);
@@ -1565,28 +1763,17 @@ export default function PresentationsPage() {
       const groups = filterPersonnelName
         ? allGroups.filter((g) => g.authorName === filterPersonnelName)
         : allGroups;
-      const flatSlides: Array<{
-        presentationId: string;
-        slideIndex: number;
-        authorName: string;
-        slide: SlideItem;
-      }> = [];
-      for (const grp of groups) {
-        grp.slides.forEach((s, idx) => {
-          flatSlides.push({
-            presentationId: grp.presentationId,
-            slideIndex: idx,
-            authorName: grp.authorName,
-            slide: s,
-          });
-        });
-      }
+      const flatSlides = buildBulkFlatSlides(groups);
       if (flatSlides.length === 0) {
         toast.error("Bu toplantıda önizlenecek slayt bulunmuyor.");
         return;
       }
+      setMobileBulkTab("preview");
+      setIsBulkOrderConfirmOpen(false);
       setBulkPreviewModal({
         meeting: data.meeting,
+        allGroups,
+        initialOrderIds: allGroups.map((g) => g.presentationId),
         groups,
         flatSlides,
       });
@@ -1596,6 +1783,271 @@ export default function PresentationsPage() {
     } finally {
       setLoadingMeetingSlides(false);
     }
+  };
+
+  // Toplu Önizleme Sol PowerPoint Şeridinde Grup Sırasını Taşı (Çok Sayfalı Sunular Birlikte Hareket Eder)
+  const reorderBulkGroups = useCallback((fromIdx: number, toIdx: number) => {
+    setBulkPreviewModal((prev) => {
+      if (!prev) return null;
+      if (
+        fromIdx < 0 ||
+        fromIdx >= prev.groups.length ||
+        toIdx < 0 ||
+        toIdx >= prev.groups.length ||
+        fromIdx === toIdx
+      ) {
+        return prev;
+      }
+
+      const activeItem = prev.flatSlides[bulkIdx];
+      const activeKey = activeItem
+        ? `${activeItem.presentationId}_${activeItem.slideIndex}`
+        : "";
+
+      const nextGroups = [...prev.groups];
+      const [movedGrp] = nextGroups.splice(fromIdx, 1);
+      nextGroups.splice(toIdx, 0, movedGrp);
+
+      let nextAllGroups: OrderedPresentationGroup[];
+      if (prev.allGroups.length === nextGroups.length) {
+        nextAllGroups = nextGroups;
+      } else {
+        const visibleSet = new Set(nextGroups.map((g) => g.presentationId));
+        let cursor = 0;
+        nextAllGroups = prev.allGroups.map((g) =>
+          visibleSet.has(g.presentationId) ? nextGroups[cursor++] : g
+        );
+      }
+
+      const nextFlat = buildBulkFlatSlides(nextGroups);
+      if (activeKey) {
+        const nextSlidePos = nextFlat.findIndex(
+          (fs) => `${fs.presentationId}_${fs.slideIndex}` === activeKey
+        );
+        if (nextSlidePos >= 0) {
+          setBulkIdx(nextSlidePos);
+        }
+      }
+
+      setReorderLiveMsg(
+        `${movedGrp.summaryTitle} sunusu ${toIdx + 1}. sıraya taşındı (toplam ${nextGroups.length}).`
+      );
+
+      return {
+        ...prev,
+        allGroups: nextAllGroups,
+        groups: nextGroups,
+        flatSlides: nextFlat,
+      };
+    });
+  }, [bulkIdx]);
+
+  // Toplu Önizlemede Yapılan Sıralamayı Sunucuya Kaydet
+  const saveBulkPreviewOrder = async (closeAfterSave: boolean) => {
+    if (!bulkPreviewModal) return;
+    const orderedIds = bulkPreviewModal.allGroups.map((g) => g.presentationId);
+    setSavingBulkOrder(true);
+    try {
+      const res = await fetch(
+        `/api/presentations/meetings/${bulkPreviewModal.meeting._id}`,
+        {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            action: "reorder",
+            presentationOrder: orderedIds,
+          }),
+        }
+      );
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Slayt sıralaması kaydedilemedi");
+
+      toast.success("Slayt sıralaması başarıyla kaydedildi.");
+      setIsBulkOrderConfirmOpen(false);
+      if (closeAfterSave) {
+        setBulkPreviewModal(null);
+      } else {
+        setBulkPreviewModal((prev) =>
+          prev
+            ? {
+                ...prev,
+                meeting: { ...prev.meeting, ...data.meeting },
+                initialOrderIds: orderedIds,
+              }
+            : null
+        );
+      }
+      await fetchAll();
+    } catch (err: any) {
+      toast.error(err.message || "Sıralama kaydedilemedi");
+    } finally {
+      setSavingBulkOrder(false);
+    }
+  };
+
+  // PowerPoint Sol Dikey (Mobil Yatay) Mini Slayt Şeridi Pointer-Captured Tut-Sürükle İşleyicisi
+  const handleFilmstripDragPointerDown = (
+    fromGroupIdx: number,
+    e: React.PointerEvent<HTMLButtonElement>
+  ) => {
+    if (e.button !== 0 || filmstripDragRef.current || !bulkPreviewModal) return;
+    e.preventDefault();
+    e.stopPropagation();
+
+    const handleEl = e.currentTarget;
+    handleEl.setPointerCapture(e.pointerId);
+    const isHorizontal = window.innerWidth < 1024;
+    const totalGroups = bulkPreviewModal.groups.length;
+
+    document.documentElement.classList.add("is-reordering-slides");
+
+    const computeDropInsertIdx = (clientX: number, clientY: number): number => {
+      const scroller = bulkFilmstripRef.current;
+      if (!scroller) return fromGroupIdx;
+      const scrollerRect = scroller.getBoundingClientRect();
+      const clampedCoord = isHorizontal
+        ? Math.max(scrollerRect.left, Math.min(scrollerRect.right, clientX))
+        : Math.max(scrollerRect.top, Math.min(scrollerRect.bottom, clientY));
+
+      for (let g = 0; g < totalGroups; g++) {
+        if (g === fromGroupIdx) continue;
+        const nodes = scroller.querySelectorAll<HTMLElement>(
+          `[data-filmstrip-group-idx="${g}"]`
+        );
+        if (nodes.length === 0) continue;
+        const firstRect = nodes[0].getBoundingClientRect();
+        const lastRect = nodes[nodes.length - 1].getBoundingClientRect();
+        const midpoint = isHorizontal
+          ? (firstRect.left + lastRect.right) / 2
+          : (firstRect.top + lastRect.bottom) / 2;
+        if (clampedCoord < midpoint) {
+          return g;
+        }
+      }
+      return totalGroups;
+    };
+
+    const runAutoScroll = () => {
+      const state = filmstripDragRef.current;
+      const scroller = bulkFilmstripRef.current;
+      if (!state || !scroller) return;
+
+      const rect = scroller.getBoundingClientRect();
+      const edgeThreshold = 46;
+      let delta = 0;
+
+      if (state.isHorizontal) {
+        if (state.lastX < rect.left + edgeThreshold) {
+          delta = -Math.ceil(((rect.left + edgeThreshold - state.lastX) / edgeThreshold) * 10);
+        } else if (state.lastX > rect.right - edgeThreshold) {
+          delta = Math.ceil(((state.lastX - (rect.right - edgeThreshold)) / edgeThreshold) * 10);
+        }
+        if (delta !== 0) scroller.scrollLeft += delta;
+      } else {
+        if (state.lastY < rect.top + edgeThreshold) {
+          delta = -Math.ceil(((rect.top + edgeThreshold - state.lastY) / edgeThreshold) * 10);
+        } else if (state.lastY > rect.bottom - edgeThreshold) {
+          delta = Math.ceil(((state.lastY - (rect.bottom - edgeThreshold)) / edgeThreshold) * 10);
+        }
+        if (delta !== 0) scroller.scrollTop += delta;
+      }
+
+      if (delta !== 0) {
+        const nextInsert = computeDropInsertIdx(state.lastX, state.lastY);
+        if (nextInsert !== state.dropInsertIdx) {
+          state.dropInsertIdx = nextInsert;
+          setFilmstripDrag((prev) =>
+            prev ? { ...prev, dropInsertIdx: nextInsert } : null
+          );
+        }
+      }
+
+      state.rafId = window.requestAnimationFrame(runAutoScroll);
+    };
+
+    filmstripDragRef.current = {
+      pointerId: e.pointerId,
+      fromGroupIdx,
+      dropInsertIdx: fromGroupIdx,
+      startX: e.clientX,
+      startY: e.clientY,
+      lastX: e.clientX,
+      lastY: e.clientY,
+      isHorizontal,
+      rafId: window.requestAnimationFrame(runAutoScroll),
+    };
+
+    setFilmstripDrag({
+      fromGroupIdx,
+      dropInsertIdx: fromGroupIdx,
+      dx: 0,
+      dy: 0,
+    });
+
+    const cleanup = () => {
+      const active = filmstripDragRef.current;
+      if (active?.rafId) window.cancelAnimationFrame(active.rafId);
+      filmstripDragRef.current = null;
+      setFilmstripDrag(null);
+      document.documentElement.classList.remove("is-reordering-slides");
+      handleEl.removeEventListener("pointermove", onPointerMove);
+      handleEl.removeEventListener("pointerup", onPointerUp);
+      handleEl.removeEventListener("pointercancel", onPointerCancel);
+      window.removeEventListener("keydown", onEscCancel, true);
+    };
+
+    const onPointerMove = (ev: PointerEvent) => {
+      const active = filmstripDragRef.current;
+      if (!active || ev.pointerId !== active.pointerId) return;
+      active.lastX = ev.clientX;
+      active.lastY = ev.clientY;
+      const dx = active.isHorizontal ? ev.clientX - active.startX : 0;
+      const dy = active.isHorizontal ? 0 : ev.clientY - active.startY;
+      const nextInsert = computeDropInsertIdx(ev.clientX, ev.clientY);
+      active.dropInsertIdx = nextInsert;
+      setFilmstripDrag({
+        fromGroupIdx: active.fromGroupIdx,
+        dropInsertIdx: nextInsert,
+        dx,
+        dy,
+      });
+    };
+
+    const onPointerUp = (ev: PointerEvent) => {
+      const active = filmstripDragRef.current;
+      if (!active || ev.pointerId !== active.pointerId) return;
+      const { fromGroupIdx: fromIdx, dropInsertIdx: insertIdx } = active;
+      if (handleEl.hasPointerCapture(ev.pointerId)) {
+        handleEl.releasePointerCapture(ev.pointerId);
+      }
+      cleanup();
+      const targetIdx = insertIdx > fromIdx ? insertIdx - 1 : insertIdx;
+      if (targetIdx !== fromIdx) {
+        reorderBulkGroups(fromIdx, targetIdx);
+      }
+    };
+
+    const onPointerCancel = (ev: PointerEvent) => {
+      const active = filmstripDragRef.current;
+      if (!active || ev.pointerId !== active.pointerId) return;
+      cleanup();
+    };
+
+    const onEscCancel = (ev: KeyboardEvent) => {
+      if (ev.key === "Escape" && filmstripDragRef.current) {
+        ev.preventDefault();
+        ev.stopPropagation();
+        if (handleEl.hasPointerCapture(e.pointerId)) {
+          handleEl.releasePointerCapture(e.pointerId);
+        }
+        cleanup();
+      }
+    };
+
+    handleEl.addEventListener("pointermove", onPointerMove);
+    handleEl.addEventListener("pointerup", onPointerUp);
+    handleEl.addEventListener("pointercancel", onPointerCancel);
+    window.addEventListener("keydown", onEscCancel, true);
   };
 
   // Toplu Önizleme Modunda Anında Açıklama Güncelleme (Yönetici & Yetkili Personel)
@@ -1625,13 +2077,21 @@ export default function PresentationsPage() {
 
       setBulkPreviewModal((prev) => {
         if (!prev) return null;
+        const nextGroups = prev.groups.map((g) =>
+          g.presentationId === current.presentationId
+            ? { ...g, slides: updatedGroupSlides }
+            : g
+        );
+        const nextAllGroups = prev.allGroups.map((g) =>
+          g.presentationId === current.presentationId
+            ? { ...g, slides: updatedGroupSlides }
+            : g
+        );
         return {
           ...prev,
-          groups: prev.groups.map((g) =>
-            g.presentationId === current.presentationId
-              ? { ...g, slides: updatedGroupSlides }
-              : g
-          ),
+          allGroups: nextAllGroups,
+          groups: nextGroups,
+          flatSlides: buildBulkFlatSlides(nextGroups),
         };
       });
       toast.success("Slayt açıklaması anında güncellendi.");
@@ -3118,8 +3578,80 @@ export default function PresentationsPage() {
                         })}
                       </div>
                     ) : (
-                      <div className="overflow-x-auto rounded-2xl border border-slate-200/90 bg-white">
-                        <table className="w-full text-left border-collapse">
+                      <div className="rounded-2xl border border-slate-200/90 bg-white overflow-hidden">
+                        {/* Mobil Kompakt Liste Satırları */}
+                        <div className="md:hidden divide-y divide-slate-100">
+                          {paginatedPresentations.map((item, rowIdx) => {
+                            const globalIdx = (safePresPage - 1) * presPageSize + rowIdx + 1;
+                            const isOwnRecord = String(item.createdBy?._id) === String(userId);
+                            const canModify =
+                              selectedMeeting.status === "open" &&
+                              (canManageSelectedMeeting ||
+                                (!selectedMeeting.isLocked && isOwnRecord));
+
+                            return (
+                              <div
+                                key={`mob-list-${item._id}`}
+                                onClick={() => handleOpenRecord(item, "preview")}
+                                className="p-3.5 flex items-center justify-between gap-3 hover:bg-blue-50/40 cursor-pointer"
+                              >
+                                <div className="flex items-center gap-2.5 min-w-0">
+                                  <span className="w-6 h-6 rounded-lg bg-slate-100 text-slate-600 text-[11px] font-extrabold flex items-center justify-center shrink-0 tabular-nums">
+                                    {globalIdx}
+                                  </span>
+                                  <div className="min-w-0">
+                                    <div className="text-sm font-extrabold text-slate-900 truncate">
+                                      {item.summaryTitle}
+                                    </div>
+                                    <div className="text-[11px] text-slate-500 flex items-center gap-1.5 flex-wrap mt-0.5">
+                                      <span className="font-bold text-blue-700">
+                                        {item.createdBy?.name || "Personel"}
+                                      </span>
+                                      <span>•</span>
+                                      <span>{item.slideCount} Sayfa</span>
+                                    </div>
+                                  </div>
+                                </div>
+                                <div
+                                  className="flex items-center gap-1 shrink-0"
+                                  onClick={(e) => e.stopPropagation()}
+                                >
+                                  <button
+                                    type="button"
+                                    onClick={() => handleOpenRecord(item, "download")}
+                                    aria-label="PPTX indir"
+                                    className="p-2 rounded-xl bg-emerald-50 text-emerald-700"
+                                  >
+                                    <Download className="w-3.5 h-3.5" />
+                                  </button>
+                                  {canModify && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenRecord(item, "edit")}
+                                        aria-label="Düzenle"
+                                        className="p-2 rounded-xl bg-blue-600 text-white"
+                                      >
+                                        <Edit3 className="w-3.5 h-3.5" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setDeleteTarget(item)}
+                                        aria-label="Sil"
+                                        className="p-2 rounded-xl bg-red-50 text-red-600"
+                                      >
+                                        <Trash2 className="w-3.5 h-3.5" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        <div className="hidden md:block overflow-x-auto">
+                          <table className="w-full text-left border-collapse">
                           <thead>
                             <tr className="bg-slate-50/95 border-b border-slate-200/80 text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
                               <th scope="col" className="py-3 px-4 w-12">
@@ -3260,7 +3792,8 @@ export default function PresentationsPage() {
                               );
                             })}
                           </tbody>
-                        </table>
+                          </table>
+                        </div>
                       </div>
                     )}
                   <PaginationControls
@@ -3434,18 +3967,18 @@ export default function PresentationsPage() {
         </div>
       )}
 
-      {/* Tekil Sunu Slayt Önizleme Modalı (PowerPoint Sol Şerit + Kompakt Stüdyo Görünümü) */}
+      {/* Tekil Sunu Slayt Önizleme Modalı (PowerPoint Sol Şerit + %100 Mobil Uyumlu Stüdyo Görünümü) */}
       {previewRecord && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-5xl w-full h-[88vh] max-h-[820px] flex flex-col overflow-hidden border border-slate-800/20">
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-950/85 backdrop-blur-sm">
+          <div className="bg-white rounded-none sm:rounded-3xl shadow-2xl max-w-5xl w-full h-dvh sm:h-[88vh] sm:max-h-[820px] flex flex-col overflow-hidden border-0 sm:border border-slate-800/20">
             {/* Üst Kompakt Stüdyo Barı */}
-            <div className="relative shrink-0 px-4 sm:px-6 py-3.5 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0 flex items-center gap-3">
+            <div className="relative shrink-0 px-3.5 sm:px-6 py-3 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white flex flex-wrap items-center justify-between gap-2.5">
+              <div className="min-w-0 flex-1 flex items-center gap-2.5 sm:gap-3">
                 <div className="p-2 rounded-xl bg-white/10 border border-white/15 shrink-0">
                   <PresentationIcon className="w-4 h-4 text-sky-300" />
                 </div>
                 <div className="min-w-0">
-                  <h3 className="text-sm sm:text-base font-extrabold text-white truncate">
+                  <h3 className="text-xs sm:text-base font-extrabold text-white truncate">
                     {previewRecord.title}
                   </h3>
                   <p className="text-[11px] text-blue-200/90 truncate">
@@ -3454,20 +3987,21 @@ export default function PresentationsPage() {
                 </div>
               </div>
 
-              <div className="flex items-center gap-2 shrink-0">
+              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
                 {previewRecord.slides.length > 1 && (
                   <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-xl p-0.5">
                     <button
                       type="button"
                       disabled={previewSlideIdx === 0}
                       onClick={() => setPreviewSlideIdx((p) => Math.max(0, p - 1))}
-                      className="px-2.5 py-1.5 rounded-lg hover:bg-white/15 disabled:opacity-35 text-xs font-bold flex items-center gap-1 transition-colors"
+                      className="px-2 sm:px-2.5 py-1.5 rounded-lg hover:bg-white/15 disabled:opacity-35 text-xs font-bold flex items-center gap-1 transition-colors"
                       title="Önceki Sayfa (←)"
+                      aria-label="Önceki sayfa"
                     >
-                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <ChevronLeft className="w-4 h-4" />
                       <span className="hidden sm:inline">Önceki</span>
                     </button>
-                    <span className="px-2.5 text-xs font-extrabold text-sky-200 tabular-nums">
+                    <span className="px-2 text-xs font-extrabold text-sky-200 tabular-nums">
                       {previewSlideIdx + 1} / {previewRecord.slides.length}
                     </span>
                     <button
@@ -3478,11 +4012,12 @@ export default function PresentationsPage() {
                           Math.min(previewRecord.slides.length - 1, p + 1)
                         )
                       }
-                      className="px-2.5 py-1.5 rounded-lg hover:bg-white/15 disabled:opacity-35 text-xs font-bold flex items-center gap-1 transition-colors"
+                      className="px-2 sm:px-2.5 py-1.5 rounded-lg hover:bg-white/15 disabled:opacity-35 text-xs font-bold flex items-center gap-1 transition-colors"
                       title="Sonraki Sayfa (→)"
+                      aria-label="Sonraki sayfa"
                     >
                       <span className="hidden sm:inline">Sonraki</span>
-                      <ChevronRight className="w-3.5 h-3.5" />
+                      <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>
                 )}
@@ -3495,9 +4030,10 @@ export default function PresentationsPage() {
                         setPreviewRecord(null);
                         handleOpenRecord(target, "edit");
                       }}
-                      className="px-3 py-1.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-colors"
+                      className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-colors"
                     >
-                      <Edit3 className="w-3.5 h-3.5" /> Düzenle
+                      <Edit3 className="w-3.5 h-3.5" />
+                      <span className="hidden xs:inline sm:inline">Düzenle</span>
                     </button>
                     <button
                       onClick={() => {
@@ -3505,13 +4041,15 @@ export default function PresentationsPage() {
                         setPreviewRecord(null);
                         setDeleteTarget(target);
                       }}
-                      className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-100 hover:text-white border border-rose-400/30 text-xs font-bold flex items-center gap-1 transition-colors"
+                      aria-label="Sunuyu sil"
+                      className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-100 hover:text-white border border-rose-400/30 text-xs font-bold flex items-center gap-1 transition-colors"
                     >
-                      <Trash2 className="w-3.5 h-3.5" /> Sil
+                      <Trash2 className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Sil</span>
                     </button>
                   </>
                 ) : (
-                  <span className="px-2.5 py-1 rounded-lg bg-white/10 border border-white/15 text-blue-100 text-[11px] font-bold">
+                  <span className="hidden sm:inline-flex px-2.5 py-1 rounded-lg bg-white/10 border border-white/15 text-blue-100 text-[11px] font-bold">
                     Salt Görüntüleme
                   </span>
                 )}
@@ -3519,7 +4057,7 @@ export default function PresentationsPage() {
                 <button
                   onClick={() => setPreviewRecord(null)}
                   aria-label="Önizlemeyi kapat"
-                  className="p-1.5 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
+                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
                 >
                   <X className="w-4.5 h-4.5" />
                 </button>
@@ -3530,17 +4068,17 @@ export default function PresentationsPage() {
             <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden bg-slate-100/80">
               {previewRecord.slides.length > 1 && (
                 <aside className="lg:w-56 shrink-0 bg-slate-50 border-b lg:border-b-0 lg:border-r border-slate-200/90 flex flex-col min-h-0">
-                  <div className="px-3.5 py-2.5 border-b border-slate-200/80 flex items-center justify-between">
+                  <div className="px-3.5 py-2 border-b border-slate-200/80 flex items-center justify-between">
                     <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
                       Sayfalar ({previewRecord.slides.length})
                     </span>
                     <span className="text-[10px] font-semibold text-slate-400">
-                      ↑ ↓ Geçiş
+                      Kaydır / Seç
                     </span>
                   </div>
                   <div
                     ref={singleFilmstripRef}
-                    className="pres-filmstrip-scroller flex lg:flex-col gap-2.5 p-2.5 overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto flex-1 min-h-0"
+                    className="pres-filmstrip-scroller flex lg:flex-col gap-2 p-2 sm:p-2.5 overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto flex-1 min-h-0"
                   >
                     {previewRecord.slides.map((s, idx) => (
                       <SlideMiniThumbnail
@@ -3559,8 +4097,31 @@ export default function PresentationsPage() {
                 </aside>
               )}
 
-              <div className="flex-1 min-w-0 min-h-0 p-3 sm:p-5 flex flex-col justify-center items-center overflow-y-auto relative group/stage">
-                <div className="w-full max-w-3xl relative">
+              <div
+                onTouchStart={(e) => {
+                  const t = e.touches[0];
+                  if (t) touchSwipeRef.current = { x: t.clientX, y: t.clientY };
+                }}
+                onTouchEnd={(e) => {
+                  const start = touchSwipeRef.current;
+                  touchSwipeRef.current = null;
+                  const t = e.changedTouches[0];
+                  if (!start || !t || previewRecord.slides.length <= 1) return;
+                  const dx = t.clientX - start.x;
+                  const dy = t.clientY - start.y;
+                  if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.35) {
+                    if (dx < 0) {
+                      setPreviewSlideIdx((p) =>
+                        Math.min(previewRecord.slides.length - 1, p + 1)
+                      );
+                    } else {
+                      setPreviewSlideIdx((p) => Math.max(0, p - 1));
+                    }
+                  }
+                }}
+                className="flex-1 min-w-0 min-h-0 p-2.5 sm:p-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex flex-col justify-between sm:justify-center items-center overflow-y-auto relative group/stage gap-3"
+              >
+                <div className="w-full max-w-3xl relative my-auto">
                   <SlidePreviewCard
                     slide={previewRecord.slides[previewSlideIdx] || emptySlide()}
                     templates={templates}
@@ -3594,6 +4155,34 @@ export default function PresentationsPage() {
                     </>
                   )}
                 </div>
+
+                {previewRecord.slides.length > 1 && (
+                  <div className="sm:hidden w-full flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-2xl p-2 shadow-xs shrink-0">
+                    <button
+                      type="button"
+                      disabled={previewSlideIdx === 0}
+                      onClick={() => setPreviewSlideIdx((p) => Math.max(0, p - 1))}
+                      className="px-3 py-2 rounded-xl bg-slate-100 text-slate-800 text-xs font-extrabold disabled:opacity-35 flex items-center gap-1"
+                    >
+                      <ChevronLeft className="w-4 h-4" /> Önceki
+                    </button>
+                    <span className="text-[11px] font-bold text-slate-500">
+                      Sağa / sola kaydırın ({previewSlideIdx + 1}/{previewRecord.slides.length})
+                    </span>
+                    <button
+                      type="button"
+                      disabled={previewSlideIdx >= previewRecord.slides.length - 1}
+                      onClick={() =>
+                        setPreviewSlideIdx((p) =>
+                          Math.min(previewRecord.slides.length - 1, p + 1)
+                        )
+                      }
+                      className="px-3 py-2 rounded-xl bg-blue-600 text-white text-xs font-extrabold disabled:opacity-35 flex items-center gap-1"
+                    >
+                      Sonraki <ChevronRight className="w-4 h-4" />
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -3744,165 +4333,100 @@ export default function PresentationsPage() {
         </div>
       )}
 
-      {/* Toplu Önizleme & Anında Açıklama Güncelleme Modalı (PowerPoint Stüdyo Görünümü) */}
-      {bulkPreviewModal && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-2 sm:p-4 bg-slate-950/80 backdrop-blur-sm">
-          <div className="bg-white rounded-3xl shadow-2xl max-w-[1400px] w-full h-[92vh] max-h-[880px] flex flex-col overflow-hidden border border-slate-800/20">
-            {/* Üst Kompakt Stüdyo Kontrol Barı */}
-            <div className="relative shrink-0 px-4 sm:px-6 py-3 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0 flex items-center gap-3">
-                <div className="p-2 rounded-xl bg-white/10 border border-white/15 shrink-0">
-                  <Eye className="w-4.5 h-4.5 text-sky-300" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-2 flex-wrap">
-                    <h3 className="text-sm sm:text-base font-extrabold text-white truncate">
-                      {bulkPreviewModal.meeting.title}
-                    </h3>
-                    <span
-                      className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
-                        bulkPreviewModal.meeting.status === "closed"
-                          ? "bg-white/15 text-slate-200"
-                          : "bg-emerald-500/20 border border-emerald-400/30 text-emerald-200"
-                      }`}
-                    >
-                      {bulkPreviewModal.meeting.status === "closed"
-                        ? "Salt Okunur"
-                        : "Canlı Önizleme"}
-                    </span>
-                  </div>
-                  <p className="text-[11px] text-blue-200/90 truncate mt-0.5">
-                    Aktif Slayt:{" "}
-                    <strong className="text-white">
-                      {bulkPreviewModal.flatSlides[bulkIdx]?.slide.fullName || "-"}
-                    </strong>{" "}
-                    • Hazırlayan:{" "}
-                    <strong className="text-sky-200">
-                      {bulkPreviewModal.flatSlides[bulkIdx]?.authorName}
-                    </strong>
-                  </p>
-                </div>
-              </div>
+      {/* Toplu Önizleme & Tut-Sürükle Sıralama & Anında Açıklama Güncelleme Modalı (PowerPoint Stüdyo Görünümü) */}
+      {bulkPreviewModal && (() => {
+        const canReorderInBulk =
+          bulkPreviewModal.meeting.status === "open" &&
+          canManageSelectedMeeting &&
+          bulkPreviewModal.groups.length > 1;
+        const canEditInBulk =
+          bulkPreviewModal.meeting.status === "open" && canManageSelectedMeeting;
 
-              {/* Sağ: Kompakt Geçiş Kontrolleri & Kapat */}
-              <div className="flex items-center gap-2.5 shrink-0">
-                <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-xl p-1 gap-1">
-                  <button
-                    type="button"
-                    disabled={bulkIdx === 0}
-                    onClick={() => setBulkIdx((p) => Math.max(0, p - 1))}
-                    className="px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-35 text-xs font-extrabold flex items-center gap-1 transition-all active:scale-95"
-                    title="Önceki Slayt (Sol/Yukarı Ok)"
-                  >
-                    <ChevronLeft className="w-3.5 h-3.5" />
-                    <span className="hidden sm:inline">Önceki</span>
-                  </button>
-
-                  <div className="px-3 py-1 text-xs font-extrabold text-white tabular-nums">
-                    {bulkIdx + 1}{" "}
-                    <span className="text-blue-200/75 font-semibold">
-                      / {bulkPreviewModal.flatSlides.length}
-                    </span>
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={bulkIdx >= bulkPreviewModal.flatSlides.length - 1}
-                    onClick={() =>
-                      setBulkIdx((p) =>
-                        Math.min(bulkPreviewModal.flatSlides.length - 1, p + 1)
-                      )
-                    }
-                    className="px-3 py-1.5 rounded-lg bg-blue-500 hover:bg-blue-400 disabled:bg-white/10 disabled:opacity-35 text-xs font-extrabold flex items-center gap-1 shadow-xs transition-all active:scale-95"
-                    title="Sonraki Slayt (Sağ/Aşağı Ok)"
-                  >
-                    <span className="hidden sm:inline">Sonraki</span>
-                    <ChevronRight className="w-3.5 h-3.5" />
-                  </button>
-                </div>
-
-                <button
-                  onClick={() => setBulkPreviewModal(null)}
-                  aria-label="Toplu önizlemeyi kapat"
-                  className="p-2 rounded-xl bg-white/10 hover:bg-rose-500/80 text-white transition-colors"
-                  title="Kapat (Esc)"
-                >
-                  <X className="w-4.5 h-4.5" />
-                </button>
-              </div>
-
-              {/* İnce İlerleme Çubuğu */}
-              <div className="absolute inset-x-0 bottom-0 h-1 bg-white/10">
-                <div
-                  className="h-full bg-gradient-to-r from-sky-400 via-blue-400 to-emerald-400 transition-all duration-200"
-                  style={{
-                    width: `${
-                      ((bulkIdx + 1) / Math.max(1, bulkPreviewModal.flatSlides.length)) * 100
-                    }%`,
-                  }}
-                />
-              </div>
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-950/85 backdrop-blur-sm">
+            {/* Erişilebilirlik Canlı Duyuru Alanı */}
+            <div aria-live="polite" aria-atomic="true" className="visually-hidden">
+              {reorderLiveMsg}
             </div>
 
-            {/* 3 Sütunlu PowerPoint Stüdyo Çalışma Alanı */}
-            <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden bg-slate-100/90">
-              {/* SOL SÜTUN: PowerPoint Dikey Küçük Slayt Önizleme Şeridi */}
-              <aside className="lg:w-56 xl:w-60 shrink-0 bg-slate-50/95 border-b lg:border-b-0 lg:border-r border-slate-200/90 flex flex-col min-h-0">
-                <div className="px-3.5 py-2.5 border-b border-slate-200/80 flex items-center justify-between shrink-0">
-                  <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
-                    <Layers className="w-3.5 h-3.5 text-blue-600" />
-                    Slaytlar ({bulkPreviewModal.flatSlides.length})
-                  </span>
-                  <span className="text-[10px] font-semibold text-slate-400">
-                    Tıkla / Kaydır
-                  </span>
+            <div className="bg-white rounded-none sm:rounded-3xl shadow-2xl max-w-[1440px] w-full h-dvh sm:h-[92vh] sm:max-h-[880px] flex flex-col overflow-hidden border-0 sm:border border-slate-800/20">
+              {/* Üst Kompakt Stüdyo Kontrol Barı */}
+              <div className="relative shrink-0 px-3.5 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white flex flex-wrap items-center justify-between gap-2.5">
+                <div className="min-w-0 flex-1 flex items-center gap-2.5 sm:gap-3">
+                  <div className="p-2 rounded-xl bg-white/10 border border-white/15 shrink-0 hidden xs:flex sm:flex">
+                    <Eye className="w-4.5 h-4.5 text-sky-300" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h3 className="text-xs sm:text-base font-extrabold text-white truncate max-w-[200px] sm:max-w-none">
+                        {bulkPreviewModal.meeting.title}
+                      </h3>
+                      <span
+                        className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                          bulkPreviewModal.meeting.status === "closed"
+                            ? "bg-white/15 text-slate-200"
+                            : "bg-emerald-500/20 border border-emerald-400/30 text-emerald-200"
+                        }`}
+                      >
+                        {bulkPreviewModal.meeting.status === "closed"
+                          ? "Salt Okunur"
+                          : "Canlı Önizleme"}
+                      </span>
+                      {isBulkOrderDirty && (
+                        <span className="px-2 py-0.5 rounded-full bg-amber-400/20 border border-amber-300/40 text-amber-200 text-[10px] font-extrabold">
+                          Sıralama Değişti
+                        </span>
+                      )}
+                    </div>
+                    <p className="text-[11px] text-blue-200/90 truncate mt-0.5">
+                      <strong className="text-white">
+                        {bulkPreviewModal.flatSlides[bulkIdx]?.slide.fullName || "-"}
+                      </strong>{" "}
+                      • Hazırlayan:{" "}
+                      <strong className="text-sky-200">
+                        {bulkPreviewModal.flatSlides[bulkIdx]?.authorName}
+                      </strong>
+                    </p>
+                  </div>
                 </div>
 
-                <div
-                  ref={bulkFilmstripRef}
-                  className="pres-filmstrip-scroller flex lg:flex-col gap-2.5 p-2.5 overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto flex-1 min-h-0"
-                >
-                  {bulkPreviewModal.flatSlides.map((item, idx) => (
-                    <SlideMiniThumbnail
-                      key={`${item.presentationId}_${item.slideIndex}`}
-                      index={idx}
-                      isActive={idx === bulkIdx}
-                      slide={item.slide}
-                      authorName={item.authorName}
-                      templates={templates}
-                      meetingBackgroundPreset={
-                        bulkPreviewModal.meeting.backgroundPreset || "template"
-                      }
-                      onClick={() => setBulkIdx(idx)}
-                    />
-                  ))}
-                </div>
-              </aside>
+                {/* Sağ: Sıralama Kaydet + Geçiş Kontrolleri & Kapat */}
+                <div className="flex items-center gap-2 shrink-0">
+                  {isBulkOrderDirty && (
+                    <button
+                      type="button"
+                      disabled={savingBulkOrder}
+                      onClick={() => saveBulkPreviewOrder(false)}
+                      className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-extrabold shadow-md shadow-emerald-950/30 flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-60"
+                    >
+                      <Save className="w-3.5 h-3.5" />
+                      <span className="hidden md:inline">
+                        {savingBulkOrder ? "Kaydediliyor..." : "Sıralamayı Kaydet"}
+                      </span>
+                      <span className="md:hidden">Kaydet</span>
+                    </button>
+                  )}
 
-              {/* ORTA SÜTUN: Ana Slayt Sahnesi + Zarif Alt Navigasyon Barı */}
-              <div className="flex-1 min-w-0 min-h-0 p-3 sm:p-5 flex flex-col justify-between items-center overflow-y-auto relative group/stage">
-                <div className="flex-1 w-full flex items-center justify-center min-h-0">
-                  <div className="w-full max-w-4xl relative">
-                    <SlidePreviewCard
-                      slide={
-                        bulkPreviewModal.flatSlides[bulkIdx]?.slide || emptySlide()
-                      }
-                      templates={templates}
-                      meetingBackgroundPreset={
-                        bulkPreviewModal.meeting.backgroundPreset || "template"
-                      }
-                    />
-
-                    {/* Sahne Üzeri Yüzen Hızlı Geçiş Okları */}
+                  <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-xl p-0.5 sm:p-1 gap-0.5 sm:gap-1">
                     <button
                       type="button"
                       disabled={bulkIdx === 0}
                       onClick={() => setBulkIdx((p) => Math.max(0, p - 1))}
+                      className="px-2 sm:px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 disabled:opacity-35 text-xs font-extrabold flex items-center gap-1 transition-all active:scale-95"
+                      title="Önceki Slayt (Sol/Yukarı Ok)"
                       aria-label="Önceki slayt"
-                      className="hidden sm:flex absolute -left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-slate-900/75 hover:bg-blue-600 text-white items-center justify-center shadow-xl ring-2 ring-white/40 opacity-0 group-hover/stage:opacity-100 disabled:!opacity-0 transition-all cursor-pointer"
                     >
-                      <ChevronLeft className="w-5 h-5" />
+                      <ChevronLeft className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Önceki</span>
                     </button>
+
+                    <div className="px-2 sm:px-3 py-1 text-xs font-extrabold text-white tabular-nums">
+                      {bulkIdx + 1}{" "}
+                      <span className="text-blue-200/75 font-semibold">
+                        / {bulkPreviewModal.flatSlides.length}
+                      </span>
+                    </div>
+
                     <button
                       type="button"
                       disabled={bulkIdx >= bulkPreviewModal.flatSlides.length - 1}
@@ -3911,116 +4435,360 @@ export default function PresentationsPage() {
                           Math.min(bulkPreviewModal.flatSlides.length - 1, p + 1)
                         )
                       }
+                      className="px-2 sm:px-3 py-1.5 rounded-lg bg-blue-500 hover:bg-blue-400 disabled:bg-white/10 disabled:opacity-35 text-xs font-extrabold flex items-center gap-1 shadow-xs transition-all active:scale-95"
+                      title="Sonraki Slayt (Sağ/Aşağı Ok)"
                       aria-label="Sonraki slayt"
-                      className="hidden sm:flex absolute -right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-slate-900/75 hover:bg-blue-600 text-white items-center justify-center shadow-xl ring-2 ring-white/40 opacity-0 group-hover/stage:opacity-100 disabled:!opacity-0 transition-all cursor-pointer"
                     >
-                      <ChevronRight className="w-5 h-5" />
+                      <span className="hidden sm:inline">Sonraki</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={requestCloseBulkPreview}
+                    aria-label="Toplu önizlemeyi kapat"
+                    className="p-2 rounded-xl bg-white/10 hover:bg-rose-500/80 text-white transition-colors"
+                    title="Kapat (Esc)"
+                  >
+                    <X className="w-4.5 h-4.5" />
+                  </button>
+                </div>
+
+                {/* İnce İlerleme Çubuğu */}
+                <div className="absolute inset-x-0 bottom-0 h-1 bg-white/10">
+                  <div
+                    className="h-full bg-gradient-to-r from-sky-400 via-blue-400 to-emerald-400 transition-all duration-200"
+                    style={{
+                      width: `${
+                        ((bulkIdx + 1) / Math.max(1, bulkPreviewModal.flatSlides.length)) * 100
+                      }%`,
+                    }}
+                  />
+                </div>
+              </div>
+
+              {/* Mobil Görünüm Sekme Seçici (Slayt Önizleme / Hızlı Açıklama Düzenle) */}
+              {canEditInBulk && (
+                <div className="lg:hidden shrink-0 px-3 py-2 bg-slate-900/95 border-b border-slate-800 flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={() => setMobileBulkTab("preview")}
+                    className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all ${
+                      mobileBulkTab === "preview"
+                        ? "bg-blue-600 text-white shadow-sm"
+                        : "bg-white/10 text-slate-300"
+                    }`}
+                  >
+                    <Eye className="w-3.5 h-3.5" />
+                    Slayt Sahnesi
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMobileBulkTab("edit")}
+                    className={`flex-1 py-1.5 px-3 rounded-xl text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all ${
+                      mobileBulkTab === "edit"
+                        ? "bg-emerald-600 text-white shadow-sm"
+                        : "bg-white/10 text-slate-300"
+                    }`}
+                  >
+                    <Edit3 className="w-3.5 h-3.5" />
+                    Açıklama Düzenle
+                  </button>
+                </div>
+              )}
+
+              {/* 3 Sütunlu PowerPoint Stüdyo Çalışma Alanı */}
+              <div className="flex-1 min-h-0 flex flex-col lg:flex-row overflow-hidden bg-slate-100/90">
+                {/* SOL SÜTUN: PowerPoint Dikey Küçük Slayt Önizleme & Tut-Sürükle Sıralama Şeridi */}
+                <aside className="lg:w-64 xl:w-68 shrink-0 bg-slate-50/95 border-b lg:border-b-0 lg:border-r border-slate-200/90 flex flex-col min-h-0">
+                  <div className="px-3.5 py-2 border-b border-slate-200/80 flex items-center justify-between gap-2 shrink-0">
+                    <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-1.5">
+                      <Layers className="w-3.5 h-3.5 text-blue-600" />
+                      Slaytlar ({bulkPreviewModal.flatSlides.length})
+                    </span>
+                    <span className="text-[10px] font-bold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-md border border-blue-100">
+                      {canReorderInBulk ? "Tut-Sürükle Sırala" : "Tıkla / Kaydır"}
+                    </span>
+                  </div>
+
+                  <div
+                    ref={bulkFilmstripRef}
+                    className="pres-filmstrip-scroller flex lg:flex-col gap-2.5 p-2 sm:p-2.5 overflow-x-auto lg:overflow-x-hidden lg:overflow-y-auto flex-1 min-h-0"
+                  >
+                    {bulkPreviewModal.flatSlides.map((item, idx) => {
+                      const gIdx = item.groupIndex;
+                      const isDraggingGroup = filmstripDrag?.fromGroupIdx === gIdx;
+                      const isFirstInGrp = item.slideIndex === 0;
+                      const isLastInGrp = item.slideIndex === item.groupSlideCount - 1;
+                      const showDropBefore =
+                        Boolean(filmstripDrag) &&
+                        filmstripDrag!.fromGroupIdx !== gIdx &&
+                        filmstripDrag!.dropInsertIdx === gIdx &&
+                        isFirstInGrp;
+                      const showDropAfter =
+                        Boolean(filmstripDrag) &&
+                        filmstripDrag!.fromGroupIdx !== gIdx &&
+                        filmstripDrag!.dropInsertIdx === bulkPreviewModal.groups.length &&
+                        gIdx === bulkPreviewModal.groups.length - 1 &&
+                        isLastInGrp;
+
+                      return (
+                        <SlideMiniThumbnail
+                          key={`${item.presentationId}_${item.slideIndex}`}
+                          index={idx}
+                          isActive={idx === bulkIdx}
+                          slide={item.slide}
+                          authorName={item.authorName}
+                          templates={templates}
+                          meetingBackgroundPreset={
+                            bulkPreviewModal.meeting.backgroundPreset || "template"
+                          }
+                          onClick={() => {
+                            setBulkIdx(idx);
+                            if (mobileBulkTab === "edit") {
+                              // Düzenleme sekmesinde slayt seçildiğinde seçili slayt anında değişir
+                            }
+                          }}
+                          groupIndex={gIdx}
+                          groupSlideIndex={item.slideIndex}
+                          groupSlideCount={item.groupSlideCount}
+                          canReorder={canReorderInBulk}
+                          canMovePrev={gIdx > 0}
+                          canMoveNext={gIdx < bulkPreviewModal.groups.length - 1}
+                          isBeingDragged={isDraggingGroup}
+                          dragTranslateX={isDraggingGroup ? filmstripDrag?.dx : 0}
+                          dragTranslateY={isDraggingGroup ? filmstripDrag?.dy : 0}
+                          showDropBefore={showDropBefore}
+                          showDropAfter={showDropAfter}
+                          onDragHandlePointerDown={(e) =>
+                            handleFilmstripDragPointerDown(gIdx, e)
+                          }
+                          onMoveGroupStep={(delta) =>
+                            reorderBulkGroups(gIdx, gIdx + delta)
+                          }
+                        />
+                      );
+                    })}
+                  </div>
+                </aside>
+
+                {/* ORTA SÜTUN: Ana Slayt Sahnesi + Dokunmatik Kaydırma + Zarif Alt Navigasyon Barı */}
+                <div
+                  onTouchStart={(e) => {
+                    const t = e.touches[0];
+                    if (t) touchSwipeRef.current = { x: t.clientX, y: t.clientY };
+                  }}
+                  onTouchEnd={(e) => {
+                    const start = touchSwipeRef.current;
+                    touchSwipeRef.current = null;
+                    const t = e.changedTouches[0];
+                    if (!start || !t || bulkPreviewModal.flatSlides.length <= 1) return;
+                    const dx = t.clientX - start.x;
+                    const dy = t.clientY - start.y;
+                    if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.35) {
+                      if (dx < 0) {
+                        setBulkIdx((p) =>
+                          Math.min(bulkPreviewModal.flatSlides.length - 1, p + 1)
+                        );
+                      } else {
+                        setBulkIdx((p) => Math.max(0, p - 1));
+                      }
+                    }
+                  }}
+                  className={`${
+                    canEditInBulk && mobileBulkTab === "edit" ? "hidden lg:flex" : "flex"
+                  } flex-1 min-w-0 min-h-0 p-2.5 sm:p-5 pb-[max(0.75rem,env(safe-area-inset-bottom))] flex-col justify-between items-center overflow-y-auto relative group/stage`}
+                >
+                  <div className="flex-1 w-full flex items-center justify-center min-h-0">
+                    <div className="w-full max-w-4xl relative">
+                      <SlidePreviewCard
+                        slide={
+                          bulkPreviewModal.flatSlides[bulkIdx]?.slide || emptySlide()
+                        }
+                        templates={templates}
+                        meetingBackgroundPreset={
+                          bulkPreviewModal.meeting.backgroundPreset || "template"
+                        }
+                      />
+
+                      {/* Sahne Üzeri Yüzen Hızlı Geçiş Okları */}
+                      <button
+                        type="button"
+                        disabled={bulkIdx === 0}
+                        onClick={() => setBulkIdx((p) => Math.max(0, p - 1))}
+                        aria-label="Önceki slayt"
+                        className="hidden sm:flex absolute -left-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-slate-900/75 hover:bg-blue-600 text-white items-center justify-center shadow-xl ring-2 ring-white/40 opacity-0 group-hover/stage:opacity-100 disabled:!opacity-0 transition-all cursor-pointer"
+                      >
+                        <ChevronLeft className="w-5 h-5" />
+                      </button>
+                      <button
+                        type="button"
+                        disabled={bulkIdx >= bulkPreviewModal.flatSlides.length - 1}
+                        onClick={() =>
+                          setBulkIdx((p) =>
+                            Math.min(bulkPreviewModal.flatSlides.length - 1, p + 1)
+                          )
+                        }
+                        aria-label="Sonraki slayt"
+                        className="hidden sm:flex absolute -right-3 top-1/2 -translate-y-1/2 w-10 h-10 rounded-full bg-slate-900/75 hover:bg-blue-600 text-white items-center justify-center shadow-xl ring-2 ring-white/40 opacity-0 group-hover/stage:opacity-100 disabled:!opacity-0 transition-all cursor-pointer"
+                      >
+                        <ChevronRight className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Kompakt Alt Sahne Durum & Geçiş Kapsülü */}
+                  <div className="mt-2.5 sm:mt-3 shrink-0 w-full max-w-4xl bg-white/95 backdrop-blur-xs border border-slate-200/90 rounded-2xl px-2.5 sm:px-3 py-2 shadow-xs flex items-center justify-between gap-2 sm:gap-3">
+                    <button
+                      type="button"
+                      disabled={bulkIdx === 0}
+                      onClick={() => setBulkIdx((p) => Math.max(0, p - 1))}
+                      className="px-3 sm:px-3.5 py-2 sm:py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-extrabold disabled:opacity-35 flex items-center gap-1 transition-all active:scale-95 shrink-0"
+                    >
+                      <ChevronLeft className="w-4 h-4" />
+                      <span>Önceki</span>
+                    </button>
+
+                    <div className="min-w-0 text-center px-1">
+                      <div className="text-xs font-extrabold text-slate-800 truncate">
+                        {bulkIdx + 1}. {bulkPreviewModal.flatSlides[bulkIdx]?.slide.fullName || "Slayt"}
+                        {bulkPreviewModal.flatSlides[bulkIdx]?.slide.neighborhood
+                          ? ` (${bulkPreviewModal.flatSlides[bulkIdx]?.slide.neighborhood})`
+                          : ""}
+                      </div>
+                      <div className="hidden sm:block text-[10px] font-medium text-slate-400">
+                        {canReorderInBulk
+                          ? "Sol şeritteki tutamaçtan tut-sürükle ile sıralayabilir, yön tuşlarıyla geçiş yapabilirsiniz"
+                          : "Klavyeden ← → veya ↑ ↓ yön tuşlarıyla hızlı geçiş yapabilirsiniz"}
+                      </div>
+                      <div className="sm:hidden text-[10px] font-medium text-slate-400">
+                        Sağa / sola kaydırarak geçiş yapın
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      disabled={bulkIdx >= bulkPreviewModal.flatSlides.length - 1}
+                      onClick={() =>
+                        setBulkIdx((p) =>
+                          Math.min(bulkPreviewModal.flatSlides.length - 1, p + 1)
+                        )
+                      }
+                      className="px-3 sm:px-3.5 py-2 sm:py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-extrabold shadow-xs disabled:from-slate-200 disabled:to-slate-200 disabled:text-slate-400 flex items-center gap-1 transition-all active:scale-95 shrink-0"
+                    >
+                      <span>Sonraki</span>
+                      <ChevronRight className="w-4 h-4" />
                     </button>
                   </div>
                 </div>
 
-                {/* Kompakt Alt Sahne Durum & Geçiş Kapsülü */}
-                <div className="mt-3 shrink-0 w-full max-w-4xl bg-white/95 backdrop-blur-xs border border-slate-200/90 rounded-2xl px-3 py-2 shadow-xs flex items-center justify-between gap-3">
-                  <button
-                    type="button"
-                    disabled={bulkIdx === 0}
-                    onClick={() => setBulkIdx((p) => Math.max(0, p - 1))}
-                    className="px-3.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-extrabold disabled:opacity-35 flex items-center gap-1 transition-all active:scale-95"
+                {/* SAĞ SÜTUN: Yönetici / Yetkili Kullanıcı İçin Kompakt Anında Açıklama Düzenleme Paneli */}
+                {canEditInBulk && (
+                  <aside
+                    className={`${
+                      mobileBulkTab === "edit" ? "flex flex-1" : "hidden lg:flex"
+                    } lg:flex-none lg:w-80 xl:w-96 shrink-0 bg-white border-t lg:border-t-0 lg:border-l border-slate-200/90 p-3.5 sm:p-4 pb-[max(1rem,env(safe-area-inset-bottom))] flex-col justify-between gap-3 overflow-y-auto`}
                   >
-                    <ChevronLeft className="w-4 h-4" />
-                    Önceki Slayt
-                  </button>
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                        <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                          <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                          Hızlı Açıklama Düzenle
+                        </h4>
+                        <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[11px] font-bold text-blue-700 truncate max-w-[160px]">
+                          {bulkPreviewModal.flatSlides[bulkIdx]?.slide.fullName}
+                        </span>
+                      </div>
 
-                  <div className="min-w-0 text-center px-2">
-                    <div className="text-xs font-extrabold text-slate-800 truncate">
-                      {bulkIdx + 1}. {bulkPreviewModal.flatSlides[bulkIdx]?.slide.fullName || "Slayt"}
-                      {bulkPreviewModal.flatSlides[bulkIdx]?.slide.neighborhood
-                        ? ` (${bulkPreviewModal.flatSlides[bulkIdx]?.slide.neighborhood})`
-                        : ""}
-                    </div>
-                    <div className="hidden sm:block text-[10px] font-medium text-slate-400">
-                      Klavyeden ← → veya ↑ ↓ yön tuşlarıyla hızlı geçiş yapabilirsiniz
-                    </div>
-                  </div>
-
-                  <button
-                    type="button"
-                    disabled={bulkIdx >= bulkPreviewModal.flatSlides.length - 1}
-                    onClick={() =>
-                      setBulkIdx((p) =>
-                        Math.min(bulkPreviewModal.flatSlides.length - 1, p + 1)
-                      )
-                    }
-                    className="px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-extrabold shadow-xs disabled:from-slate-200 disabled:to-slate-200 disabled:text-slate-400 flex items-center gap-1 transition-all active:scale-95"
-                  >
-                    Sonraki Slayt
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-
-              {/* SAĞ SÜTUN: Yönetici / Yetkili Kullanıcı İçin Kompakt Anında Açıklama Düzenleme Paneli */}
-              {bulkPreviewModal.meeting.status === "open" && canManageSelectedMeeting && (
-                <aside className="lg:w-80 xl:w-96 shrink-0 bg-white border-t lg:border-t-0 lg:border-l border-slate-200/90 p-4 flex flex-col justify-between gap-3 overflow-y-auto">
-                  <div className="space-y-3">
-                    <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
-                      <h4 className="text-xs font-extrabold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
-                        <Edit3 className="w-3.5 h-3.5 text-blue-600" />
-                        Hızlı Açıklama Düzenle
-                      </h4>
-                      <span className="px-2 py-0.5 rounded-md bg-blue-50 text-[11px] font-bold text-blue-700 truncate max-w-[150px]">
-                        {bulkPreviewModal.flatSlides[bulkIdx]?.slide.fullName}
-                      </span>
-                    </div>
-
-                    <RichDescriptionEditor
-                      slideKey={`bulk_${bulkPreviewModal.flatSlides[bulkIdx]?.presentationId}_${bulkPreviewModal.flatSlides[bulkIdx]?.slideIndex}`}
-                      initialHtml={
-                        bulkPreviewModal.flatSlides[bulkIdx]?.slide.descriptionHtml || ""
-                      }
-                      initialPlain={
-                        bulkPreviewModal.flatSlides[bulkIdx]?.slide.description || ""
-                      }
-                      onChange={(html, plain) => {
-                        setBulkPreviewModal((prev) => {
-                          if (!prev) return null;
-                          return {
-                            ...prev,
-                            flatSlides: prev.flatSlides.map((fs, i) =>
-                              i === bulkIdx
+                      <RichDescriptionEditor
+                        slideKey={`bulk_${bulkPreviewModal.flatSlides[bulkIdx]?.presentationId}_${bulkPreviewModal.flatSlides[bulkIdx]?.slideIndex}`}
+                        initialHtml={
+                          bulkPreviewModal.flatSlides[bulkIdx]?.slide.descriptionHtml || ""
+                        }
+                        initialPlain={
+                          bulkPreviewModal.flatSlides[bulkIdx]?.slide.description || ""
+                        }
+                        onChange={(html, plain) => {
+                          setBulkPreviewModal((prev) => {
+                            if (!prev) return null;
+                            const target = prev.flatSlides[bulkIdx];
+                            if (!target) return prev;
+                            const nextGroups = prev.groups.map((g) =>
+                              g.presentationId === target.presentationId
                                 ? {
-                                    ...fs,
-                                    slide: {
-                                      ...fs.slide,
-                                      descriptionHtml: html,
-                                      description: plain,
-                                    },
+                                    ...g,
+                                    slides: g.slides.map((s, sIdx) =>
+                                      sIdx === target.slideIndex
+                                        ? { ...s, descriptionHtml: html, description: plain }
+                                        : s
+                                    ),
                                   }
-                                : fs
-                            ),
-                          };
-                        });
-                      }}
-                    />
-                  </div>
+                                : g
+                            );
+                            const nextAllGroups = prev.allGroups.map((g) =>
+                              g.presentationId === target.presentationId
+                                ? {
+                                    ...g,
+                                    slides: g.slides.map((s, sIdx) =>
+                                      sIdx === target.slideIndex
+                                        ? { ...s, descriptionHtml: html, description: plain }
+                                        : s
+                                    ),
+                                  }
+                                : g
+                            );
+                            return {
+                              ...prev,
+                              allGroups: nextAllGroups,
+                              groups: nextGroups,
+                              flatSlides: buildBulkFlatSlides(nextGroups),
+                            };
+                          });
+                        }}
+                      />
+                    </div>
 
-                  <button
-                    type="button"
-                    onClick={handleBulkSlideInstantSave}
-                    disabled={savingBulkEdit}
-                    className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 disabled:opacity-60 transition-all active:scale-95"
-                  >
-                    <Save className="w-4 h-4" />
-                    {savingBulkEdit
-                      ? "Kaydediliyor..."
-                      : "Değişikliği Anında Kaydet"}
-                  </button>
-                </aside>
-              )}
+                    <button
+                      type="button"
+                      onClick={handleBulkSlideInstantSave}
+                      disabled={savingBulkEdit}
+                      className="w-full py-2.5 px-4 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-md shadow-emerald-600/20 flex items-center justify-center gap-2 disabled:opacity-60 transition-all active:scale-95"
+                    >
+                      <Save className="w-4 h-4" />
+                      {savingBulkEdit
+                        ? "Kaydediliyor..."
+                        : "Değişikliği Anında Kaydet"}
+                    </button>
+                  </aside>
+                )}
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
+
+      {/* Toplu Önizleme Kapatılırken Slayt Sıralaması Kayıt Onayı */}
+      <ModernConfirmDialog
+        isOpen={isBulkOrderConfirmOpen}
+        onClose={() => setIsBulkOrderConfirmOpen(false)}
+        onConfirm={() => saveBulkPreviewOrder(true)}
+        isLoading={savingBulkOrder}
+        type="question"
+        title="Slayt Sıralaması Kaydedilsin mi?"
+        message="Toplu önizleme sol slayt şeridinde yaptığınız yeni sıralama değişiklikleri kaydedilsin mi?"
+        confirmText="Evet, Kaydet ve Kapat"
+        cancelText="Önizlemeye Dön"
+        secondaryAction={{
+          text: "Kaydetmeden Kapat",
+          onClick: () => {
+            setIsBulkOrderConfirmOpen(false);
+            setBulkPreviewModal(null);
+          },
+          className:
+            "px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-sm font-bold transition-all",
+        }}
+      />
 
       {/* Silme Onayı */}
       <ModernConfirmDialog

@@ -14,7 +14,7 @@ export default function DashboardLayout({
   }).format(new Date());
 
   return (
-    <div className="flex h-screen bg-[#f3f6fb] overflow-hidden print:h-auto print:overflow-visible">
+    <div className="flex h-dvh bg-[#f3f6fb] overflow-hidden print:h-auto print:overflow-visible">
       <a
         href="#main-content"
         className="visually-hidden fixed top-3 left-3 z-[100] px-4 py-2 rounded-xl bg-blue-700 text-white text-sm font-bold shadow-lg"

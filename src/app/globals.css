@@ -44,12 +44,30 @@
 
   html,
   body {
-    overflow-x: hidden;
     max-width: 100%;
+    overflow-wrap: break-word;
     background-color: #f3f6fb;
     color: #0f172a;
     -webkit-font-smoothing: antialiased;
     -moz-osx-font-smoothing: grayscale;
+  }
+
+  h1,
+  h2,
+  h3 {
+    text-wrap: balance;
+  }
+
+  p,
+  li {
+    text-wrap: pretty;
+  }
+
+  html.is-reordering-slides,
+  html.is-reordering-slides * {
+    cursor: grabbing !important;
+    user-select: none !important;
+    -webkit-user-select: none !important;
   }
 
   :where(a:any-link, button, input, select, textarea):focus-visible {

@@ -1466,7 +1466,109 @@ export default function PetitionsPage() {
 
       {/* Dilekçeler Listesi */}
       <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden print:hidden">
-        <div className="overflow-x-auto">
+        {/* Mobil Görünüm: Dilekçe Kartları */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {loading ? (
+            <div className="py-12 text-center text-slate-500 text-sm flex items-center justify-center gap-2">
+              <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+              Dilekçeler yükleniyor...
+            </div>
+          ) : petitions.length === 0 ? (
+            <div className="py-12 text-center text-slate-400 text-sm">
+              Kayıtlı dilekçe bulunamadı.
+            </div>
+          ) : (
+            petitions.map((rec) => {
+              const canDelete =
+                isManager || String(rec.createdBy?._id || "") === String(userId || "");
+              const canEdit = isPetitionEditable(rec);
+              const isBusy = loadingContentId === rec._id;
+
+              return (
+                <div key={`mob-pet-${rec._id}`} className="p-4 space-y-2.5 bg-white">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="text-sm font-extrabold text-slate-900 truncate">
+                        {highlightMatch(rec.citizenName, debouncedSearch)}
+                      </div>
+                      <div className="font-mono text-xs font-bold text-slate-600 mt-0.5">
+                        TC: {highlightMatch(rec.tcNo, debouncedSearch)}
+                      </div>
+                    </div>
+                    {rec.petitionType === "matbu" ? (
+                      <span className="shrink-0 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                        Matbu
+                      </span>
+                    ) : (
+                      <span className="shrink-0 inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                        Detaylı
+                      </span>
+                    )}
+                  </div>
+
+                  {rec.subject && (
+                    <div className="text-xs text-slate-600 line-clamp-2">
+                      {highlightMatch(rec.subject, debouncedSearch)}
+                    </div>
+                  )}
+
+                  <div className="flex items-center justify-between gap-2 text-[11px] text-slate-500">
+                    <span>{rec.createdBy?.name || "-"}</span>
+                    <span className="font-mono">
+                      {new Date(rec.createdAt).toLocaleDateString("tr-TR")}
+                    </span>
+                  </div>
+
+                  <div className="pt-2 border-t border-slate-100 flex items-center justify-between gap-2 flex-wrap">
+                    <div className="flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleOpenPetition(rec, "preview")}
+                        className="px-2.5 py-1.5 rounded-xl bg-slate-100 text-slate-800 text-xs font-bold inline-flex items-center gap-1"
+                      >
+                        <Eye className="w-3.5 h-3.5" /> Görüntüle
+                      </button>
+                      <button
+                        type="button"
+                        disabled={isBusy}
+                        onClick={() => handleOpenPetition(rec, "useAsTemplate")}
+                        className="px-2.5 py-1.5 rounded-xl text-xs font-bold text-emerald-700 bg-emerald-50 border border-emerald-200 inline-flex items-center gap-1"
+                      >
+                        <CopyPlus className="w-3.5 h-3.5" /> Şablon
+                      </button>
+                    </div>
+                    <div className="flex items-center gap-1">
+                      {canEdit && (
+                        <button
+                          type="button"
+                          disabled={isBusy}
+                          onClick={() => handleOpenPetition(rec, "edit")}
+                          aria-label="Düzenle"
+                          className="p-2 rounded-xl text-indigo-600 bg-indigo-50"
+                        >
+                          <Edit3 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                      {canDelete && (
+                        <button
+                          type="button"
+                          onClick={() => handleDeletePetition(rec)}
+                          aria-label="Sil"
+                          className="p-2 rounded-xl text-red-600 bg-red-50"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse text-sm">
             <thead>
               <tr className="bg-slate-50/90 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider">

@@ -1256,7 +1256,93 @@ export default function BabyFoodPage() {
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobil Görünüm: Bebek Maması Teslim Kartları */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {loading ? (
+            <div className="py-10 text-center text-slate-500 text-sm flex items-center justify-center gap-2">
+              <div className="w-5 h-5 border-2 border-pink-500 border-t-transparent rounded-full animate-spin" />
+              Yükleniyor...
+            </div>
+          ) : filteredRecords.length === 0 ? (
+            <div className="py-10 text-center text-slate-400 text-sm">Kayıt bulunamadı.</div>
+          ) : (
+            paginatedRecords.map((record) => {
+              const displayTc = record.tcNo || extractTC(record.motherInfo);
+              const canAct =
+                (userRole === "personnel" && record.createdBy?._id === userId) ||
+                userRole === "superadmin" ||
+                userRole === "manager" ||
+                Boolean((session?.user as any)?.authorizedModules?.includes("babyFood"));
+
+              return (
+                <div key={`mob-bf-${record._id}`} className="p-4 space-y-2.5 bg-white">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm text-slate-900 truncate">
+                        {record.motherInfo}
+                      </div>
+                      {displayTc && (
+                        <span className="inline-block mt-0.5 font-mono text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded-md border border-slate-200">
+                          TC: {displayTc}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-500 shrink-0">
+                      {new Date(record.deliveryDate || record.createdAt).toLocaleDateString("tr-TR")}
+                    </span>
+                  </div>
+
+                  <div className="text-xs text-slate-600 flex flex-wrap gap-x-3 gap-y-1">
+                    <span>
+                      Bebek: <strong className="text-slate-800">{record.babyName}</strong>
+                    </span>
+                    <span>
+                      Teslim Alan:{" "}
+                      <strong className="text-slate-800">{record.receiver || "Kendisi"}</strong>
+                    </span>
+                  </div>
+
+                  <ul className="space-y-1 bg-pink-50/50 border border-pink-100 rounded-xl p-2.5">
+                    {record.items.map((item, idx) => (
+                      <li key={idx} className="text-xs">
+                        <span className="font-bold text-pink-600">{item.quantity}x</span>{" "}
+                        <span className="font-medium text-slate-800">{item.brand}</span>{" "}
+                        <span className="text-slate-600">{item.foodName}</span>{" "}
+                        <span className="text-slate-400">({item.weight})</span>
+                      </li>
+                    ))}
+                  </ul>
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-semibold bg-blue-50 text-blue-700 border border-blue-100">
+                      {record.createdBy?.name || "Bilinmiyor"}
+                    </span>
+                    {canAct && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => openEditModal(record)}
+                          aria-label="Düzenle"
+                          className="p-2 text-blue-600 bg-blue-50 rounded-xl"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(record._id)}
+                          aria-label="Sil"
+                          className="p-2 text-red-600 bg-red-50 rounded-xl"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse text-sm">
             <thead>
               <tr className="bg-slate-50/70 border-b border-slate-100">

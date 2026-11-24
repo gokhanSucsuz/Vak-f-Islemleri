@@ -1076,7 +1076,86 @@ export default function InKindAidPage() {
           </span>
         </div>
 
-        <div className="overflow-x-auto">
+        {/* Mobil Görünüm: Ayni Yardım Teslim Kartları */}
+        <div className="md:hidden divide-y divide-slate-100 print:hidden">
+          {loading ? (
+            <div className="py-10 text-center text-slate-500 text-sm flex items-center justify-center gap-2">
+              <div className="w-5 h-5 border-2 border-amber-500 border-t-transparent rounded-full animate-spin" />
+              Yükleniyor...
+            </div>
+          ) : filteredRecords.length === 0 ? (
+            <div className="py-10 text-center text-slate-500 text-sm">Kayıt bulunamadı.</div>
+          ) : (
+            paginatedRecords.map((record) => {
+              const displayTc = record.tcNo || extractTC(record.citizenName);
+              const canAct =
+                (userRole === "personnel" && record.createdBy?._id === userId) ||
+                userRole === "superadmin" ||
+                userRole === "manager" ||
+                Boolean((session?.user as any)?.authorizedModules?.includes("inKindAid"));
+
+              return (
+                <div key={`mob-ik-${record._id}`} className="p-4 space-y-2.5 bg-white">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="min-w-0">
+                      <div className="font-bold text-sm text-slate-900 truncate">
+                        {record.citizenName}
+                      </div>
+                      {displayTc && (
+                        <span className="inline-block mt-0.5 font-mono text-xs bg-slate-100 text-slate-700 px-2 py-0.5 rounded border border-slate-200">
+                          TC: {displayTc}
+                        </span>
+                      )}
+                    </div>
+                    <span className="text-[11px] font-mono text-slate-500 shrink-0">
+                      {new Date(record.deliveryDate || record.createdAt).toLocaleDateString("tr-TR")}
+                    </span>
+                  </div>
+
+                  <ul className="space-y-1 bg-amber-50/50 border border-amber-100 rounded-xl p-2.5">
+                    {record.items.map((item, idx) => (
+                      <li key={idx} className="text-xs">
+                        <span className="font-bold text-slate-800">
+                          {item.quantity} {item.unit}
+                        </span>{" "}
+                        <span className="text-amber-800 font-semibold">{item.aidType}</span>
+                        {item.specification && (
+                          <span className="text-slate-500 ml-1">({item.specification})</span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-[11px] font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                      {record.createdBy?.name || "Bilinmiyor"}
+                    </span>
+                    {canAct && (
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => openEditModal(record)}
+                          aria-label="Düzenle"
+                          className="p-2 text-blue-600 bg-blue-50 rounded-xl"
+                        >
+                          <Edit2 className="w-3.5 h-3.5" />
+                        </button>
+                        <button
+                          onClick={() => handleDelete(record._id)}
+                          aria-label="Sil"
+                          className="p-2 text-red-600 bg-red-50 rounded-xl"
+                        >
+                          <Trash2 className="w-3.5 h-3.5" />
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          )}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left border-collapse">
             <thead>
               <tr className="bg-slate-50/50">

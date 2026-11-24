@@ -199,7 +199,47 @@ export default function LogsPage() {
           </span>
         </div>
         
-        <div className="overflow-x-auto">
+        {/* Mobil Görünüm: Denetim Kaydı Kartları */}
+        <div className="md:hidden divide-y divide-slate-100">
+          {loading ? (
+            <div className="py-8 text-center text-slate-500 text-sm">Yükleniyor...</div>
+          ) : logs.length === 0 ? (
+            <div className="py-8 px-4 text-center text-slate-500 text-sm">
+              Belirtilen tarihte veya filtrede kayıt bulunamadı.
+            </div>
+          ) : (
+            paginatedLogs.map((log: any) => (
+              <div key={`mob-${log._id}`} className="p-4 space-y-2 bg-white">
+                <div className="flex items-center justify-between gap-2 flex-wrap">
+                  <span className="text-xs font-bold text-slate-800">
+                    {log.userId?.name || "Bilinmiyor"}
+                  </span>
+                  <span className="text-[11px] font-mono text-slate-500">
+                    {format(new Date(log.createdAt), "dd.MM.yyyy HH:mm:ss")}
+                  </span>
+                </div>
+                <div>
+                  <span
+                    className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${
+                      log.action.includes("Sildi")
+                        ? "bg-red-100 text-red-800"
+                        : log.action.includes("Eklendi")
+                          ? "bg-green-100 text-green-800"
+                          : log.action.includes("Düzenlendi")
+                            ? "bg-yellow-100 text-yellow-800"
+                            : "bg-blue-100 text-blue-800"
+                    }`}
+                  >
+                    {log.action}
+                  </span>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">{log.details}</p>
+              </div>
+            ))
+          )}
+        </div>
+
+        <div className="hidden md:block overflow-x-auto">
           <table className="w-full text-left">
             <thead>
               <tr className="bg-slate-50">
@@ -222,7 +262,7 @@ export default function LogsPage() {
                 paginatedLogs.map((log: any) => (
                   <tr key={log._id} className="even:bg-slate-50/70 odd:bg-white hover:bg-slate-100 transition-colors">
                     <td className="py-3 px-6 text-sm text-slate-500 whitespace-nowrap border-t border-slate-100">
-                      {format(new Date(log.createdAt), "dd/MM/yyyy HH:mm:ss")}
+                      {format(new Date(log.createdAt), "dd.MM.yyyy HH:mm:ss")}
                     </td>
                     <td className="py-3 px-6 text-sm font-medium text-slate-800 border-t border-slate-100">
                       {log.userId?.name || "Bilinmiyor"}
