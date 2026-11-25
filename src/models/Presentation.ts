@@ -16,6 +16,7 @@ export interface ISlideData {
   descBottomPct?: number; // Açıklama kutusu alt konumu % (72..97.5)
   photoWidthPct?: number; // Fotoğraf alanı genişliği % (20..52)
   photoHeightPct?: number; // Fotoğraf alanı yüksekliği % (22..44)
+  photoLeftPct?: number; // Fotoğraf yatay konumu (sağa-sola kaydırma) % (0..30)
   photoFitMode?: "contain" | "cover" | "fill"; // En-boy oranı modu
   templateId?: string; // Seçilen şablon ID
   backgroundPreset?: string; // Opsiyonel kurum arka plan teması ("template" veya preset ID)

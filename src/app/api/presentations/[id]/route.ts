@@ -173,6 +173,7 @@ export async function PUT(
       descBottomPct: Math.min(97.5, Math.max(72, Number(s.descBottomPct ?? 96.5))),
       photoWidthPct: Math.min(52, Math.max(20, Number(s.photoWidthPct ?? 41))),
       photoHeightPct: Math.min(44, Math.max(22, Number(s.photoHeightPct ?? 41.6))),
+      photoLeftPct: Math.min(30, Math.max(0, Number(s.photoLeftPct ?? 3.2))),
       photoFitMode:
         s.photoFitMode === "fill" || s.photoFitMode === "cover"
           ? s.photoFitMode

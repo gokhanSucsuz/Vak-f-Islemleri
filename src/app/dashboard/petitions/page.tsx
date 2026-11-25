@@ -132,6 +132,7 @@ export default function PetitionsPage() {
     title: "",
   });
   const [saving, setSaving] = useState(false);
+  const [saveSuccess, setSaveSuccess] = useState(false);
   const editorRef = useRef<HTMLDivElement>(null);
 
   // Preview Modal State
@@ -606,8 +607,7 @@ export default function PetitionsPage() {
     const tpl = templates[type];
     if (!tpl) {
       toast.error(
-        `${
-          type === "detayli" ? "Detaylı Dilekçe" : "Matbu Dilekçe"
+        `${type === "detayli" ? "Detaylı Dilekçe" : "Matbu Dilekçe"
         } şablonu henüz yönetici tarafından yüklenmemiş.`
       );
       if (isManager) setIsTemplateModalOpen(true);
@@ -740,8 +740,7 @@ export default function PetitionsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Varsayılan şablon güncellenemedi");
       toast.success(
-        `"${rec.citizenName}" dilekçesi ${
-          rec.petitionType === "matbu" ? "Matbu" : "Detaylı"
+        `"${rec.citizenName}" dilekçesi ${rec.petitionType === "matbu" ? "Matbu" : "Detaylı"
         } varsayılan şablonu olarak kaydedildi.`
       );
       await fetchTemplates();
@@ -925,11 +924,10 @@ export default function PetitionsPage() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Dilekçe kaydedilemedi");
 
-      toast.success(
-        editingId
-          ? "Dilekçe başarıyla güncellendi."
-          : "Dilekçe sisteme kaydedildi. Yazdırabilir veya Word olarak indirebilirsiniz."
-      );
+      // Dilekçe üzerinde uyarı/bilgi balonu çıkmaması için toast kapatıldı; bildirim buton üzerinde gösterilir
+      toast.dismiss();
+      setSaveSuccess(true);
+      setTimeout(() => setSaveSuccess(false), 2500);
       if (data?.petition?._id && !editingId) {
         setEditingId(data.petition._id);
       }
@@ -1030,11 +1028,10 @@ export default function PetitionsPage() {
                     {editingId ? "Dilekçeyi Düzenle" : "Yeni Dilekçe Hazırla"}
                   </h2>
                   <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold ${
-                      editorType === "matbu"
+                    className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold ${editorType === "matbu"
                         ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
                         : "bg-indigo-100 text-indigo-800 border border-indigo-200"
-                    }`}
+                      }`}
                   >
                     {editorType === "matbu" ? "Matbu Dilekçe" : "Detaylı Dilekçe"}
                   </span>
@@ -1057,9 +1054,8 @@ export default function PetitionsPage() {
                 onClick={handlePrintCurrent}
                 disabled={!editingId}
                 title={!editingId ? "Önce dilekçeyi sisteme kaydedin" : "Yazdır / PDF"}
-                className={`px-4 py-2.5 rounded-xl bg-slate-800 text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm ${
-                  !editingId ? "opacity-45 cursor-not-allowed" : "hover:bg-slate-900"
-                }`}
+                className={`px-4 py-2.5 rounded-xl bg-slate-800 text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm ${!editingId ? "opacity-45 cursor-not-allowed" : "hover:bg-slate-900"
+                  }`}
               >
                 <Printer className="w-4 h-4" />
                 Yazdır / PDF
@@ -1069,9 +1065,8 @@ export default function PetitionsPage() {
                 onClick={handleDownloadEditorDocx}
                 disabled={!editingId}
                 title={!editingId ? "Önce dilekçeyi sisteme kaydedin" : "Word (.docx) İndir"}
-                className={`px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm ${
-                  !editingId ? "opacity-45 cursor-not-allowed" : "hover:bg-indigo-700"
-                }`}
+                className={`px-4 py-2.5 rounded-xl bg-indigo-600 text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-sm ${!editingId ? "opacity-45 cursor-not-allowed" : "hover:bg-indigo-700"
+                  }`}
               >
                 <Download className="w-4 h-4" />
                 Word (.docx) İndir
@@ -1080,10 +1075,23 @@ export default function PetitionsPage() {
                 type="button"
                 disabled={saving}
                 onClick={handleSavePetition}
-                className="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-blue-600/25 disabled:opacity-50"
+                className={`px-5 py-2.5 rounded-xl text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-lg disabled:opacity-50 ${
+                  saveSuccess
+                    ? "bg-emerald-600 hover:bg-emerald-700 shadow-emerald-600/30"
+                    : "bg-blue-600 hover:bg-blue-700 shadow-blue-600/25"
+                }`}
               >
-                <Save className="w-4 h-4" />
-                {saving ? "Kaydediliyor..." : editingId ? "Değişiklikleri Kaydet" : "Sisteme Kaydet"}
+                {saveSuccess ? (
+                  <>
+                    <CheckCircle2 className="w-4 h-4 text-white" />
+                    Kaydedildi!
+                  </>
+                ) : (
+                  <>
+                    <Save className="w-4 h-4" />
+                    {saving ? "Kaydediliyor..." : editingId ? "Değişiklikleri Kaydet" : "Sisteme Kaydet"}
+                  </>
+                )}
               </button>
             </div>
           </div>
@@ -1300,11 +1308,10 @@ export default function PetitionsPage() {
                 ref={editorRef}
                 contentEditable
                 suppressContentEditableWarning
-                className={`w-full min-h-[225mm] print:min-h-0 text-slate-900 text-[13.5px] leading-snug focus:outline-none [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:m-0 [&_p]:leading-snug [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${
-                  editorType === "matbu"
+                className={`w-full min-h-[225mm] print:min-h-0 text-slate-900 text-[13.5px] leading-snug focus:outline-none [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:m-0 [&_p]:leading-snug [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${editorType === "matbu"
                     ? "[&_td]:!border-0 [&_th]:!border-0"
                     : "[&_td]:border [&_td]:border-black [&_th]:border [&_th]:border-black"
-                }`}
+                  }`}
               />
             </div>
 
@@ -1468,11 +1475,10 @@ export default function PetitionsPage() {
                 setTypeFilter("all");
                 setPage(1);
               }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                typeFilter === "all"
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${typeFilter === "all"
                   ? "bg-white text-blue-600 shadow-sm"
                   : "text-slate-600 hover:text-slate-900"
-              }`}
+                }`}
             >
               Tümü ({stats.totalCount})
             </button>
@@ -1482,11 +1488,10 @@ export default function PetitionsPage() {
                 setTypeFilter("detayli");
                 setPage(1);
               }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                typeFilter === "detayli"
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${typeFilter === "detayli"
                   ? "bg-white text-indigo-600 shadow-sm"
                   : "text-slate-600 hover:text-slate-900"
-              }`}
+                }`}
             >
               Detaylı ({stats.detayliCount})
             </button>
@@ -1496,11 +1501,10 @@ export default function PetitionsPage() {
                 setTypeFilter("matbu");
                 setPage(1);
               }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${
-                typeFilter === "matbu"
+              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${typeFilter === "matbu"
                   ? "bg-white text-emerald-600 shadow-sm"
                   : "text-slate-600 hover:text-slate-900"
-              }`}
+                }`}
             >
               Matbu ({stats.matbuCount})
             </button>
@@ -1868,8 +1872,8 @@ export default function PetitionsPage() {
                   {uploadingType === "detayli"
                     ? "Yükleniyor..."
                     : templates.detayli
-                    ? "Şablonu Değiştir (.docx)"
-                    : "Şablon Yükle (.docx)"}
+                      ? "Şablonu Değiştir (.docx)"
+                      : "Şablon Yükle (.docx)"}
                 </button>
               </div>
 
@@ -1905,8 +1909,8 @@ export default function PetitionsPage() {
                   {uploadingType === "matbu"
                     ? "Yükleniyor..."
                     : templates.matbu
-                    ? "Şablonu Değiştir (.docx)"
-                    : "Şablon Yükle (.docx)"}
+                      ? "Şablonu Değiştir (.docx)"
+                      : "Şablon Yükle (.docx)"}
                 </button>
               </div>
             </div>
@@ -1931,11 +1935,10 @@ export default function PetitionsPage() {
                     {previewPetition.citizenName}
                   </h3>
                   <span
-                    className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold ${
-                      previewPetition.petitionType === "matbu"
+                    className={`px-2.5 py-0.5 rounded-full text-xs font-extrabold ${previewPetition.petitionType === "matbu"
                         ? "bg-emerald-100 text-emerald-800"
                         : "bg-indigo-100 text-indigo-800"
-                    }`}
+                      }`}
                   >
                     {previewPetition.petitionType === "matbu" ? "Matbu" : "Detaylı"}
                   </span>
@@ -2064,11 +2067,10 @@ export default function PetitionsPage() {
                     />
                   </div>
                   <div
-                    className={`text-slate-900 text-[13.5px] leading-snug [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:m-0 [&_p]:leading-snug [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${
-                      previewPetition.petitionType === "matbu"
+                    className={`text-slate-900 text-[13.5px] leading-snug [&_h1]:text-xl [&_h1]:font-bold [&_h1]:mb-2 [&_h2]:text-lg [&_h2]:font-bold [&_h2]:mb-2 [&_p]:m-0 [&_p]:leading-snug [&_table]:w-full [&_table]:border-collapse [&_tr]:!h-auto [&_td]:!py-1.5 [&_td]:!px-2.5 [&_td]:!align-middle [&_td_p]:!m-0 [&_td_p]:!leading-snug [&_th]:!py-1.5 [&_th]:!px-2.5 [&_th]:!align-middle [&_ul]:list-disc [&_ul]:pl-6 [&_ol]:list-decimal [&_ol]:pl-6 ${previewPetition.petitionType === "matbu"
                         ? "[&_td]:!border-0 [&_th]:!border-0"
                         : "[&_td]:border [&_td]:border-black [&_th]:border [&_th]:border-black"
-                    }`}
+                      }`}
                     dangerouslySetInnerHTML={{ __html: previewPetition.htmlContent }}
                   />
                 </div>

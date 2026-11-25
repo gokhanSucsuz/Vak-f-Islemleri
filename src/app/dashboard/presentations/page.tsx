@@ -27,6 +27,7 @@ import {
   Sparkles,
   Type,
   MoveVertical,
+  MoveHorizontal,
   Bold,
   Italic,
   Underline,
@@ -122,6 +123,7 @@ function emptySlide(defaultTemplateId?: string): SlideItem {
     descBottomPct: 96.5,
     photoWidthPct: 41,
     photoHeightPct: 41.6,
+    photoLeftPct: 3.2,
     photoFitMode: "contain",
     templateId: defaultTemplateId || undefined,
     backgroundPreset: "template",
@@ -405,11 +407,12 @@ function SlidePreviewCard({
 
   const photoW = Math.min(52, Math.max(20, slide.photoWidthPct ?? 41));
   const photoH = Math.min(44, Math.max(22, slide.photoHeightPct ?? 41.6));
+  const photoLeft = Math.min(30, Math.max(0, slide.photoLeftPct ?? 3.2));
   const fitMode = slide.photoFitMode || "contain";
 
   const titleLeftPct =
     layout.mode === "classic"
-      ? Math.max(layout.titleBox?.xPct ?? 47.5, 3.2 + photoW + 2.5)
+      ? Math.max(layout.titleBox?.xPct ?? 47.5, photoLeft + photoW + 2.5)
       : layout.titleBox?.xPct ?? 19;
   const titleWidthPct =
     layout.mode === "classic"
@@ -543,7 +546,7 @@ function SlidePreviewCard({
         <div
           style={
             layout.mode === "classic"
-              ? { left: "3.2%", top: "2.4%", width: `${photoW}%`, height: `${photoH}%` }
+              ? { left: `${photoLeft}%`, top: "2.4%", width: `${photoW}%`, height: `${photoH}%` }
               : {
                   left: `${optionalPhotoArea.xPct}%`,
                   top: `${optionalPhotoArea.yPct}%`,
@@ -2291,6 +2294,7 @@ export default function PresentationsPage() {
     const currentBottom = activeSlide.descBottomPct ?? 96.5;
     const currentPhotoW = activeSlide.photoWidthPct ?? 41;
     const currentPhotoH = activeSlide.photoHeightPct ?? 41.6;
+    const currentPhotoLeft = activeSlide.photoLeftPct ?? 3.2;
     const currentFit = activeSlide.photoFitMode || "contain";
 
     return (
@@ -2628,7 +2632,7 @@ export default function PresentationsPage() {
                     </div>
                   </div>
                   {isClassic && (
-                    <div className="grid grid-cols-2 gap-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       <div>
                         <label className="text-[11px] font-semibold text-slate-600 flex justify-between mb-1">
                           <span>Genişlik</span>
@@ -2659,6 +2663,26 @@ export default function PresentationsPage() {
                           value={currentPhotoH}
                           onChange={(e) =>
                             updateCurrentSlide({ photoHeightPct: Number(e.target.value) })
+                          }
+                          className="w-full accent-blue-600"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-[11px] font-semibold text-slate-600 flex justify-between mb-1">
+                          <span className="flex items-center gap-1">
+                            <MoveHorizontal className="w-3 h-3 text-slate-500" />
+                            Sağa / Sola Kaydır
+                          </span>
+                          <span>%{currentPhotoLeft.toFixed(1)}</span>
+                        </label>
+                        <input
+                          type="range"
+                          min={0}
+                          max={25}
+                          step={0.5}
+                          value={currentPhotoLeft}
+                          onChange={(e) =>
+                            updateCurrentSlide({ photoLeftPct: Number(e.target.value) })
                           }
                           className="w-full accent-blue-600"
                         />

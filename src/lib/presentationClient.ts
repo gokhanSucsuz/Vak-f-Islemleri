@@ -108,6 +108,7 @@ export interface SlideItem {
   descBottomPct?: number;
   photoWidthPct?: number;
   photoHeightPct?: number;
+  photoLeftPct?: number;
   photoFitMode?: "contain" | "cover" | "fill";
   templateId?: string;
   backgroundPreset?: string;
@@ -607,7 +608,8 @@ export async function exportSlidesToPptx(params: {
         : { xPct: 3, yPct: 4, wPct: 94, hPct: 92 };
       const wPct = isClassic ? Math.min(52, Math.max(20, item.photoWidthPct ?? slot.wPct)) : slot.wPct;
       const hPct = isClassic ? Math.min(44, Math.max(22, item.photoHeightPct ?? slot.hPct)) : slot.hPct;
-      const areaX = (slot.xPct / 100) * slideW;
+      const lPct = isClassic ? Math.min(30, Math.max(0, item.photoLeftPct ?? slot.xPct)) : slot.xPct;
+      const areaX = (lPct / 100) * slideW;
       const areaY = (slot.yPct / 100) * slideH;
       const areaW = (wPct / 100) * slideW;
       const areaH = (hPct / 100) * slideH;
@@ -721,7 +723,8 @@ export async function exportSlidesToPptx(params: {
       let boxW = (tb.wPct / 100) * slideW;
       if (layout.mode === "classic") {
         const wPct = Math.min(52, Math.max(20, item.photoWidthPct ?? 41));
-        const areaX = 0.32 * sx;
+        const lPct = Math.min(30, Math.max(0, item.photoLeftPct ?? 3.2));
+        const areaX = (lPct / 100) * slideW;
         const areaW = (wPct / 100) * slideW;
         boxX = Math.max(boxX, areaX + areaW + 0.25 * sx);
         boxW = Math.min(boxW, slideW - boxX - 0.32 * sx);
