@@ -224,3 +224,23 @@
     transition-duration: 0.01ms !important;
   }
 }
+
+@media print {
+  /* Yazdırma sırasında bildirim baloncukları, uyarı yazıları, toast pencereleri ve arayüz elemanlarını tamamen gizle */
+  #react-hot-toast,
+  .toaster,
+  [data-toaster-wrapper],
+  [data-hot-toast],
+  div[role="status"],
+  div[aria-live="polite"],
+  div[aria-live="assertive"],
+  body > div[style*="fixed"],
+  body > div[style*="position: fixed"],
+  .print\:hidden,
+  [class*="print:hidden"] {
+    display: none !important;
+    visibility: hidden !important;
+    opacity: 0 !important;
+    pointer-events: none !important;
+  }
+}

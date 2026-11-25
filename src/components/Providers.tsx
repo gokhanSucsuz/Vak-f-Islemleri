@@ -9,7 +9,9 @@ export default function Providers({ children }: { children: React.ReactNode }) {
       {children}
       <Toaster
         position="top-right"
+        containerClassName="print:!hidden print:hidden"
         toastOptions={{
+          className: "print:!hidden",
           duration: 3500,
           style: {
             borderRadius: "14px",

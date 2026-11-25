@@ -286,15 +286,15 @@ function renderTable(tblNode: XmlNode): string {
 
 function alignEdirneHeader(html: string): string {
   // "SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞINA" + altındaki "EDİRNE" ifadesini
-  // BAŞKANLIĞINA kelimesinin en sağına hizalar.
+  // BAŞKANLIĞINA kelimesinin en sağına hizalar, alttan ve üstten 1 satır boşluk (12pt) bırakır.
   return html.replace(
     /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<\/p>\s*<p[^>]*>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
     (_m, titleText, cityText) =>
-      `<div style="width:fit-content;margin:0 auto 1pt auto;text-align:center;line-height:1.2;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+      `<div data-matbu-title="true" style="width:fit-content;margin:12pt auto 12pt auto;text-align:center;line-height:1.2;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
   ).replace(
     /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<br\s*\/?>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
     (_m, titleText, cityText) =>
-      `<div style="width:fit-content;margin:0 auto 1pt auto;text-align:center;line-height:1.2;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+      `<div data-matbu-title="true" style="width:fit-content;margin:12pt auto 12pt auto;text-align:center;line-height:1.2;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
   );
 }
 

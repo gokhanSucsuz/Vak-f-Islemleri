@@ -251,7 +251,7 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
                     children: [
                       new Paragraph({
                         alignment: AlignmentType.CENTER,
-                        spacing: { after: 20 },
+                        spacing: { before: 240, after: 20 },
                         children: [
                           new TextRun({
                             text: "SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞINA",
@@ -305,6 +305,10 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
 
       const isPetitionIntro = /muhtaçlığım\s+nedeniyle/i.test(rawUpper);
       const isBilgilerinizeArz = /bilgilerinize\s+arz\s+ederim/i.test(rawUpper);
+      const isMatbuTitle =
+        el.getAttribute("data-matbu-title") === "true" ||
+        ((rawUpper.includes("SOSYAL YARDIMLAŞMA") || rawUpper.includes("BAŞKANLIĞINA")) &&
+          (rawUpper.includes("EDİRNE") || rawUpper.includes("VAKFI")));
       const marginBefore = cssLengthToTwips(el.style.marginTop);
       const marginAfter = cssLengthToTwips(el.style.marginBottom);
       const introRaw = (el.textContent || "").trim();
@@ -331,6 +335,11 @@ function htmlToDocxChildren(html: string): Array<Paragraph | Table> {
           children: runs.length ? runs : [new TextRun("")],
           spacing: isPetitionIntro
             ? { before: 240, after: 240 }
+            : isMatbuTitle
+            ? {
+                before: Math.max(marginBefore || 0, 240),
+                after: Math.max(marginAfter || 0, 240),
+              }
             : isBilgilerinizeArz
             ? {
                 ...(marginBefore ? { before: marginBefore } : {}),

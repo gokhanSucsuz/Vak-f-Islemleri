@@ -159,6 +159,15 @@ export default function PetitionsPage() {
     return () => clearTimeout(t);
   }, [searchTerm]);
 
+  // Yazdırma işlemi öncesinde ekrandaki tüm bildirim/bilgi balonlarını temizle
+  useEffect(() => {
+    const handleBeforePrint = () => {
+      toast.dismiss();
+    };
+    window.addEventListener("beforeprint", handleBeforePrint);
+    return () => window.removeEventListener("beforeprint", handleBeforePrint);
+  }, []);
+
   const fetchTemplates = useCallback(async () => {
     try {
       const res = await fetch("/api/petitions/templates");
@@ -428,15 +437,22 @@ export default function PetitionsPage() {
       }
 
       if (type === "matbu") {
-        // Matbu dilekçe: başlık ortalı, logodan 2 satır aşağıda (24pt), başlıktan sonra 1 satır boşluk (12pt)
-        doc.querySelectorAll<HTMLElement>("div").forEach((div) => {
+        // Matbu dilekçe: başlık ortalı, alttan ve üstten tam 1 satır boşluk (12pt)
+        doc.querySelectorAll<HTMLElement>("div, p, h1, h2, h3").forEach((div) => {
           const t = (div.textContent || "").toLocaleUpperCase("tr-TR");
           if (
-            t.includes("SOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI BAŞKANLIĞINA") &&
-            t.includes("EDİRNE") &&
-            div.style.width === "fit-content"
+            (t.includes("SOSYAL YARDIMLAŞMA VE DAYANIŞMA") || t.includes("BAŞKANLIĞINA")) &&
+            (t.includes("EDİRNE") || t.includes("VAKFI")) &&
+            !div.querySelector("table")
           ) {
-            div.style.margin = "24pt auto 12pt auto";
+            if (div.parentElement && div.parentElement.getAttribute("data-matbu-title") === "true") {
+              return;
+            }
+            div.style.marginTop = "12pt";
+            div.style.marginBottom = "12pt";
+            div.style.marginLeft = "auto";
+            div.style.marginRight = "auto";
+            div.setAttribute("data-matbu-title", "true");
           }
         });
 
@@ -534,13 +550,24 @@ export default function PetitionsPage() {
             el.remove();
             return;
           }
-          if (el.tagName === "P") {
+          const rawUpper = rawCheck.toLocaleUpperCase("tr-TR");
+          const isTitleElement =
+            el.hasAttribute("data-matbu-title") ||
+            el.style.width === "fit-content" ||
+            ((rawUpper.includes("SOSYAL YARDIMLAŞMA VE DAYANIŞMA") || rawUpper.includes("BAŞKANLIĞINA")) &&
+              (rawUpper.includes("EDİRNE") || rawUpper.includes("VAKFI")));
+
+          if (isTitleElement) {
+            el.style.marginTop = "12pt";
+            el.style.marginBottom = "12pt";
+            el.style.marginLeft = "auto";
+            el.style.marginRight = "auto";
+            el.style.lineHeight = "1.2";
+            el.setAttribute("data-matbu-title", "true");
+          } else if (el.tagName === "P") {
             el.style.marginTop = "0";
             el.style.marginBottom = "0";
             el.style.lineHeight = "1.25";
-          } else if (el.style.width === "fit-content") {
-            el.style.margin = "0 auto 1pt auto";
-            el.style.lineHeight = "1.2";
           }
         }
 
@@ -595,12 +622,12 @@ export default function PetitionsPage() {
         .replace(
           /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<\/p>\s*<p[^>]*>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
           (_m, titleText, cityText) =>
-            `<div style="width:fit-content;margin:0 auto 1pt auto;text-align:center;line-height:1.2;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+            `<div data-matbu-title="true" style="width:fit-content;margin:12pt auto 12pt auto;text-align:center;line-height:1.2;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
         )
         .replace(
           /<p[^>]*>[\s\S]*?(SOSYAL\s+YARDIMLAŞMA\s+VE\s+DAYANIŞMA\s+VAKFI\s+BAŞKANLIĞINA)[\s\S]*?<br\s*\/?>[\s\S]*?(EDİRNE)[\s\S]*?<\/p>/i,
           (_m, titleText, cityText) =>
-            `<div style="width:fit-content;margin:0 auto 1pt auto;text-align:center;line-height:1.2;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
+            `<div data-matbu-title="true" style="width:fit-content;margin:12pt auto 12pt auto;text-align:center;line-height:1.2;"><div style="font-weight:bold;">${titleText.trim()}</div><div style="text-align:right;font-weight:bold;">${cityText.trim()}</div></div>`
         );
       filledHtml = normalizePetitionTableHtml(filledHtml, type);
     } else if (type === "matbu") {
@@ -952,7 +979,11 @@ export default function PetitionsPage() {
       toast.error("Yazdırmak için önce dilekçeyi sisteme kaydedin.");
       return;
     }
-    window.print();
+    // Yazdırma öncesi ekrandaki tüm bildirim/bilgi balonlarını anında kapat
+    toast.dismiss();
+    setTimeout(() => {
+      window.print();
+    }, 60);
   };
 
   const handleDownloadEditorDocx = async () => {
@@ -1220,8 +1251,39 @@ export default function PetitionsPage() {
           </div>
         </div>
 
-        {/* Yazdırmada tarayıcı üst/alt bilgi (tarih, başlık, site linki), sağa taşma ve fazladan boş sayfa engellenir */}
-        <style>{`@media print { @page { size: A4 portrait; margin: 0; } html, body { background: #fff !important; width: 210mm !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; } body * { min-height: 0 !important; } }`}</style>
+        {/* Yazdırmada tarayıcı üst/alt bilgi (tarih, başlık, site linki), bildirim balonları, sağa taşma ve fazladan boş sayfa engellenir */}
+        <style>{`@media print {
+          @page { size: A4 portrait; margin: 0; }
+          html, body {
+            background: #fff !important;
+            width: 210mm !important;
+            height: auto !important;
+            min-height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+          }
+          body * { min-height: 0 !important; }
+          #react-hot-toast,
+          .toaster,
+          [data-toaster-wrapper],
+          [data-hot-toast],
+          div[role="status"],
+          div[aria-live="polite"],
+          div[aria-live="assertive"],
+          body > div[style*="fixed"],
+          body > div[style*="position: fixed"] {
+            display: none !important;
+            visibility: hidden !important;
+            opacity: 0 !important;
+          }
+          [data-matbu-title],
+          div[style*="fit-content"] {
+            margin-top: 12pt !important;
+            margin-bottom: 12pt !important;
+            margin-left: auto !important;
+            margin-right: auto !important;
+          }
+        }`}</style>
 
         {/* A4 Word Kağıt Alanı */}
         <div className="bg-slate-200/70 p-2 sm:p-8 rounded-3xl overflow-x-auto print:bg-white print:p-0 print:overflow-visible">
@@ -1960,7 +2022,38 @@ export default function PetitionsPage() {
             </div>
 
             <div className="flex-1 overflow-y-auto overflow-x-auto bg-slate-100 p-2 sm:p-8 rounded-2xl mt-4 print:bg-white print:p-0 print:mt-0 print:overflow-visible">
-              <style>{`@media print { @page { size: A4 portrait; margin: 0; } html, body { background: #fff !important; width: 210mm !important; height: auto !important; min-height: 0 !important; margin: 0 !important; padding: 0 !important; } body * { min-height: 0 !important; } }`}</style>
+              <style>{`@media print {
+                @page { size: A4 portrait; margin: 0; }
+                html, body {
+                  background: #fff !important;
+                  width: 210mm !important;
+                  height: auto !important;
+                  min-height: 0 !important;
+                  margin: 0 !important;
+                  padding: 0 !important;
+                }
+                body * { min-height: 0 !important; }
+                #react-hot-toast,
+                .toaster,
+                [data-toaster-wrapper],
+                [data-hot-toast],
+                div[role="status"],
+                div[aria-live="polite"],
+                div[aria-live="assertive"],
+                body > div[style*="fixed"],
+                body > div[style*="position: fixed"] {
+                  display: none !important;
+                  visibility: hidden !important;
+                  opacity: 0 !important;
+                }
+                [data-matbu-title],
+                div[style*="fit-content"] {
+                  margin-top: 12pt !important;
+                  margin-bottom: 12pt !important;
+                  margin-left: auto !important;
+                  margin-right: auto !important;
+                }
+              }`}</style>
               <div className="w-[210mm] min-h-[260mm] print:w-[210mm] print:max-w-[210mm] print:h-[296mm] print:min-h-[296mm] print:box-border mx-auto bg-white shadow-md border border-slate-200 px-10 py-8 sm:px-14 sm:py-10 text-slate-900 print:shadow-none print:border-none print:px-[14mm] print:py-[12mm] flex flex-col justify-between">
                 <div>
                   <div className="flex justify-center mb-3">
