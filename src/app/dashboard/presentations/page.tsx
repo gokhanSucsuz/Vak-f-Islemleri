@@ -36,9 +36,12 @@ import {
   LayoutGrid,
   List,
   GripVertical,
+  Crop,
+  Scissors,
 } from "lucide-react";
 import ModernConfirmDialog from "@/components/ModernConfirmDialog";
 import PaginationControls from "@/components/PaginationControls";
+import PhotoCropModal from "@/components/PhotoCropModal";
 import {
   SlideItem,
   PresentationTemplateClient,
@@ -1138,6 +1141,15 @@ export default function PresentationsPage() {
   const [saving, setSaving] = useState(false);
   const [compressingPhotos, setCompressingPhotos] = useState(false);
 
+  // Fotoğraf Kırpma / Kesme Modalı State
+  const [cropModal, setCropModal] = useState<{
+    isOpen: boolean;
+    photoIdx: number;
+  }>({
+    isOpen: false,
+    photoIdx: 0,
+  });
+
   // Önizleme Modalı (Tekil)
   const [previewRecord, setPreviewRecord] = useState<{
     item: PresentationListItem;
@@ -1628,6 +1640,35 @@ export default function PresentationsPage() {
       setCompressingPhotos(false);
       e.target.value = "";
     }
+  };
+
+  const handleOpenCropModal = (idx = 0) => {
+    const current = slides[activeSlideIdx];
+    if (!current?.photos || current.photos.length === 0) {
+      toast.error("Kırpılacak fotoğraf bulunamadı. Lütfen önce bir fotoğraf yükleyin.");
+      return;
+    }
+    const safeIdx = Math.max(0, Math.min(current.photos.length - 1, idx));
+    setCropModal({
+      isOpen: true,
+      photoIdx: safeIdx,
+    });
+  };
+
+  const handleApplyCroppedPhoto = (croppedBase64: string, targetIdx: number) => {
+    setSlides((prev) =>
+      prev.map((s, sIdx) => {
+        if (sIdx !== activeSlideIdx) return s;
+        const nextPhotos = [...s.photos];
+        if (targetIdx >= 0 && targetIdx < nextPhotos.length) {
+          nextPhotos[targetIdx] = croppedBase64;
+        } else {
+          nextPhotos[0] = croppedBase64;
+        }
+        return { ...s, photos: nextPhotos };
+      })
+    );
+    toast.success("Fotoğraf başarıyla kırpıldı ve güncellendi.");
   };
 
   const updateCurrentSlide = (patch: Partial<SlideItem>) => {
@@ -2587,6 +2628,14 @@ export default function PresentationsPage() {
                         />
                         <button
                           type="button"
+                          onClick={() => handleOpenCropModal(idx)}
+                          className="absolute top-1 left-1 p-1 rounded-full bg-blue-600/90 text-white hover:bg-blue-600 transition-all shadow-md group-hover:scale-105"
+                          title="Fotoğrafı Kırp / Kes"
+                        >
+                          <Scissors className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
                           onClick={() =>
                             updateCurrentSlide({
                               photos: activeSlide.photos.filter((_, i) => i !== idx),
@@ -2603,11 +2652,27 @@ export default function PresentationsPage() {
 
                 {/* Fotoğraf Manuel En/Boy & Sığdırma Ayarları */}
                 <div className="p-3 rounded-2xl bg-slate-50 border border-slate-200 space-y-2.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
-                      <Maximize2 className="w-3.5 h-3.5 text-blue-600" />
-                      {isClassic ? "Fotoğraf Boyutu & En-Boy Modu" : "En-Boy Modu"}
-                    </span>
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <span className="text-[11px] font-bold text-slate-700 flex items-center gap-1.5">
+                        <Maximize2 className="w-3.5 h-3.5 text-blue-600" />
+                        {isClassic ? "Fotoğraf Boyutu & En-Boy Modu" : "En-Boy Modu"}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={!activeSlide.photos || activeSlide.photos.length === 0}
+                        onClick={() => handleOpenCropModal(0)}
+                        className="px-2.5 py-1 rounded-lg text-[10.5px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 flex items-center gap-1.5 transition-colors shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={
+                          activeSlide.photos?.length > 0
+                            ? "Fotoğrafı Kırp, Kes ve Döndür"
+                            : "Önce fotoğraf yükleyin"
+                        }
+                      >
+                        <Scissors className="w-3 h-3 text-blue-600" />
+                        Fotoğrafı Kırp / Kes
+                      </button>
+                    </div>
                     <div className="flex items-center gap-1">
                       {(
                         [
@@ -2929,6 +2994,21 @@ export default function PresentationsPage() {
             )}
           </div>
         </div>
+
+        {/* Fotoğraf Kırpma / Kesme Modalı */}
+        {cropModal.isOpen && activeSlide?.photos?.[cropModal.photoIdx] && (
+          <PhotoCropModal
+            isOpen={cropModal.isOpen}
+            photoSrc={activeSlide.photos[cropModal.photoIdx]}
+            allPhotos={activeSlide.photos}
+            activePhotoIdx={cropModal.photoIdx}
+            onSelectPhotoIdx={(newIdx) =>
+              setCropModal((prev) => ({ ...prev, photoIdx: newIdx }))
+            }
+            onClose={() => setCropModal((prev) => ({ ...prev, isOpen: false }))}
+            onApplyCrop={handleApplyCroppedPhoto}
+          />
+        )}
       </div>
     );
   }
