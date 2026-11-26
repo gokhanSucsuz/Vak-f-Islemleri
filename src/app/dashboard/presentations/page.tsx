@@ -850,12 +850,10 @@ function SlidePreviewCard({
                     src={src}
                     alt={`Slayt fotoğrafı ${idx + 1}`}
                     fit={fitMode}
-                    hugAspect={fitMode === "contain"}
+                    fillSlotAspect={fitMode === "contain"}
                     style={frameImgStyle}
                     className={`${hasActiveFrame ? "" : "drop-shadow-md rounded-xl"} pointer-events-none ${
-                      fitMode === "contain"
-                        ? "max-w-full max-h-full w-auto h-auto"
-                        : "w-full h-full"
+                      fitMode === "contain" ? "max-w-full max-h-full" : "w-full h-full"
                     }`}
                   />
                 </div>
@@ -919,12 +917,10 @@ function SlidePreviewCard({
                   src={src}
                   alt={`Slot ${idx + 1}`}
                   fit={fitMode}
-                  hugAspect={fitMode === "contain"}
+                  fillSlotAspect={fitMode === "contain"}
                   style={frameImgStyle}
                   className={`${hasActiveFrame ? "" : "drop-shadow-md rounded-xl"} pointer-events-none ${
-                    fitMode === "contain"
-                      ? "max-w-full max-h-full w-auto h-auto"
-                      : "w-full h-full"
+                    fitMode === "contain" ? "max-w-full max-h-full" : "w-full h-full"
                   }`}
                 />
               ) : (
