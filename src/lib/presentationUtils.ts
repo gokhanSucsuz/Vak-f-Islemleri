@@ -8,6 +8,101 @@ import type { ITemplateBox, ITemplateLayoutConfig } from "@/models/PresentationT
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
 
+// Kopyala-yapıştır kaynaklı yabancı font/boyut/bullet kirliliğini sunucu tarafında da temizler
+const LEADING_BULLET_RE = /^\s*(?:[➢➤➔→•●▪▫◦❖✓✔✦»›]|[-–—*]+(?=\s))\s*/u;
+
+export function sanitizeSlidePlainText(raw: string): string {
+  if (!raw) return "";
+  return raw
+    .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, "")
+    .replace(/\u00A0/g, " ")
+    .split(/\r?\n/)
+    .map((line) => line.replace(/\t+/g, " ").replace(LEADING_BULLET_RE, "").replace(/\s{2,}/g, " ").trim())
+    .filter(Boolean)
+    .join("\n");
+}
+
+export function sanitizeSlideHtmlServer(rawHtml: string, fallbackPlain = ""): string {
+  const source = (rawHtml || "").trim();
+  if (!source) {
+    const cleanPlain = sanitizeSlidePlainText(fallbackPlain);
+    if (!cleanPlain) return "";
+    return cleanPlain
+      .split("\n")
+      .map(
+        (l) =>
+          `<p>${l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`
+      )
+      .join("");
+  }
+
+  // Tüm yabancı font-family, font-size, line-height, background, class, <font> ve script/on* özniteliklerini temizle
+  const withoutDangerous = source
+    .replace(/<(script|style|iframe|object|embed|meta|link)[\s\S]*?<\/\1>/gi, "")
+    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\/(p|div|li|h[1-6]|tr|blockquote)>/gi, "\n")
+    .replace(/<(p|div|li|h[1-6]|tr|blockquote)\b[^>]*>/gi, "")
+    .replace(/<\/?font\b[^>]*>/gi, "")
+    .replace(/<\/?span\b[^>]*>/gi, "");
+
+  // Sadece temiz <b>/<strong>, <i>/<em>, <u> etiketlerini koru, diğer tüm etiketleri soy
+  const stripped = withoutDangerous.replace(
+    /<(\/?)([a-z0-9-]+)(?:\s[^>]*)?>/gi,
+    (_match, slash: string, tag: string) => {
+      const lower = tag.toLowerCase();
+      if (lower === "b" || lower === "strong") return `<${slash}strong>`;
+      if (lower === "i" || lower === "em") return `<${slash}em>`;
+      if (lower === "u") return `<${slash}u>`;
+      return "";
+    }
+  );
+
+  const lines = stripped
+    .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, "")
+    .replace(/&nbsp;/gi, " ")
+    .split(/\r?\n/)
+    .map((line) => {
+      // Satır başındaki olası etiketlerin içindeki ya da dışındaki madde işaretlerini temizle
+      return line
+        .replace(/^(\s*(?:<(?:strong|em|u)>)*)\s*(?:[➢➤➔→•●▪▫◦❖✓✔✦»›]|[-–—*]+(?=\s))\s*/u, "$1")
+        .trim();
+    })
+    .filter((line) => line.replace(/<[^>]+>/g, "").trim().length > 0);
+
+  if (lines.length === 0) return "";
+  return lines.map((l) => `<p>${l}</p>`).join("");
+}
+
+// Sunucu içi açılmış slayt önbelleği (Tekil ve toplu önizleme hızını katlar)
+const decompressedSlideCache = new Map<string, ISlideData[]>();
+
+export async function decompressSlides(buf: Buffer): Promise<ISlideData[]> {
+  if (!buf || buf.length === 0) return [];
+  const raw = await gunzip(buf);
+  const parsed = JSON.parse(raw.toString("utf8"));
+  return Array.isArray(parsed) ? parsed : [];
+}
+
+export async function decompressSlidesCached(
+  recordId: string,
+  updatedAt: Date | string | undefined,
+  buf: Buffer
+): Promise<ISlideData[]> {
+  if (!buf || buf.length === 0) return [];
+  const stamp = updatedAt ? new Date(updatedAt).getTime() : buf.length;
+  const cacheKey = `${recordId}_${stamp}`;
+  const hit = decompressedSlideCache.get(cacheKey);
+  if (hit) return hit;
+
+  const slides = await decompressSlides(buf);
+  if (decompressedSlideCache.size >= 80) {
+    const oldest = decompressedSlideCache.keys().next().value;
+    if (oldest) decompressedSlideCache.delete(oldest);
+  }
+  decompressedSlideCache.set(cacheKey, slides);
+  return slides;
+}
+
 export async function compressSlides(slides: ISlideData[]): Promise<Buffer> {
   const json = JSON.stringify(slides);
   return gzip(Buffer.from(json, "utf8"), { level: 1 });
@@ -42,13 +137,6 @@ export function computeSlideStats(slides: ISlideData[], compressedLength: number
     presentationBytes: compressedLength,
     firstPhoto,
   };
-}
-
-export async function decompressSlides(buf: Buffer): Promise<ISlideData[]> {
-  if (!buf || buf.length === 0) return [];
-  const raw = await gunzip(buf);
-  const parsed = JSON.parse(raw.toString("utf8"));
-  return Array.isArray(parsed) ? parsed : [];
 }
 
 /**

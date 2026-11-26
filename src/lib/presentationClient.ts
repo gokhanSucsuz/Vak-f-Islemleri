@@ -648,9 +648,169 @@ function rgbToHex(colorStr: string): string | undefined {
   return undefined;
 }
 
+const CLIENT_LEADING_BULLET_RE = /^\s*(?:[➢➤➔→•●▪▫◦❖✓✔✦»›]|[-–—*]+(?=\s))\s*/u;
+
+/**
+ * Kopyala-yapıştır ile gelen ham metni düz metin satırlarına dönüştürür;
+ * görünmez karakterleri, sekmeleri ve kopyalanmış eski madde işaretlerini temizler.
+ */
+export function extractCleanPlainLines(rawText: string): string[] {
+  if (!rawText) return [];
+  return rawText
+    .replace(/[\u200B-\u200D\uFEFF\u00AD]/g, "")
+    .replace(/\u00A0/g, " ")
+    .split(/\r?\n/)
+    .map((l) =>
+      l
+        .replace(/\t+/g, " ")
+        .replace(CLIENT_LEADING_BULLET_RE, "")
+        .replace(/\s{2,}/g, " ")
+        .trim()
+    )
+    .filter(Boolean);
+}
+
+/**
+ * Zengin metin HTML içeriğinden yabancı font-family, font-size, arka plan rengi,
+ * Word/PowerPoint/Web sınıflarını tamamen temizler; yalnızca temiz <p>, <strong>, <em>, <u>
+ * ve kurumsal yazı rengi (<span style="color:#RRGGBB">) bırakır.
+ */
+export function sanitizeSlideDescriptionHtml(
+  rawHtml: string,
+  fallbackPlain = ""
+): string {
+  if (typeof window === "undefined") return rawHtml || "";
+  const trimmed = (rawHtml || "").trim();
+  if (!trimmed) {
+    const plainLines = extractCleanPlainLines(fallbackPlain);
+    return plainLines
+      .map(
+        (l) =>
+          `<p>${l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`
+      )
+      .join("");
+  }
+
+  const doc = new DOMParser().parseFromString(`<div>${trimmed}</div>`, "text/html");
+  const root = doc.body.firstElementChild;
+  if (!root) return "";
+
+  const BLOCK_TAGS = new Set([
+    "P",
+    "DIV",
+    "LI",
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "BLOCKQUOTE",
+    "TR",
+    "UL",
+    "OL",
+  ]);
+  const IGNORED_TAGS = new Set(["SCRIPT", "STYLE", "IFRAME", "OBJECT", "EMBED", "META", "LINK"]);
+
+  const escapeHtml = (s: string) =>
+    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+
+  const lines: string[] = [];
+  let currentRuns: Array<{
+    text: string;
+    bold?: boolean;
+    italic?: boolean;
+    underline?: boolean;
+    colorHex?: string;
+  }> = [];
+
+  const flushLine = () => {
+    if (currentRuns.length === 0) return;
+    // Satır başındaki olası kopyalanmış madde işaretlerini temizle
+    let strippedLeading = false;
+    const normalizedRuns = currentRuns
+      .map((r) => {
+        let t = r.text.replace(/[\u200B-\u200D\uFEFF\u00AD]/g, "").replace(/\u00A0/g, " ");
+        if (!strippedLeading) {
+          const trimmedStart = t.replace(CLIENT_LEADING_BULLET_RE, "").trimStart();
+          if (trimmedStart.length > 0) {
+            strippedLeading = true;
+            t = trimmedStart;
+          } else {
+            return null;
+          }
+        }
+        return { ...r, text: t };
+      })
+      .filter(Boolean) as typeof currentRuns;
+
+    const fullText = normalizedRuns.map((r) => r.text).join("").trim();
+    if (fullText) {
+      const htmlLine = normalizedRuns
+        .map((r) => {
+          let chunk = escapeHtml(r.text);
+          if (r.underline) chunk = `<u>${chunk}</u>`;
+          if (r.italic) chunk = `<em>${chunk}</em>`;
+          if (r.bold) chunk = `<strong>${chunk}</strong>`;
+          if (r.colorHex && r.colorHex !== "0F172A" && r.colorHex !== "111827" && r.colorHex !== "000000") {
+            chunk = `<span style="color:#${r.colorHex}">${chunk}</span>`;
+          }
+          return chunk;
+        })
+        .join("");
+      lines.push(`<p>${htmlLine}</p>`);
+    }
+    currentRuns = [];
+  };
+
+  const walk = (
+    node: Node,
+    style: { bold?: boolean; italic?: boolean; underline?: boolean; colorHex?: string }
+  ) => {
+    if (node.nodeType === Node.TEXT_NODE) {
+      const parts = (node.textContent || "").split(/\r?\n/);
+      parts.forEach((part, idx) => {
+        if (idx > 0) flushLine();
+        if (part) currentRuns.push({ text: part, ...style });
+      });
+      return;
+    }
+    if (node.nodeType !== Node.ELEMENT_NODE) return;
+    const el = node as HTMLElement;
+    const tag = el.tagName.toUpperCase();
+    if (IGNORED_TAGS.has(tag)) return;
+    if (tag === "BR") {
+      flushLine();
+      return;
+    }
+
+    const nextStyle = { ...style };
+    if (tag === "B" || tag === "STRONG") nextStyle.bold = true;
+    if (tag === "I" || tag === "EM") nextStyle.italic = true;
+    if (tag === "U") nextStyle.underline = true;
+    // Sadece editör renk paletinden seçilen açık renkleri koru; font-family ve font-size tamamen yok sayılır!
+    const rawColor = el.style?.color || el.getAttribute("color") || "";
+    if (rawColor) {
+      const hex = rgbToHex(rawColor);
+      if (hex) nextStyle.colorHex = hex;
+    }
+
+    const isBlock = BLOCK_TAGS.has(tag);
+    if (isBlock && currentRuns.length > 0) flushLine();
+    el.childNodes.forEach((child) => walk(child, nextStyle));
+    if (isBlock) flushLine();
+  };
+
+  root.childNodes.forEach((child) => walk(child, {}));
+  flushLine();
+  return lines.join("");
+}
+
 function htmlToLinesOfRuns(html: string): RichRun[][] {
   if (typeof window === "undefined" || !html.trim()) return [];
-  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  const cleanHtml = sanitizeSlideDescriptionHtml(html);
+  if (!cleanHtml) return [];
+  const doc = new DOMParser().parseFromString(`<div>${cleanHtml}</div>`, "text/html");
   const root = doc.body.firstElementChild;
   if (!root) return [];
 
@@ -988,7 +1148,8 @@ export async function exportSlidesToPptx(params: {
 
   for (const item of slides) {
     const slide = pptx.addSlide();
-    const fontFamily = item.fontFamily || "Verdana";
+    // Tüm sistemde tek tip kurumsal standart yazı tipi (Verdana)
+    const fontFamily = "Verdana";
     const slideTpl =
       (item.templateId && templates.find((t) => t._id === item.templateId)) ||
       defaultTpl;

@@ -6,12 +6,12 @@ import PresentationMeeting from "@/models/PresentationMeeting";
 import Presentation, { ISlideData } from "@/models/Presentation";
 import Log from "@/models/Log";
 import {
-  decompressSlides,
+  decompressSlidesCached,
   purgeExpiredMeetingPhotos,
 } from "@/lib/presentationUtils";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -21,25 +21,81 @@ export async function GET(
     }
 
     const { id } = await context.params;
+    const { searchParams } = new URL(req.url);
+    const fastMode = searchParams.get("fast") === "1";
+    const filterAuthor = (searchParams.get("author") || "").trim();
     await dbConnect();
 
-    const [meeting, presentations] = await Promise.all([
-      PresentationMeeting.findById(id)
-        .populate("openedBy", "name")
-        .populate("closedBy", "name")
-        .populate("authorizedUserId", "name email")
-        .lean() as Promise<any>,
-      Presentation.find({ meetingId: id })
-        .populate("createdBy", "name")
-        .sort({ createdAt: 1 })
-        .lean() as Promise<any[]>,
-    ]);
+    const meeting = (await PresentationMeeting.findById(id)
+      .populate("openedBy", "name")
+      .populate("closedBy", "name")
+      .populate("authorizedUserId", "name email")
+      .lean()) as any;
 
     if (!meeting) {
       return NextResponse.json({ error: "Toplantı bulunamadı." }, { status: 404 });
     }
 
-    // Çok sayfalı sunu kayıtlarını birbirinden koparmadan kayıt bazlı sırala
+    // Hızlı açılış modunda önce hafif üst veriyi çek, yalnızca ilk 3 sununun ağır fotoğraflarını aç!
+    const metaDocs = (await Presentation.find({ meetingId: id })
+      .select("-slidesCompressed")
+      .populate("createdBy", "name")
+      .sort({ createdAt: 1 })
+      .lean()) as any[];
+
+    const metaById = new Map<string, any>();
+    for (const doc of metaDocs) {
+      metaById.set(String(doc._id), doc);
+    }
+
+    const orderedMetaDocs: any[] = [];
+    const seenIds = new Set<string>();
+    if (Array.isArray(meeting.presentationOrder) && meeting.presentationOrder.length > 0) {
+      for (const pid of meeting.presentationOrder) {
+        const found = metaById.get(String(pid));
+        if (found && !seenIds.has(String(found._id))) {
+          orderedMetaDocs.push(found);
+          seenIds.add(String(found._id));
+        }
+      }
+    }
+    for (const doc of metaDocs) {
+      if (!seenIds.has(String(doc._id))) {
+        orderedMetaDocs.push(doc);
+        seenIds.add(String(doc._id));
+      }
+    }
+
+    // Hangi kayıtların tam slayt verisi hemen açılacak?
+    const matchingForFast = filterAuthor
+      ? orderedMetaDocs.filter(
+          (d) => ((d.createdBy as any)?.name || "Personel") === filterAuthor
+        )
+      : orderedMetaDocs;
+
+    const eagerIds = fastMode
+      ? new Set(matchingForFast.slice(0, 3).map((d) => String(d._id)))
+      : new Set(orderedMetaDocs.map((d) => String(d._id)));
+
+    const fullDocs =
+      eagerIds.size > 0
+        ? ((await Presentation.find({ _id: { $in: Array.from(eagerIds) } })
+            .select("slidesCompressed updatedAt")
+            .lean()) as any[])
+        : [];
+
+    const slidesById = new Map<string, ISlideData[]>();
+    await Promise.all(
+      fullDocs.map(async (fd) => {
+        const slides = await decompressSlidesCached(
+          String(fd._id),
+          fd.updatedAt,
+          fd.slidesCompressed
+        );
+        slidesById.set(String(fd._id), slides);
+      })
+    );
+
     type RecordGroup = {
       presentationId: string;
       summaryTitle: string;
@@ -47,47 +103,58 @@ export async function GET(
       slideCount: number;
       firstPhoto: string;
       createdAt: Date;
+      isPartial?: boolean;
       slides: ISlideData[];
     };
 
-    const groupMap = new Map<string, RecordGroup>();
-    const defaultList: RecordGroup[] = [];
+    const hasDeferred = fastMode && orderedMetaDocs.length > eagerIds.size;
 
-    for (const pres of presentations) {
-      const slides = await decompressSlides(pres.slidesCompressed);
+    const orderedPresentations: RecordGroup[] = orderedMetaDocs.map((pres) => {
+      const pid = String(pres._id);
       const authorName = (pres.createdBy as any)?.name || "Personel";
-      const firstPhoto = slides.find((s) => s.photos?.length > 0)?.photos?.[0] || "";
-      const grp: RecordGroup = {
-        presentationId: String(pres._id),
+      const loadedSlides = slidesById.get(pid);
+
+      if (loadedSlides) {
+        const firstPhoto =
+          pres.firstPhoto ||
+          loadedSlides.find((s) => s.photos?.length > 0)?.photos?.[0] ||
+          "";
+        return {
+          presentationId: pid,
+          summaryTitle: pres.summaryTitle,
+          authorName,
+          slideCount: loadedSlides.length,
+          firstPhoto,
+          createdAt: pres.createdAt,
+          isPartial: false,
+          slides: loadedSlides,
+        };
+      }
+
+      // Arka planda yüklenene kadar hafif yer tutucu slaytlar
+      const count = Math.max(1, Number(pres.slideCount) || 1);
+      const stubSlides: ISlideData[] = Array.from({ length: count }, (_, idx) => ({
+        fullName: pres.summaryTitle || "Yükleniyor...",
+        neighborhood: "",
+        photoCount: pres.firstPhoto && idx === 0 ? 1 : 0,
+        photos: pres.firstPhoto && idx === 0 ? [pres.firstPhoto] : [],
+        description: "Slayt detayları arka planda yükleniyor...",
+        descriptionHtml: "",
+        fontFamily: "Verdana",
+        fontSize: "auto",
+      }));
+
+      return {
+        presentationId: pid,
         summaryTitle: pres.summaryTitle,
         authorName,
-        slideCount: slides.length,
-        firstPhoto,
+        slideCount: count,
+        firstPhoto: pres.firstPhoto || "",
         createdAt: pres.createdAt,
-        slides,
+        isPartial: true,
+        slides: stubSlides,
       };
-      groupMap.set(grp.presentationId, grp);
-      defaultList.push(grp);
-    }
-
-    const orderedPresentations: RecordGroup[] = [];
-    const seen = new Set<string>();
-
-    if (Array.isArray(meeting.presentationOrder) && meeting.presentationOrder.length > 0) {
-      for (const pid of meeting.presentationOrder) {
-        const found = groupMap.get(String(pid));
-        if (found && !seen.has(found.presentationId)) {
-          orderedPresentations.push(found);
-          seen.add(found.presentationId);
-        }
-      }
-    }
-    for (const item of defaultList) {
-      if (!seen.has(item.presentationId)) {
-        orderedPresentations.push(item);
-        seen.add(item.presentationId);
-      }
-    }
+    });
 
     return NextResponse.json({
       meeting: {
@@ -107,6 +174,7 @@ export async function GET(
         photosPurged: meeting.photosPurged,
         photosPurgedAt: meeting.photosPurgedAt,
       },
+      hasDeferred,
       orderedPresentations,
     });
   } catch (error: any) {

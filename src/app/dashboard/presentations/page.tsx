@@ -48,7 +48,6 @@ import {
   SlideItem,
   PresentationTemplateClient,
   DEFAULT_TEMPLATE_LAYOUT,
-  SLIDE_FONT_OPTIONS,
   BACKGROUND_PRESETS,
   PHOTO_FRAME_PRESETS,
   getPhotoFrameWebStyle,
@@ -56,6 +55,8 @@ import {
   cleanTemplateWatermark,
   compressImageToJpeg,
   exportSlidesToPptx,
+  extractCleanPlainLines,
+  sanitizeSlideDescriptionHtml,
 } from "@/lib/presentationClient";
 
 interface MeetingItem {
@@ -108,6 +109,7 @@ interface OrderedPresentationGroup {
   slideCount: number;
   firstPhoto: string;
   createdAt: string;
+  isPartial?: boolean;
   slides: SlideItem[];
 }
 
@@ -203,46 +205,9 @@ function RichDescriptionEditor({
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (initialHtml && initialHtml.trim()) {
-      const temp = document.createElement("div");
-      temp.innerHTML = initialHtml;
-      const hasBlocks = Array.from(temp.children).some((c) =>
-        ["P", "DIV", "LI"].includes(c.tagName.toUpperCase())
-      );
-      if (hasBlocks) {
-        el.innerHTML = initialHtml;
-      } else {
-        const lines = (temp.innerText || initialPlain || "")
-          .split(/\r?\n/)
-          .map((l) => l.replace(/^\s*➢\s*/, "").trim())
-          .filter(Boolean);
-        el.innerHTML =
-          lines.length > 0
-            ? lines
-                .map(
-                  (l) =>
-                    `<p>${l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`
-                )
-                .join("")
-            : "<p><br></p>";
-      }
-    } else if (initialPlain && initialPlain.trim()) {
-      const lines = initialPlain
-        .split(/\r?\n/)
-        .map((l) => l.replace(/^\s*➢\s*/, "").trim())
-        .filter(Boolean);
-      el.innerHTML =
-        lines.length > 0
-          ? lines
-              .map(
-                (l) =>
-                  `<p>${l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`
-              )
-              .join("")
-          : "<p><br></p>";
-    } else {
-      el.innerHTML = "<p><br></p>";
-    }
+    // Eski veya kopyala-yapıştır ile gelmiş tüm yabancı font/boyut HTML etiketlerini temizleyerek yükle
+    const cleanHtml = sanitizeSlideDescriptionHtml(initialHtml || "", initialPlain || "");
+    el.innerHTML = cleanHtml || "<p><br></p>";
     syncMetrics(el);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slideKey]);
@@ -324,17 +289,45 @@ function RichDescriptionEditor({
     if (!el) return;
     normalizeRootParagraphs(el);
     syncMetrics(el);
-    const cleanedPlain = (el.innerText || "")
-      .replace(/\u00A0/g, " ")
-      .split(/\r?\n/)
-      .map((l) => l.replace(/^\s*➢\s*/, "").trim())
-      .filter(Boolean)
-      .join("\n");
+    const cleanedLines = extractCleanPlainLines(el.innerText || "");
+    const cleanedPlain = cleanedLines.join("\n");
     if (!cleanedPlain) {
       onChange("", "");
     } else {
-      onChange(el.innerHTML, cleanedPlain);
+      const cleanHtml = sanitizeSlideDescriptionHtml(el.innerHTML, cleanedPlain);
+      onChange(cleanHtml, cleanedPlain);
     }
+  };
+
+  const insertPlainTextSafely = (rawPlain: string, rawHtmlFallback = "") => {
+    let sourceText = rawPlain;
+    if (!sourceText && rawHtmlFallback && typeof window !== "undefined") {
+      const parsed = new DOMParser().parseFromString(rawHtmlFallback, "text/html");
+      sourceText = parsed.body?.innerText || parsed.body?.textContent || "";
+    }
+    const lines = extractCleanPlainLines(sourceText);
+    if (lines.length === 0) return;
+
+    ref.current?.focus();
+    const html = lines
+      .map(
+        (l) =>
+          `<p>${l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`
+      )
+      .join("");
+    try {
+      document.execCommand("defaultParagraphSeparator", false, "p");
+      document.execCommand("insertHTML", false, html);
+    } catch {
+      if (ref.current) {
+        ref.current.innerHTML =
+          ref.current.innerHTML === "<p><br></p>"
+            ? html
+            : `${ref.current.innerHTML}${html}`;
+      }
+    }
+    emit();
+    setStatusAnnouncement("Yapıştırılan yazı düz metin olarak tek tip Verdana fontuyla eklendi");
   };
 
   const exec = (cmd: string, val?: string, announceMsg?: string) => {
@@ -474,36 +467,30 @@ function RichDescriptionEditor({
           }
         }}
         onPaste={(e) => {
-          const plain = e.clipboardData?.getData("text/plain");
-          if (plain) {
-            e.preventDefault();
-            const lines = plain
-              .split(/\r?\n/)
-              .map((l) => l.replace(/^\s*➢\s*/, "").trim())
-              .filter(Boolean);
-            if (lines.length > 0) {
-              const html = lines
-                .map(
-                  (l) =>
-                    `<p>${l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`
-                )
-                .join("");
-              document.execCommand("insertHTML", false, html);
-              emit();
-            }
-          }
+          // Her türlü Word/Excel/PowerPoint/Web kopyala-yapıştır işleminde yabancı fontları %100 engelle; düz metin yapıştır
+          e.preventDefault();
+          const plain = e.clipboardData?.getData("text/plain") || "";
+          const htmlFallback = e.clipboardData?.getData("text/html") || "";
+          insertPlainTextSafely(plain, htmlFallback);
+        }}
+        onDrop={(e) => {
+          // Sürükle-bırak ile metin bırakıldığında da yabancı font/biçim girmesini engelle
+          e.preventDefault();
+          const plain = e.dataTransfer?.getData("text/plain") || "";
+          const htmlFallback = e.dataTransfer?.getData("text/html") || "";
+          insertPlainTextSafely(plain, htmlFallback);
         }}
         onInput={emit}
         className="pres-rich-editor min-h-[156px] max-h-[260px] overflow-y-auto px-3.5 py-3 text-sm font-bold text-slate-950 bg-gradient-to-b from-white to-slate-50/40 focus:outline-none leading-relaxed"
       />
 
       {/* Alt Bilgi Çubuğu */}
-      <div className="px-3.5 py-1.5 bg-slate-50/90 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px]">
+      <div className="px-3.5 py-1.5 bg-slate-50/90 border-t border-slate-100 flex flex-wrap items-center justify-between gap-2 text-[11px]">
         <span className="font-semibold text-slate-500 flex items-center gap-1.5">
           <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-blue-100 text-blue-800 font-black text-[10px]">
             ➢
           </span>
-          Her satır slayt üzerindeki madde simgesiyle birebir görünür
+          Yapıştırılan yazılar otomatik düz metne çevrilir (Tek Tip: Verdana)
         </span>
         <span className="font-extrabold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 tabular-nums shrink-0">
           {lineCount} Madde
@@ -524,86 +511,16 @@ function formatBytesLabel(bytes?: number): string {
 
 function splitHtmlToVisualLines(html: string): string[] {
   if (typeof window === "undefined" || !html.trim()) return [];
-  const doc = new DOMParser().parseFromString(`<div>${html}</div>`, "text/html");
+  // Önce tüm yabancı font-family, font-size, arka plan ve kopyalanmış madde işaretlerini arındır!
+  const cleanHtml = sanitizeSlideDescriptionHtml(html);
+  if (!cleanHtml) return [];
+  const doc = new DOMParser().parseFromString(`<div>${cleanHtml}</div>`, "text/html");
   const root = doc.body.firstElementChild;
   if (!root) return [];
 
-  const BLOCK_TAGS = new Set([
-    "P",
-    "DIV",
-    "LI",
-    "H1",
-    "H2",
-    "H3",
-    "H4",
-    "H5",
-    "H6",
-    "BLOCKQUOTE",
-    "TR",
-    "UL",
-    "OL",
-  ]);
-  const result: string[] = [];
-  let buf = "";
-
-  const escapeHtml = (s: string) =>
-    s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
-
-  const flush = (wrappers: { open: string; close: string }[]) => {
-    const closing = [...wrappers].reverse().map((w) => w.close).join("");
-    const candidate = buf + closing;
-    const tmp = document.createElement("div");
-    tmp.innerHTML = candidate;
-    if ((tmp.textContent || "").replace(/\u00A0/g, " ").trim()) {
-      result.push(candidate);
-    }
-    buf = wrappers.map((w) => w.open).join("");
-  };
-
-  const walk = (node: Node, wrappers: { open: string; close: string }[]) => {
-    if (node.nodeType === Node.TEXT_NODE) {
-      const parts = (node.textContent || "").split(/\r?\n/);
-      parts.forEach((part, idx) => {
-        if (idx > 0) flush(wrappers);
-        buf += escapeHtml(part);
-      });
-      return;
-    }
-    if (node.nodeType !== Node.ELEMENT_NODE) return;
-
-    const el = node as HTMLElement;
-    const tag = el.tagName.toUpperCase();
-
-    if (tag === "BR") {
-      flush(wrappers);
-      return;
-    }
-
-    if (BLOCK_TAGS.has(tag)) {
-      flush(wrappers);
-      el.childNodes.forEach((child) => walk(child, wrappers));
-      flush(wrappers);
-      return;
-    }
-
-    const cloneShallow = el.cloneNode(false) as HTMLElement;
-    const outer = cloneShallow.outerHTML;
-    const gtIdx = outer.indexOf(">");
-    const closeTag = `</${tag.toLowerCase()}>`;
-    const openTag = gtIdx >= 0 ? outer.slice(0, gtIdx + 1) : "";
-    if (openTag && outer.endsWith(closeTag)) {
-      const nextWrappers = [...wrappers, { open: openTag, close: closeTag }];
-      buf += openTag;
-      el.childNodes.forEach((child) => walk(child, nextWrappers));
-      buf += closeTag;
-    } else {
-      el.childNodes.forEach((child) => walk(child, wrappers));
-    }
-  };
-
-  root.childNodes.forEach((child) => walk(child, []));
-  flush([]);
-  return result;
+  return Array.from(root.querySelectorAll("p"))
+    .map((p) => p.innerHTML)
+    .filter((inner) => inner.replace(/<[^>]+>/g, "").trim().length > 0);
 }
 
 /**
@@ -637,7 +554,8 @@ function SlidePreviewCard({
     null;
 
   const layout = selectedTpl?.layoutConfig || DEFAULT_TEMPLATE_LAYOUT;
-  const fontFamily = slide.fontFamily || "Verdana";
+  // Tüm sistemde tek tip kurumsal standart yazı tipi (Verdana)
+  const fontFamily = "Verdana, Geneva, sans-serif";
   const allPhotos = (slide.photos || []).filter(Boolean);
   const photos =
     layout.mode === "multi_slot"
@@ -673,10 +591,7 @@ function SlidePreviewCard({
   const richLinesHtml = slide.descriptionHtml
     ? splitHtmlToVisualLines(slide.descriptionHtml)
     : [];
-  const plainLines = (slide.description || "")
-    .split(/\r?\n/)
-    .map((l) => l.trim())
-    .filter(Boolean);
+  const plainLines = extractCleanPlainLines(slide.description || "");
 
   const displayLines =
     richLinesHtml.length > 0
@@ -1494,9 +1409,23 @@ export default function PresentationsPage() {
     orderedPresentations: OrderedPresentationGroup[];
   } | null>(null);
   const [loadingMeetingSlides, setLoadingMeetingSlides] = useState(false);
+  const [isHydratingBulkSlides, setIsHydratingBulkSlides] = useState(false);
   const [exportingMeeting, setExportingMeeting] = useState(false);
   const [isBgPickerOpen, setIsBgPickerOpen] = useState(false);
   const [isFramePickerOpen, setIsFramePickerOpen] = useState(false);
+
+  // Anlık Yükleme Ekranı (0ms gecikme ile açılan hareketli önizleme hazırlık penceresi)
+  const [previewLoadingModal, setPreviewLoadingModal] = useState<{
+    title: string;
+    subtitle: string;
+  } | null>(null);
+  const previewAbortRef = useRef<AbortController | null>(null);
+
+  // Tekil Sunu Slayt Önbelleği & Hover Önyükleme (0ms açılış için)
+  const slideCacheRef = useRef<
+    Map<string, { meetingId: string; slides: SlideItem[] }>
+  >(new Map());
+  const inflightPrefetchRef = useRef<Set<string>>(new Set());
 
   // Silme Onayı
   const [deleteTarget, setDeleteTarget] = useState<PresentationListItem | null>(null);
@@ -1780,32 +1709,92 @@ export default function PresentationsPage() {
     setEditorMode(true);
   };
 
-  // Mevcut Sunuyu Düzenle / Önizle / İndir (Paralel kilit + veri çekimi ile çok hızlı)
+  // Kart üzerine gelindiğinde arka planda slaytları sessizce önbelleğe al (Tıklandığında 0ms açılır!)
+  const prefetchRecordSlides = useCallback((item: PresentationListItem) => {
+    if (
+      !item?._id ||
+      slideCacheRef.current.has(item._id) ||
+      inflightPrefetchRef.current.has(item._id)
+    ) {
+      return;
+    }
+    inflightPrefetchRef.current.add(item._id);
+    fetch(`/api/presentations/${item._id}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => {
+        if (d?.presentation?.slides) {
+          slideCacheRef.current.set(item._id, {
+            meetingId: String(d.presentation.meetingId || item.meetingId),
+            slides: d.presentation.slides,
+          });
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        inflightPrefetchRef.current.delete(item._id);
+      });
+  }, []);
+
+  // Mevcut Sunuyu Düzenle / Önizle / İndir (Önbellek + 0ms Hareketli Yükleme Görseli ile)
   const handleOpenRecord = async (
     item: PresentationListItem,
     mode: "preview" | "edit" | "download"
   ) => {
+    const cached = slideCacheRef.current.get(item._id);
+
+    // Önizleme modunda önbellekte varsa 0ms içinde anında aç!
+    if (mode === "preview" && cached) {
+      const canModifyItem =
+        selectedMeeting?.status === "open" &&
+        (canManageSelectedMeeting ||
+          (!selectedMeeting.isLocked &&
+            String(item.createdBy?._id) === String(userId)));
+      setPreviewRecord({
+        item,
+        title: item.summaryTitle,
+        authorName: item.createdBy?.name || "Personel",
+        canModify: Boolean(canModifyItem),
+        slides: cached.slides,
+      });
+      setPreviewSlideIdx(0);
+      return;
+    }
+
+    previewAbortRef.current?.abort();
+    const controller = new AbortController();
+    previewAbortRef.current = controller;
+
+    if (mode === "preview" || mode === "edit") {
+      setPreviewLoadingModal({
+        title:
+          mode === "preview"
+            ? "Sunu Önizlemesi Yükleniyor..."
+            : "Sunu Düzenleyici Açılıyor...",
+        subtitle: item.summaryTitle || "Slayt görselleri ve açıklamalar hazırlanıyor",
+      });
+    }
+
     const loadingToast =
-      mode === "edit"
-        ? toast.loading("Sunu düzenleyici açılıyor...")
-        : mode === "preview"
-          ? toast.loading("Önizleme hazırlanıyor...")
-          : toast.loading("Sunu (.pptx) hazırlanıyor...");
+      mode === "download" ? toast.loading("Sunu (.pptx) hazırlanıyor...") : undefined;
+
     try {
       if (mode === "edit") {
         const [res, lockRes] = await Promise.all([
-          fetch(`/api/presentations/${item._id}`),
+          cached
+            ? Promise.resolve(null)
+            : fetch(`/api/presentations/${item._id}`, { signal: controller.signal }),
           fetch(`/api/presentations/${item._id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ action: "lock" }),
+            signal: controller.signal,
           }),
         ]);
         const [data, lockData] = await Promise.all([
-          res.json(),
+          res ? res.json() : Promise.resolve(null),
           lockRes.json().catch(() => ({})),
         ]);
-        toast.dismiss(loadingToast);
+        setPreviewLoadingModal(null);
 
         if (!lockRes.ok) {
           toast.error(
@@ -1814,22 +1803,44 @@ export default function PresentationsPage() {
           void fetchPresentations();
           return;
         }
-        if (!res.ok) throw new Error(data.error || "Sunu alınamadı");
+        if (res && !res.ok) throw new Error(data?.error || "Sunu alınamadı");
 
-        const loadedSlides: SlideItem[] = data.presentation.slides || [];
+        const loadedSlides: SlideItem[] = cached
+          ? cached.slides
+          : data.presentation.slides || [];
+        const resolvedMeetingId = cached
+          ? cached.meetingId
+          : String(data.presentation.meetingId);
+
+        slideCacheRef.current.set(item._id, {
+          meetingId: resolvedMeetingId,
+          slides: loadedSlides,
+        });
+
         setEditingId(item._id);
-        setEditorMeetingId(data.presentation.meetingId);
+        setEditorMeetingId(resolvedMeetingId);
         setSlides(loadedSlides.length > 0 ? loadedSlides : [emptySlide(templates[0]?._id)]);
         setActiveSlideIdx(0);
         setEditorMode(true);
         return;
       }
 
-      const res = await fetch(`/api/presentations/${item._id}`);
-      const data = await res.json();
-      toast.dismiss(loadingToast);
-      if (!res.ok) throw new Error(data.error || "Sunu alınamadı");
-      const loadedSlides: SlideItem[] = data.presentation.slides || [];
+      let loadedSlides: SlideItem[] = cached ? cached.slides : [];
+      if (!cached) {
+        const res = await fetch(`/api/presentations/${item._id}`, {
+          signal: controller.signal,
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Sunu alınamadı");
+        loadedSlides = data.presentation.slides || [];
+        slideCacheRef.current.set(item._id, {
+          meetingId: String(data.presentation.meetingId || item.meetingId),
+          slides: loadedSlides,
+        });
+      }
+
+      setPreviewLoadingModal(null);
+      if (loadingToast) toast.dismiss(loadingToast);
 
       if (mode === "preview") {
         const canModifyItem =
@@ -1856,7 +1867,9 @@ export default function PresentationsPage() {
         toast.success("Sunu (.pptx) indirildi.");
       }
     } catch (err: any) {
-      toast.dismiss(loadingToast);
+      setPreviewLoadingModal(null);
+      if (loadingToast) toast.dismiss(loadingToast);
+      if (err?.name === "AbortError") return;
       toast.error(err.message);
     }
   };
@@ -2006,6 +2019,9 @@ export default function PresentationsPage() {
       if (!res.ok) throw new Error(data.error || "Sunu kaydedilemedi");
 
       const wasEditingId = editingId;
+      if (wasEditingId) {
+        slideCacheRef.current.delete(wasEditingId);
+      }
       const card = data.presentationCard as PresentationListItem | undefined;
 
       if (card) {
@@ -2136,22 +2152,44 @@ export default function PresentationsPage() {
     }
   };
 
-  // Toplantı Toplu Önizleme Modalını Aç (opsiyonel olarak seçili personel filtresiyle)
+  // Toplantı Toplu Önizleme Modalını Aç (2 Aşamalı Hızlı Yükleme + 0ms Hareketli Hazırlık Ekranı)
   const openBulkPreview = async (meeting: MeetingItem, filterPersonnelName?: string) => {
+    previewAbortRef.current?.abort();
+    const controller = new AbortController();
+    previewAbortRef.current = controller;
+
     setLoadingMeetingSlides(true);
+    setPreviewLoadingModal({
+      title: "Toplantı Sunuları Yükleniyor...",
+      subtitle: filterPersonnelName
+        ? `${filterPersonnelName} sunu slaytları hazırlanıyor`
+        : `${meeting.title} • Slayt sahnesi hazırlanıyor`,
+    });
+
     try {
-      const res = await fetch(`/api/presentations/meetings/${meeting._id}`);
+      const fastParams = new URLSearchParams({ fast: "1" });
+      if (filterPersonnelName) fastParams.set("author", filterPersonnelName);
+
+      const res = await fetch(
+        `/api/presentations/meetings/${meeting._id}?${fastParams.toString()}`,
+        { signal: controller.signal }
+      );
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Toplantı slaytları alınamadı");
+
       const allGroups: OrderedPresentationGroup[] = data.orderedPresentations || [];
       const groups = filterPersonnelName
         ? allGroups.filter((g) => g.authorName === filterPersonnelName)
         : allGroups;
       const flatSlides = buildBulkFlatSlides(groups);
+
+      setPreviewLoadingModal(null);
+
       if (flatSlides.length === 0) {
         toast.error("Bu toplantıda önizlenecek slayt bulunmuyor.");
         return;
       }
+
       setMobileBulkTab("preview");
       setIsBulkOrderConfirmOpen(false);
       setBulkPreviewModal({
@@ -2162,7 +2200,49 @@ export default function PresentationsPage() {
         flatSlides,
       });
       setBulkIdx(0);
+
+      // Kalan slaytları kullanıcıyı hiç bekletmeden arka planda sessizce doldur!
+      if (data.hasDeferred) {
+        setIsHydratingBulkSlides(true);
+        fetch(`/api/presentations/meetings/${meeting._id}`, {
+          signal: controller.signal,
+        })
+          .then((fullRes) => (fullRes.ok ? fullRes.json() : null))
+          .then((fullData) => {
+            if (!fullData?.orderedPresentations) return;
+            const fullMap = new Map<string, OrderedPresentationGroup>();
+            for (const fg of fullData.orderedPresentations as OrderedPresentationGroup[]) {
+              fullMap.set(fg.presentationId, { ...fg, isPartial: false });
+              slideCacheRef.current.set(fg.presentationId, {
+                meetingId: meeting._id,
+                slides: fg.slides,
+              });
+            }
+
+            setBulkPreviewModal((prev) => {
+              if (!prev || prev.meeting._id !== meeting._id) return prev;
+              const hydrateGrp = (g: OrderedPresentationGroup) =>
+                g.isPartial && fullMap.has(g.presentationId)
+                  ? fullMap.get(g.presentationId)!
+                  : g;
+              const nextAllGroups = prev.allGroups.map(hydrateGrp);
+              const nextGroups = prev.groups.map(hydrateGrp);
+              return {
+                ...prev,
+                allGroups: nextAllGroups,
+                groups: nextGroups,
+                flatSlides: buildBulkFlatSlides(nextGroups),
+              };
+            });
+          })
+          .catch(() => {})
+          .finally(() => {
+            setIsHydratingBulkSlides(false);
+          });
+      }
     } catch (err: any) {
+      setPreviewLoadingModal(null);
+      if (err?.name === "AbortError") return;
       toast.error(err.message);
     } finally {
       setLoadingMeetingSlides(false);
@@ -2478,6 +2558,7 @@ export default function PresentationsPage() {
           flatSlides: buildBulkFlatSlides(nextGroups),
         };
       });
+      slideCacheRef.current.delete(current.presentationId);
       toast.success("Slayt açıklaması anında güncellendi.");
       await fetchPresentations();
     } catch (err: any) {
@@ -2489,16 +2570,29 @@ export default function PresentationsPage() {
 
   // Toplantı Yönetimi Modalını Aç (Kayıt bazlı sıralama - çok sayfalı slaytlar kopmaz!)
   const openManageMeeting = async (meeting: MeetingItem) => {
+    previewAbortRef.current?.abort();
+    const controller = new AbortController();
+    previewAbortRef.current = controller;
+
     setLoadingMeetingSlides(true);
+    setPreviewLoadingModal({
+      title: "Toplantı Yönetim Paneli Açılıyor...",
+      subtitle: `${meeting.title} • Sunu listesi hazırlanıyor`,
+    });
     try {
-      const res = await fetch(`/api/presentations/meetings/${meeting._id}`);
+      const res = await fetch(`/api/presentations/meetings/${meeting._id}`, {
+        signal: controller.signal,
+      });
       const data = await res.json();
+      setPreviewLoadingModal(null);
       if (!res.ok) throw new Error(data.error || "Toplantı slaytları alınamadı");
       setManageMeetingModal({
         meeting: data.meeting,
         orderedPresentations: data.orderedPresentations || [],
       });
     } catch (err: any) {
+      setPreviewLoadingModal(null);
+      if (err?.name === "AbortError") return;
       toast.error(err.message);
     } finally {
       setLoadingMeetingSlides(false);
@@ -2832,29 +2926,15 @@ export default function PresentationsPage() {
               )}
               <div>
                 <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Yazı Tipi (Font)
+                  Kurumsal Yazı Tipi (Standart)
                 </label>
-                {canManageSelectedMeeting ? (
-                  <select
-                    value={activeSlide.fontFamily || "Verdana"}
-                    onChange={(e) => updateCurrentSlide({ fontFamily: e.target.value })}
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 text-xs sm:text-sm bg-white focus:ring-2 focus:ring-blue-500 outline-none"
-                  >
-                    {SLIDE_FONT_OPTIONS.map((f) => (
-                      <option key={f} value={f}>
-                        {f}
-                      </option>
-                    ))}
-                  </select>
-                ) : (
-                  <div
-                    className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm font-semibold text-slate-600 flex items-center justify-between"
-                    title="Standart kurum yazı tipi sabittir; yalnızca yetkili kullanıcılar değiştirebilir."
-                  >
-                    <span>{activeSlide.fontFamily || "Verdana"} (Sabit)</span>
-                    <Lock className="w-3.5 h-3.5 text-slate-400" />
-                  </div>
-                )}
+                <div
+                  className="w-full px-3 py-2.5 rounded-xl border border-slate-200 bg-slate-50 text-xs sm:text-sm font-semibold text-slate-700 flex items-center justify-between"
+                  title="Tüm sunularda tek tip düzgün görünüm için kurumsal Verdana yazı tipi standarttır."
+                >
+                  <span>Verdana (Tek Tip Standart)</span>
+                  <Lock className="w-3.5 h-3.5 text-slate-400" />
+                </div>
               </div>
             </div>
 
@@ -2869,7 +2949,11 @@ export default function PresentationsPage() {
                 <input
                   type="text"
                   value={activeSlide.fullName}
-                  onChange={(e) => updateAllSlidesPerson({ fullName: e.target.value })}
+                  onChange={(e) =>
+                    updateAllSlidesPerson({
+                      fullName: e.target.value.replace(/[\r\n\t]+/g, " "),
+                    })
+                  }
                   placeholder="Örn: Ahmet YILMAZ"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
@@ -2882,7 +2966,11 @@ export default function PresentationsPage() {
                 <input
                   type="text"
                   value={activeSlide.neighborhood}
-                  onChange={(e) => updateAllSlidesPerson({ neighborhood: e.target.value })}
+                  onChange={(e) =>
+                    updateAllSlidesPerson({
+                      neighborhood: e.target.value.replace(/[\r\n\t]+/g, " "),
+                    })
+                  }
                   placeholder="Örn: Karaağaç Mahallesi"
                   className="w-full px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-blue-500 outline-none"
                 />
@@ -3648,10 +3736,24 @@ export default function PresentationsPage() {
                     openBulkPreview(selectedMeeting, selAuthor);
                   }}
                   disabled={loadingMeetingSlides}
-                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 text-white text-xs font-extrabold shadow-md shadow-slate-900/15 flex items-center gap-2 transition-all active:scale-95"
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 disabled:opacity-75 text-white text-xs font-extrabold shadow-md shadow-slate-900/15 flex items-center gap-2 transition-all active:scale-95"
                 >
-                  <Eye className="w-4 h-4 text-sky-300" />
-                  <span>Toplu Önizle</span>
+                  {loadingMeetingSlides ? (
+                    <progress
+                      aria-label="Yükleniyor"
+                      className="loading-spinner"
+                      style={
+                        {
+                          "--size": "15px",
+                          "--thickness": "2px",
+                          "--spinner-color": "#7dd3fc",
+                        } as React.CSSProperties
+                      }
+                    />
+                  ) : (
+                    <Eye className="w-4 h-4 text-sky-300" />
+                  )}
+                  <span>{loadingMeetingSlides ? "Yükleniyor..." : "Toplu Önizle"}</span>
                   <span className="px-1.5 py-0.5 rounded-md bg-white/15 text-[11px] font-extrabold">
                     {selectedPersonnelId
                       ? presentations.filter(
@@ -4079,6 +4181,7 @@ export default function PresentationsPage() {
                           return (
                             <div
                               key={item._id}
+                              onMouseEnter={() => prefetchRecordSlides(item)}
                               onClick={() => handleOpenRecord(item, "preview")}
                               title="Görüntülemek için tıklayın"
                               className="p-4 rounded-2xl border border-slate-200/90 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-900/8 hover:-translate-y-0.5 bg-white flex flex-col justify-between gap-3.5 transition-all cursor-pointer group"
@@ -4307,6 +4410,7 @@ export default function PresentationsPage() {
                               return (
                                 <tr
                                   key={item._id}
+                                  onMouseEnter={() => prefetchRecordSlides(item)}
                                   onClick={() => handleOpenRecord(item, "preview")}
                                   className="even:bg-slate-50/40 odd:bg-white hover:bg-blue-50/40 transition-colors cursor-pointer group"
                                 >
@@ -5002,6 +5106,22 @@ export default function PresentationsPage() {
                           Sıralama Değişti
                         </span>
                       )}
+                      {isHydratingBulkSlides && (
+                        <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-sky-400/20 border border-sky-300/35 text-sky-100 text-[10px] font-bold">
+                          <progress
+                            aria-label="Kalan slaytlar arka planda yükleniyor"
+                            className="loading-spinner"
+                            style={
+                              {
+                                "--size": "12px",
+                                "--thickness": "2px",
+                                "--spinner-color": "#7dd3fc",
+                              } as React.CSSProperties
+                            }
+                          />
+                          Diğer slaytlar yükleniyor...
+                        </span>
+                      )}
                     </div>
                     <p className="text-[11px] text-blue-200/90 truncate mt-0.5">
                       <strong className="text-white">
@@ -5441,6 +5561,114 @@ export default function PresentationsPage() {
             "px-4 py-2.5 rounded-xl bg-rose-50 hover:bg-rose-100 text-rose-700 border border-rose-200 text-sm font-bold transition-all",
         }}
       />
+
+      {/* Anlık (0ms) Hareketli Sunu Önizleme Yükleniyor Penceresi */}
+      {previewLoadingModal && (
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="pres-loading-modal-title"
+          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-150"
+        >
+          <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl border border-slate-200/90 overflow-hidden">
+            {/* Üst Kurumsal Stüdyo Başlığı */}
+            <div className="px-5 py-4 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white flex items-center justify-between gap-3">
+              <div className="flex items-center gap-3 min-w-0">
+                <progress
+                  aria-label="Sunu önizlemesi yükleniyor"
+                  className="loading-spinner shrink-0"
+                  style={
+                    {
+                      "--size": "32px",
+                      "--thickness": "3.5px",
+                      "--spinner-color": "#38bdf8",
+                    } as React.CSSProperties
+                  }
+                />
+                <div className="min-w-0">
+                  <h3
+                    id="pres-loading-modal-title"
+                    className="text-sm sm:text-base font-extrabold text-white truncate"
+                  >
+                    {previewLoadingModal.title}
+                  </h3>
+                  <p className="text-[11px] text-sky-200/90 truncate">
+                    {previewLoadingModal.subtitle}
+                  </p>
+                </div>
+              </div>
+
+              <button
+                type="button"
+                aria-label="Yüklemeyi iptal et"
+                onClick={() => {
+                  previewAbortRef.current?.abort();
+                  setPreviewLoadingModal(null);
+                  setLoadingMeetingSlides(false);
+                }}
+                className="p-1.5 rounded-xl bg-white/10 hover:bg-rose-500/80 text-white transition-colors shrink-0"
+                title="İptal"
+              >
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Hareketli 4:3 Mini Slayt Sahnesi İskeleti + İlerleme Çubuğu */}
+            <div className="p-5 space-y-4 bg-slate-50/70">
+              <div
+                aria-hidden="true"
+                className="w-full aspect-[4/3] rounded-2xl bg-gradient-to-br from-white via-slate-100 to-blue-50/70 border border-slate-200/90 shadow-inner p-4 flex flex-col justify-between relative overflow-hidden"
+              >
+                <div className="flex items-center gap-3 h-[42%]">
+                  <div className="w-[42%] h-full rounded-xl bg-slate-200/90 animate-pulse flex items-center justify-center border border-white">
+                    <PresentationIcon className="w-7 h-7 text-blue-500/60" />
+                  </div>
+                  <div className="flex-1 space-y-2">
+                    <div className="h-3.5 w-4/5 rounded-full bg-slate-300/80 animate-pulse" />
+                    <div className="h-2.5 w-3/5 rounded-full bg-slate-200 animate-pulse" />
+                  </div>
+                </div>
+
+                <div className="h-[48%] rounded-xl bg-white/90 border border-slate-200/70 p-3 space-y-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black text-blue-700/60">➢</span>
+                    <div className="h-2.5 w-11/12 rounded-full bg-slate-200 animate-pulse" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black text-blue-700/60">➢</span>
+                    <div className="h-2.5 w-4/5 rounded-full bg-slate-200/90 animate-pulse" />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-[10px] font-black text-blue-700/60">➢</span>
+                    <div className="h-2.5 w-3/5 rounded-full bg-slate-200/75 animate-pulse" />
+                  </div>
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <progress
+                  aria-label="Slayt verileri aktarılıyor"
+                  className="pres-progress-bar w-full h-2 block"
+                />
+                <div className="flex items-center justify-between text-[11px] font-semibold text-slate-500">
+                  <span>Slayt görselleri ve metinler hazırlanıyor...</span>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      previewAbortRef.current?.abort();
+                      setPreviewLoadingModal(null);
+                      setLoadingMeetingSlides(false);
+                    }}
+                    className="text-rose-600 hover:text-rose-700 font-bold"
+                  >
+                    Vazgeç
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Silme Onayı */}
       <ModernConfirmDialog

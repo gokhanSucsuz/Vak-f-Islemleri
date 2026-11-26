@@ -9,6 +9,8 @@ import {
   compressSlides,
   decompressSlides,
   computeSlideStats,
+  sanitizeSlidePlainText,
+  sanitizeSlideHtmlServer,
 } from "@/lib/presentationUtils";
 
 export async function GET(req: NextRequest) {
@@ -159,42 +161,49 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const sanitizedSlides: ISlideData[] = slides.map((s) => ({
-      fullName: (s.fullName || "").trim(),
-      neighborhood: (s.neighborhood || "").trim(),
-      photoCount: ([0, 1, 2, 4].includes(Number(s.photoCount))
-        ? Number(s.photoCount)
-        : 0) as 0 | 1 | 2 | 4,
-      photos: Array.isArray(s.photos) ? s.photos.slice(0, 4) : [],
-      description: (s.description || "").trim(),
-      descriptionHtml: typeof s.descriptionHtml === "string" ? s.descriptionHtml : "",
-      fontFamily: (s.fontFamily || "Verdana").trim() || "Verdana",
-      fontSize:
-        s.fontSize === "auto" || !s.fontSize
-          ? "auto"
-          : Math.min(24, Math.max(7, Number(s.fontSize))),
-      titleFontSize: Math.min(
-        26,
-        Math.max(
-          s.fontSize && s.fontSize !== "auto"
-            ? Math.min(24, Math.max(7, Number(s.fontSize))) + 1
-            : 14,
-          Number(s.titleFontSize ?? 20)
-        )
-      ),
-      titleBold: s.titleBold !== false,
-      descTopPct: Math.min(65, Math.max(44.5, Number(s.descTopPct ?? 46))),
-      descBottomPct: Math.min(97.5, Math.max(72, Number(s.descBottomPct ?? 96.5))),
-      photoWidthPct: Math.min(52, Math.max(20, Number(s.photoWidthPct ?? 41))),
-      photoHeightPct: Math.min(44, Math.max(22, Number(s.photoHeightPct ?? 41.6))),
-      photoLeftPct: Math.min(30, Math.max(0, Number(s.photoLeftPct ?? 3.2))),
-      photoFitMode:
-        s.photoFitMode === "fill" || s.photoFitMode === "cover"
-          ? s.photoFitMode
-          : "contain",
-      templateId: s.templateId ? String(s.templateId) : undefined,
-      backgroundPreset: s.backgroundPreset ? String(s.backgroundPreset).slice(0, 40) : "template",
-    }));
+    const sanitizedSlides: ISlideData[] = slides.map((s) => {
+      const cleanPlain = sanitizeSlidePlainText(s.description || "");
+      const cleanHtml = sanitizeSlideHtmlServer(
+        typeof s.descriptionHtml === "string" ? s.descriptionHtml : "",
+        cleanPlain
+      );
+      return {
+        fullName: (s.fullName || "").replace(/\s+/g, " ").trim(),
+        neighborhood: (s.neighborhood || "").replace(/\s+/g, " ").trim(),
+        photoCount: ([0, 1, 2, 4].includes(Number(s.photoCount))
+          ? Number(s.photoCount)
+          : 0) as 0 | 1 | 2 | 4,
+        photos: Array.isArray(s.photos) ? s.photos.slice(0, 4) : [],
+        description: cleanPlain,
+        descriptionHtml: cleanHtml,
+        fontFamily: "Verdana",
+        fontSize:
+          s.fontSize === "auto" || !s.fontSize
+            ? "auto"
+            : Math.min(24, Math.max(7, Number(s.fontSize))),
+        titleFontSize: Math.min(
+          26,
+          Math.max(
+            s.fontSize && s.fontSize !== "auto"
+              ? Math.min(24, Math.max(7, Number(s.fontSize))) + 1
+              : 14,
+            Number(s.titleFontSize ?? 20)
+          )
+        ),
+        titleBold: s.titleBold !== false,
+        descTopPct: Math.min(65, Math.max(44.5, Number(s.descTopPct ?? 46))),
+        descBottomPct: Math.min(97.5, Math.max(72, Number(s.descBottomPct ?? 96.5))),
+        photoWidthPct: Math.min(52, Math.max(20, Number(s.photoWidthPct ?? 41))),
+        photoHeightPct: Math.min(44, Math.max(22, Number(s.photoHeightPct ?? 41.6))),
+        photoLeftPct: Math.min(30, Math.max(0, Number(s.photoLeftPct ?? 3.2))),
+        photoFitMode:
+          s.photoFitMode === "fill" || s.photoFitMode === "cover"
+            ? s.photoFitMode
+            : "contain",
+        templateId: s.templateId ? String(s.templateId) : undefined,
+        backgroundPreset: s.backgroundPreset ? String(s.backgroundPreset).slice(0, 40) : "template",
+      };
+    });
 
     const firstValidName = sanitizedSlides.find((s) => s.fullName)?.fullName || "";
     const firstValidNeighborhood =

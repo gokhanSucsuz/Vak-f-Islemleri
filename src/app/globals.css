@@ -12,6 +12,24 @@
   --animate-blob: blob 7s infinite;
 }
 
+@property --arc-start {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@property --arc-end {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+@property --progress-dash-animation {
+  syntax: "*";
+  inherits: false;
+  initial-value: , progress-dash 3s ease-in-out infinite;
+}
+
 @layer base {
   :root {
     --background: 220 33% 97%;
@@ -201,9 +219,17 @@
     }
   }
 
-  /* Sunu Açıklama Editörü: Her satırda slayt üzerindeki ➢ simgesi canlı görünür */
+  /* Sunu Açıklama Editörü: Her satırda slayt üzerindeki ➢ simgesi canlı görünür ve tek tip Verdana font zorlanır */
   .pres-rich-editor {
     counter-reset: pres-bullet;
+    font-family: Verdana, Geneva, sans-serif !important;
+  }
+
+  .pres-rich-editor * {
+    font-family: Verdana, Geneva, sans-serif !important;
+    font-size: inherit !important;
+    line-height: inherit !important;
+    background-color: transparent !important;
   }
 
   .pres-rich-editor > p,
@@ -273,6 +299,140 @@
     }
   }
 
+  /* Semantik <progress> Yükleme Çemberi (Spinner) */
+  progress.loading-spinner:indeterminate::-webkit-progress-bar {
+    display: none;
+    background: none;
+  }
+
+  progress.loading-spinner:indeterminate::-webkit-progress-value {
+    display: none;
+    background: none;
+  }
+
+  progress.loading-spinner:indeterminate::-moz-progress-bar {
+    display: none;
+    background: none;
+  }
+
+  progress.loading-spinner:indeterminate {
+    --_from: calc(90deg + var(--arc-start, 0deg));
+    --_to: calc(90deg + var(--arc-end, 158deg));
+    --size: 44px;
+    --thickness: 4px;
+    --spinner-color: #38bdf8;
+    --track-color: rgba(255, 255, 255, 0.16);
+    --spinner-duration: 1.35s;
+    --_used-spinner-duration: var(--spinner-duration);
+
+    position: relative;
+    display: inline-block;
+    width: var(--size);
+    height: var(--size);
+    border-radius: 50%;
+    appearance: none;
+    background: conic-gradient(
+        from var(--_from),
+        var(--spinner-color) calc(var(--_to) - var(--_from)),
+        transparent 0
+      )
+      var(--track-color);
+    animation:
+      progress-spin var(--_used-spinner-duration) linear infinite
+      var(--progress-dash-animation, );
+  }
+
+  @supports (background-clip: border-area) {
+    progress.loading-spinner:indeterminate {
+      background-clip: border-area;
+      border: var(--thickness) solid transparent;
+      background-origin: border-box;
+    }
+  }
+
+  @supports not (background-clip: border-area) {
+    progress.loading-spinner:indeterminate {
+      --clip-boundary: calc(100% - var(--thickness));
+      mask-image: radial-gradient(
+        farthest-side,
+        transparent var(--clip-boundary),
+        black var(--clip-boundary)
+      );
+      -webkit-mask-image: radial-gradient(
+        farthest-side,
+        transparent var(--clip-boundary),
+        black var(--clip-boundary)
+      );
+      border: 0;
+    }
+  }
+
+  @media (forced-colors: active) {
+    progress.loading-spinner:indeterminate {
+      forced-color-adjust: none;
+      --spinner-color: CanvasText;
+      --track-color: Canvas;
+    }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    progress.loading-spinner:indeterminate {
+      --_used-spinner-duration: 6s;
+      --progress-dash-animation: ;
+      --arc-end: 158deg;
+    }
+  }
+
+  /* Semantik <progress> Yatay Yükleme Çubuğu */
+  progress.pres-progress-bar {
+    appearance: none;
+    border: 0 solid;
+    overflow: clip;
+    container-type: inline-size;
+    --progress-bar-radius: 9999px;
+    --progress-bar-track: rgba(226, 232, 240, 0.9);
+    --progress-bar-fill: linear-gradient(90deg, #2563eb, #0ea5e9, #10b981);
+    --progress-bar-indeterminate-size: 36%;
+    --progress-bar-indeterminate-animation-duration: 1.35s;
+    border-radius: var(--progress-bar-radius);
+    background: var(--progress-bar-track);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    progress.pres-progress-bar {
+      --progress-bar-indeterminate-animation-duration: 8s;
+    }
+  }
+
+  progress.pres-progress-bar:indeterminate {
+    --progress-bar-animation: var(
+      --progress-bar-indeterminate-animation,
+      progress-bar-indeterminate var(--progress-bar-indeterminate-animation-duration) infinite ease-in-out
+    );
+  }
+
+  progress.pres-progress-bar:dir(rtl) {
+    --progress-bar-indeterminate-animation: progress-bar-indeterminate var(--progress-bar-indeterminate-animation-duration) infinite ease-in-out reverse;
+  }
+
+  progress.pres-progress-bar::-webkit-progress-bar {
+    background: transparent;
+  }
+
+  progress.pres-progress-bar::-webkit-progress-value {
+    background: var(--progress-bar-fill);
+    border-radius: var(--progress-bar-radius);
+    transition: inline-size 0.25s;
+    animation: var(--progress-bar-animation, revert-rule);
+  }
+
+  progress.pres-progress-bar::-moz-progress-bar {
+    background: var(--progress-bar-fill);
+    border-radius: var(--progress-bar-radius);
+    transition: inline-size 0.25s;
+    animation: var(--progress-bar-animation, revert-rule);
+  }
+
   .animation-delay-2000 {
     animation-delay: 2s;
   }
@@ -297,6 +457,41 @@
 
   100% {
     transform: translate(0px, 0px) scale(1);
+  }
+}
+
+@keyframes progress-spin {
+  to {
+    rotate: 1turn;
+  }
+}
+
+@keyframes progress-dash {
+  from {
+    --arc-start: 0deg;
+    --arc-end: 3deg;
+  }
+  50% {
+    --arc-start: 100deg;
+    --arc-end: 358deg;
+  }
+  to {
+    --arc-start: 360deg;
+    --arc-end: 363deg;
+  }
+}
+
+@keyframes progress-bar-indeterminate {
+  from,
+  to {
+    inline-size: var(--progress-bar-indeterminate-size);
+    margin-right: auto;
+  }
+  from {
+    translate: -100%;
+  }
+  to {
+    translate: 100cqi;
   }
 }
 
