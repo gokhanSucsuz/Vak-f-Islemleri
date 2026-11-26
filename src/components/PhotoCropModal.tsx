@@ -1,6 +1,8 @@
 "use client";
 
-import { useState, useEffect, useRef, useCallback, type SyntheticEvent, type PointerEvent as ReactPointerEvent } from "react";
+import { useState, useEffect, useRef, useCallback, type PointerEvent as ReactPointerEvent } from "react";
+import { decodeDataUrlToBitmap } from "@/lib/presentationClient";
+import ProtectedCanvasImage from "@/components/ProtectedCanvasImage";
 import {
   Crop,
   RotateCw,
@@ -129,7 +131,6 @@ export default function PhotoCropModal({
   onApplyCrop,
 }: PhotoCropModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
-  const imageRef = useRef<HTMLImageElement>(null);
 
   // Aktif Sekme (Kırpma / Işık-Renk)
   const [activeTab, setActiveTab] = useState<EditorTab>(initialTab);
@@ -181,11 +182,19 @@ export default function PhotoCropModal({
     }
   }, [isOpen, photoSrc, initialTab]);
 
-  // Görsel yüklendiğinde doğal boyutunu al
-  const handleImageLoad = (e: SyntheticEvent<HTMLImageElement>) => {
-    const img = e.currentTarget;
-    setImgNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
-  };
+  // Görselin doğal boyutlarını Network sekmesine düşmeden ImageBitmap ile oku
+  useEffect(() => {
+    let cancelled = false;
+    if (!isOpen || !photoSrc) return;
+    decodeDataUrlToBitmap(photoSrc).then((bmp) => {
+      if (!cancelled && bmp) {
+        setImgNaturalSize({ w: bmp.width, h: bmp.height });
+      }
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [isOpen, photoSrc]);
 
   // En-boy oranı değiştikçe crop kutusunu orana uygun şekilde ortala
   const applyAspectRatio = useCallback(
@@ -379,20 +388,15 @@ export default function PhotoCropModal({
 
   // Kırpma, Döndürme, Işıklandırma ve Renk Ayarlarını Tuvale İşleyip Çıktı Alma
   const handleApply = async () => {
-    if (!imageRef.current || !photoSrc) return;
+    if (!photoSrc) return;
     setProcessing(true);
 
     try {
-      const img = new Image();
-      img.crossOrigin = "anonymous";
-      await new Promise<void>((resolve, reject) => {
-        img.onload = () => resolve();
-        img.onerror = () => reject(new Error("Görsel yüklenemedi."));
-        img.src = photoSrc;
-      });
+      const bmp = await decodeDataUrlToBitmap(photoSrc);
+      if (!bmp) throw new Error("Görsel yüklenemedi.");
 
-      const natW = img.naturalWidth;
-      const natH = img.naturalHeight;
+      const natW = bmp.width;
+      const natH = bmp.height;
 
       // 1. Adım: Döndürme, Aynalama ve IŞIK/RENK FİLTRELERİ içeren ara tuval oluştur
       const isRotated = rotation === 90 || rotation === 270;
@@ -420,7 +424,7 @@ export default function PhotoCropModal({
         tCtx.rotate((rotation * Math.PI) / 180);
       }
       tCtx.scale(flipH ? -1 : 1, flipV ? -1 : 1);
-      tCtx.drawImage(img, -natW / 2, -natH / 2, natW, natH);
+      tCtx.drawImage(bmp, -natW / 2, -natH / 2, natW, natH);
 
       // 2. Adım: Kırpma koordinatlarını doğal piksel cinsine dönüştür
       const cropPxX = Math.round((crop.x / 100) * rotCanvasW);
@@ -582,14 +586,13 @@ export default function PhotoCropModal({
               maxHeight: "48vh",
             }}
           >
-            {/* Gösterilen Görsel - Canlı Filtre ve Döndürme Uygulanır */}
-            <img
-              ref={imageRef}
+            {/* Gösterilen Görsel - Korumalı Canvas üzerinde canlı filtre ve döndürme uygulanır */}
+            <ProtectedCanvasImage
               src={photoSrc}
               alt="Düzenlenen fotoğraf"
-              onLoad={handleImageLoad}
-              draggable={false}
-              className="max-h-[48vh] max-w-full object-contain pointer-events-none transition-[filter] duration-75"
+              fit="contain"
+              hugAspect={true}
+              className="max-h-[48vh] max-w-full w-auto h-auto pointer-events-none transition-[filter] duration-75"
               style={{
                 transform: `rotate(${rotation}deg) scale(${flipH ? -1 : 1}, ${flipV ? -1 : 1})`,
                 filter: currentFilterStyle,

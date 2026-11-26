@@ -14,6 +14,7 @@ import {
   setCachedPresentationTemplates,
   invalidatePresentationTemplatesCache,
 } from "@/lib/referenceCache";
+import { respondShieldedJson } from "@/lib/payloadShield";
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -25,16 +26,21 @@ const DEFAULT_LAYOUT: ITemplateLayoutConfig = {
   photoSlots: [{ xPct: 3.2, yPct: 2.4, wPct: 41, hPct: 41.6 }],
 };
 
-export async function GET() {
+export async function GET(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
+    const userId = String((session.user as any)?.id || "");
+    const isWarmOnly = new URL(req.url).searchParams.get("warm") === "1";
 
     const cached = getCachedPresentationTemplates();
     if (cached) {
-      return NextResponse.json({
+      if (isWarmOnly) {
+        return NextResponse.json({ ok: true });
+      }
+      return respondShieldedJson(req, userId, {
         templates: cached,
         template: cached[0] || null,
       });
@@ -89,7 +95,11 @@ export async function GET() {
 
     setCachedPresentationTemplates(templates);
 
-    return NextResponse.json({
+    if (isWarmOnly) {
+      return NextResponse.json({ ok: true });
+    }
+
+    return respondShieldedJson(req, userId, {
       templates,
       template: templates[0] || null,
     });

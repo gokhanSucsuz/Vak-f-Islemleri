@@ -46,7 +46,7 @@ export default function Sidebar() {
     }, 600);
     const t2 = setTimeout(() => {
       fetch("/api/help-types").catch(() => {});
-      fetch("/api/presentations/template").catch(() => {});
+      fetch("/api/presentations/template?warm=1").catch(() => {});
     }, 1400);
     return () => {
       clearTimeout(t1);

@@ -1,6 +1,268 @@
 "use client";
 
 const cleanedBgCache = new Map<string, string>();
+const protectedBitmapCache = new Map<string, ImageBitmap>();
+const inflightBitmapDecodes = new Map<string, Promise<ImageBitmap | null>>();
+
+function makeMediaCacheKey(dataUrl: string): string {
+  if (!dataUrl) return "";
+  return `${dataUrl.length}:${dataUrl.slice(0, 56)}:${dataUrl.slice(-48)}`;
+}
+
+/**
+ * `data:image/...;base64,...` dizisini `<img src>` veya `new Image()` KULLANMADAN
+ * doğrudan bellek içi ikili `Blob` -> `ImageBitmap` olarak arka plan iş parçacığında çözer.
+ * Chrome DevTools Network sekmesinde hiçbir `data:image` veya `blob:` satırı oluşturmaz.
+ */
+export async function decodeDataUrlToBitmap(dataUrl: string): Promise<ImageBitmap | null> {
+  if (!dataUrl || typeof window === "undefined" || typeof createImageBitmap === "undefined") {
+    return null;
+  }
+  const key = makeMediaCacheKey(dataUrl);
+  const cached = protectedBitmapCache.get(key);
+  if (cached) return cached;
+
+  const inflight = inflightBitmapDecodes.get(key);
+  if (inflight) return inflight;
+
+  const task = (async (): Promise<ImageBitmap | null> => {
+    try {
+      const commaIdx = dataUrl.indexOf(",");
+      if (commaIdx < 0) return null;
+      const header = dataUrl.slice(0, commaIdx);
+      const b64 = dataUrl.slice(commaIdx + 1);
+      const mimeMatch = header.match(/^data:([^;]+)/i);
+      const mime = mimeMatch ? mimeMatch[1] : "image/jpeg";
+
+      const binary = atob(b64);
+      const len = binary.length;
+      const bytes = new Uint8Array(len);
+      for (let i = 0; i < len; i++) {
+        bytes[i] = binary.charCodeAt(i);
+      }
+
+      const blob = new Blob([bytes], { type: mime });
+      const bmp = await createImageBitmap(blob);
+
+      if (protectedBitmapCache.size >= 160) {
+        const oldestKey = protectedBitmapCache.keys().next().value;
+        if (oldestKey) {
+          const oldBmp = protectedBitmapCache.get(oldestKey);
+          oldBmp?.close?.();
+          protectedBitmapCache.delete(oldestKey);
+        }
+      }
+      protectedBitmapCache.set(key, bmp);
+      return bmp;
+    } catch {
+      return null;
+    } finally {
+      inflightBitmapDecodes.delete(key);
+    }
+  })();
+
+  inflightBitmapDecodes.set(key, task);
+  return task;
+}
+
+/**
+ * Sayfadan çıkıldığında bellekteki tüm çözülmüş ImageBitmap piksellerini serbest bırakır (KVKK bellek temizliği).
+ */
+export function clearProtectedBitmapCache(): void {
+  for (const bmp of protectedBitmapCache.values()) {
+    try {
+      bmp.close?.();
+    } catch {
+      // ignore
+    }
+  }
+  protectedBitmapCache.clear();
+  inflightBitmapDecodes.clear();
+}
+
+// ============================================================================
+// OTURUMA ÖZEL WEBCYPTO AES-256-GCM İLETİM ZIRHI (Sıfır Yavaşlama / Donanım AES-NI)
+// ============================================================================
+let shieldCryptoKeyPromise: Promise<CryptoKey | null> | null = null;
+
+function isWebCryptoShieldSupported(): boolean {
+  return (
+    typeof window !== "undefined" &&
+    Boolean(window.isSecureContext) &&
+    Boolean(window.crypto?.subtle) &&
+    typeof DecompressionStream !== "undefined" &&
+    typeof CompressionStream !== "undefined"
+  );
+}
+
+async function getSessionShieldKey(): Promise<CryptoKey | null> {
+  if (!isWebCryptoShieldSupported()) return null;
+  if (shieldCryptoKeyPromise) return shieldCryptoKeyPromise;
+
+  shieldCryptoKeyPromise = (async () => {
+    try {
+      const res = await fetch("/api/presentations/shield", {
+        method: "POST",
+        cache: "no-store",
+      });
+      if (!res.ok) return null;
+      const buf = new Uint8Array(await res.arrayBuffer());
+      if (buf.byteLength < 64) return null;
+
+      const rawKey = new Uint8Array(32);
+      for (let i = 0; i < 32; i++) {
+        rawKey[i] = buf[i] ^ buf[32 + i];
+      }
+
+      // `extractable: false` -> Tarayıcı konsolundan dahi anahtar dışarı aktarılamaz!
+      const cryptoKey = await window.crypto.subtle.importKey(
+        "raw",
+        rawKey,
+        { name: "AES-GCM" },
+        false,
+        ["encrypt", "decrypt"]
+      );
+      rawKey.fill(0);
+      buf.fill(0);
+      return cryptoKey;
+    } catch {
+      shieldCryptoKeyPromise = null;
+      return null;
+    }
+  })();
+
+  return shieldCryptoKeyPromise;
+}
+
+async function decryptShieldEnvelope<T = any>(
+  envelope: any,
+  key: CryptoKey | null
+): Promise<T> {
+  if (!envelope || typeof envelope !== "object" || envelope.s !== 1 || typeof envelope.p !== "string") {
+    return envelope as T;
+  }
+  if (!key) {
+    throw new Error("Şifreli oturum anahtarı alınamadı.");
+  }
+
+  const bin = atob(envelope.p);
+  const bytes = new Uint8Array(bin.length);
+  for (let i = 0; i < bin.length; i++) {
+    bytes[i] = bin.charCodeAt(i);
+  }
+
+  const iv = bytes.subarray(0, 12);
+  const cipherWithTag = bytes.subarray(12);
+  const decryptedBuf = await window.crypto.subtle.decrypt(
+    { name: "AES-GCM", iv },
+    key,
+    cipherWithTag
+  );
+
+  const framed = new Uint8Array(decryptedBuf);
+  const mode = framed[0];
+  const payload = framed.subarray(1);
+
+  if (mode === 1) {
+    const ds = new DecompressionStream("gzip");
+    const decompressedStream = new Blob([payload]).stream().pipeThrough(ds);
+    const jsonText = await new Response(decompressedStream).text();
+    return JSON.parse(jsonText) as T;
+  }
+
+  const jsonText = new TextDecoder().decode(payload);
+  return JSON.parse(jsonText) as T;
+}
+
+async function encryptShieldBody(
+  data: unknown,
+  key: CryptoKey
+): Promise<{ s: 1; p: string }> {
+  const jsonBytes = new TextEncoder().encode(JSON.stringify(data));
+  let framed: Uint8Array;
+
+  if (jsonBytes.byteLength >= 1024) {
+    const cs = new CompressionStream("gzip");
+    const compressedStream = new Blob([jsonBytes]).stream().pipeThrough(cs);
+    const gzBuf = new Uint8Array(await new Response(compressedStream).arrayBuffer());
+    framed = new Uint8Array(1 + gzBuf.byteLength);
+    framed[0] = 1;
+    framed.set(gzBuf, 1);
+  } else {
+    framed = new Uint8Array(1 + jsonBytes.byteLength);
+    framed[0] = 0;
+    framed.set(jsonBytes, 1);
+  }
+
+  const iv = window.crypto.getRandomValues(new Uint8Array(12));
+  const cipherBuf = new Uint8Array(
+    await window.crypto.subtle.encrypt({ name: "AES-GCM", iv }, key, framed as BufferSource)
+  );
+
+  const combined = new Uint8Array(12 + cipherBuf.byteLength);
+  combined.set(iv, 0);
+  combined.set(cipherBuf, 12);
+
+  let binary = "";
+  const chunkSize = 0x8000;
+  for (let i = 0; i < combined.length; i += chunkSize) {
+    binary += String.fromCharCode(...combined.subarray(i, i + chunkSize));
+  }
+  return { s: 1, p: btoa(binary) };
+}
+
+/**
+ * Sunular API'lerinden gelen yanıtları AES-256-GCM şifreli kanal üzerinden çeker ve bellekte çözer.
+ * Network sekmesinde kişisel veriler veya base64 fotoğraflar yerine yalnızca `{ s: 1, p: "..." }` görünür.
+ */
+export async function shieldedFetchJson<T = any>(
+  url: string,
+  init?: RequestInit
+): Promise<{ ok: boolean; status: number; data: T }> {
+  const key = await getSessionShieldKey();
+  const headers = new Headers(init?.headers || {});
+  if (key) {
+    headers.set("X-Vakif-Shield", "1");
+  }
+
+  const res = await fetch(url, {
+    ...init,
+    headers,
+  });
+
+  const rawJson = await res.json();
+  const data = key ? await decryptShieldEnvelope<T>(rawJson, key) : (rawJson as T);
+  return { ok: res.ok, status: res.status, data };
+}
+
+/**
+ * Sunu ekleme ve güncelleme isteklerinde giden gövdeyi de (fotoğraf + metin) AES-256-GCM ile şifreler.
+ */
+export async function shieldedSendJson<T = any>(
+  url: string,
+  method: "POST" | "PUT" | "PATCH",
+  payload: unknown,
+  init?: RequestInit
+): Promise<{ ok: boolean; status: number; data: T }> {
+  const key = await getSessionShieldKey();
+  const headers = new Headers(init?.headers || {});
+  headers.set("Content-Type", "application/json");
+  if (key) {
+    headers.set("X-Vakif-Shield", "1");
+  }
+
+  const bodyObj = key ? await encryptShieldBody(payload, key) : payload;
+  const res = await fetch(url, {
+    ...init,
+    method,
+    headers,
+    body: JSON.stringify(bodyObj),
+  });
+
+  const rawJson = await res.json();
+  const data = key ? await decryptShieldEnvelope<T>(rawJson, key) : (rawJson as T);
+  return { ok: res.ok, status: res.status, data };
+}
 
 /**
  * Şablon arka plan görselinin sol alt köşesindeki (fppt.com) filigran alanını
@@ -12,15 +274,11 @@ export async function cleanTemplateWatermark(dataUrl: string): Promise<string> {
   if (cached) return cached;
 
   try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("Görsel yüklenemedi"));
-      el.src = dataUrl;
-    });
+    const bmp = await decodeDataUrlToBitmap(dataUrl);
+    if (!bmp) return dataUrl;
 
-    const w = img.naturalWidth || img.width;
-    const h = img.naturalHeight || img.height;
+    const w = bmp.width;
+    const h = bmp.height;
     if (!w || !h) return dataUrl;
 
     const canvas = document.createElement("canvas");
@@ -29,7 +287,7 @@ export async function cleanTemplateWatermark(dataUrl: string): Promise<string> {
     const ctx = canvas.getContext("2d");
     if (!ctx) return dataUrl;
 
-    ctx.drawImage(img, 0, 0, w, h);
+    ctx.drawImage(bmp, 0, 0, w, h);
 
     // Sol alt köşedeki fppt.com yazısını (~x: %0.5..%14, y: %94.2..%99.2)
     // üstteki ve sağdaki temiz arka plan gradyanını devam ettirerek (yumuşak geçişli) kapat
@@ -563,13 +821,12 @@ export function compressImageToJpeg(
   });
 }
 
-function getImageDimensions(dataUrl: string): Promise<{ w: number; h: number }> {
-  return new Promise((resolve) => {
-    const img = new Image();
-    img.onload = () => resolve({ w: img.width || 4, h: img.height || 3 });
-    img.onerror = () => resolve({ w: 4, h: 3 });
-    img.src = dataUrl;
-  });
+async function getImageDimensions(dataUrl: string): Promise<{ w: number; h: number }> {
+  const bmp = await decodeDataUrlToBitmap(dataUrl);
+  if (bmp && bmp.width > 0 && bmp.height > 0) {
+    return { w: bmp.width, h: bmp.height };
+  }
+  return { w: 4, h: 3 };
 }
 
 async function roundImageCorners(dataUrl: string, radiusRatio = 0.04): Promise<string> {
@@ -996,14 +1253,10 @@ async function renderFramedPhotoForPptx(
   if (cached) return cached;
 
   try {
-    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
-      const el = new Image();
-      el.onload = () => resolve(el);
-      el.onerror = () => reject(new Error("Görsel yüklenemedi"));
-      el.src = dataUrl;
-    });
-    const iw = img.naturalWidth || img.width;
-    const ih = img.naturalHeight || img.height;
+    const img = await decodeDataUrlToBitmap(dataUrl);
+    if (!img) return { dataUrl, shadow: defaultShadow };
+    const iw = img.width;
+    const ih = img.height;
     if (!iw || !ih) return { dataUrl, shadow: defaultShadow };
 
     const minDim = Math.min(iw, ih);

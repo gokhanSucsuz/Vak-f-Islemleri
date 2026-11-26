@@ -47,6 +47,7 @@ import {
 import ModernConfirmDialog from "@/components/ModernConfirmDialog";
 import PaginationControls from "@/components/PaginationControls";
 import PhotoCropModal from "@/components/PhotoCropModal";
+import ProtectedCanvasImage from "@/components/ProtectedCanvasImage";
 import {
   SlideItem,
   PresentationTemplateClient,
@@ -60,6 +61,9 @@ import {
   exportSlidesToPptx,
   extractCleanPlainLines,
   sanitizeSlideDescriptionHtml,
+  shieldedFetchJson,
+  shieldedSendJson,
+  clearProtectedBitmapCache,
 } from "@/lib/presentationClient";
 
 interface MeetingItem {
@@ -737,15 +741,15 @@ function SlidePreviewCard({
           height: "540px",
           transform: `scale(${cardScale})`,
           fontFamily,
-          ...(activeBgImage
-            ? {
-                backgroundImage: `url(${activeBgImage})`,
-                backgroundSize: "cover",
-                backgroundPosition: "center",
-              }
-            : {}),
         }}
       >
+      {activeBgImage && (
+        <ProtectedCanvasImage
+          src={activeBgImage}
+          fit="cover"
+          className="absolute inset-0 w-full h-full pointer-events-none"
+        />
+      )}
       {/* 1. FOTOĞRAF ALANLARI (Şablon moduna göre) */}
       {(layout.mode === "classic" ||
         ((layout.mode === "blank_text" || layout.mode === "title_only") &&
@@ -803,17 +807,16 @@ function SlidePreviewCard({
                     dragIdx === idx ? "opacity-50" : ""
                   }`}
                 >
-                  <img
+                  <ProtectedCanvasImage
                     src={src}
                     alt={`Slayt fotoğrafı ${idx + 1}`}
-                    draggable={false}
+                    fit={fitMode}
+                    hugAspect={fitMode === "contain"}
                     style={frameImgStyle}
                     className={`${hasActiveFrame ? "" : "drop-shadow-md rounded-xl"} pointer-events-none ${
-                      fitMode === "fill"
-                        ? "w-full h-full object-fill"
-                        : fitMode === "cover"
-                          ? "w-full h-full object-cover"
-                          : "max-w-full max-h-full w-auto h-auto object-contain"
+                      fitMode === "contain"
+                        ? "max-w-full max-h-full w-auto h-auto"
+                        : "w-full h-full"
                     }`}
                   />
                 </div>
@@ -873,17 +876,16 @@ function SlidePreviewCard({
               }`}
             >
               {src ? (
-                <img
+                <ProtectedCanvasImage
                   src={src}
                   alt={`Slot ${idx + 1}`}
-                  draggable={false}
+                  fit={fitMode}
+                  hugAspect={fitMode === "contain"}
                   style={frameImgStyle}
                   className={`${hasActiveFrame ? "" : "drop-shadow-md rounded-xl"} pointer-events-none ${
-                    fitMode === "fill"
-                      ? "w-full h-full object-fill"
-                      : fitMode === "cover"
-                        ? "w-full h-full object-cover"
-                        : "max-w-full max-h-full w-auto h-auto object-contain"
+                    fitMode === "contain"
+                      ? "max-w-full max-h-full w-auto h-auto"
+                      : "w-full h-full"
                   }`}
                 />
               ) : (
@@ -1214,11 +1216,16 @@ function SlideMiniThumbnail({
           style={{
             background: usePresetBg
               ? presetObj.previewBg
-              : activeTpl?.backgroundImageBase64
-                ? `url(${activeTpl.backgroundImageBase64}) center/cover no-repeat`
-                : "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)",
+              : "linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%)",
           }}
         >
+          {!usePresetBg && activeTpl?.backgroundImageBase64 && (
+            <ProtectedCanvasImage
+              src={activeTpl.backgroundImageBase64}
+              fit="cover"
+              className="absolute inset-0 w-full h-full pointer-events-none"
+            />
+          )}
           {usePresetBg && (
             <div
               className="absolute inset-x-0 top-0 h-1"
@@ -1243,18 +1250,18 @@ function SlideMiniThumbnail({
                 }
                 className="w-[42%] h-full rounded-[4px] overflow-hidden border border-white/80 shadow-2xs bg-slate-200 flex gap-0.5 shrink-0"
               >
-                <img
+                <ProtectedCanvasImage
                   src={firstPhoto}
                   alt=""
-                  draggable={false}
-                  className={secondPhoto ? "w-1/2 h-full object-cover" : "w-full h-full object-cover"}
+                  fit="cover"
+                  className={secondPhoto ? "w-1/2 h-full" : "w-full h-full"}
                 />
                 {secondPhoto && (
-                  <img
+                  <ProtectedCanvasImage
                     src={secondPhoto}
                     alt=""
-                    draggable={false}
-                    className="w-1/2 h-full object-cover"
+                    fit="cover"
+                    className="w-1/2 h-full"
                   />
                 )}
               </div>
@@ -1735,11 +1742,19 @@ export default function PresentationsPage() {
     return () => clearTimeout(t);
   }, [search]);
 
+  // KVKK Bellek Koruması: Sayfadan ayrılındığında çözülmüş ImageBitmap ve slayt önbelleğini temizle
+  useEffect(() => {
+    return () => {
+      slideCacheRef.current.clear();
+      clearProtectedBitmapCache();
+    };
+  }, []);
+
   const fetchTemplates = useCallback(async () => {
     try {
-      const tplRes = await fetch("/api/presentations/template");
+      const tplRes = await shieldedFetchJson("/api/presentations/template");
       if (!tplRes.ok) return;
-      const tplData = await tplRes.json();
+      const tplData = tplRes.data;
       const rawTpls: PresentationTemplateClient[] =
         tplData.templates || (tplData.template ? [tplData.template] : []);
       // Önce ham şablonları anında göster, filigran temizliğini ana iş parçacığını bloklamadan arka planda uygula
@@ -1798,9 +1813,8 @@ export default function PresentationsPage() {
       const params = new URLSearchParams();
       params.set("meetingId", selectedMeetingId);
       if (debouncedSearch.trim()) params.set("search", debouncedSearch.trim());
-      const res = await fetch(`/api/presentations?${params.toString()}`);
-      const data = await res.json();
-      if (res.ok) setPresentations(data.presentations || []);
+      const res = await shieldedFetchJson(`/api/presentations?${params.toString()}`);
+      if (res.ok) setPresentations(res.data?.presentations || []);
     } catch {
       // sessiz
     }
@@ -1942,8 +1956,8 @@ export default function PresentationsPage() {
       return;
     }
     inflightPrefetchRef.current.add(item._id);
-    fetch(`/api/presentations/${item._id}`)
-      .then((r) => (r.ok ? r.json() : null))
+    shieldedFetchJson(`/api/presentations/${item._id}`)
+      .then((r) => (r.ok ? r.data : null))
       .then((d) => {
         if (d?.presentation?.slides) {
           slideCacheRef.current.set(item._id, {
@@ -2005,7 +2019,9 @@ export default function PresentationsPage() {
         const [res, lockRes] = await Promise.all([
           cached
             ? Promise.resolve(null)
-            : fetch(`/api/presentations/${item._id}`, { signal: controller.signal }),
+            : shieldedFetchJson(`/api/presentations/${item._id}`, {
+                signal: controller.signal,
+              }),
           fetch(`/api/presentations/${item._id}`, {
             method: "PATCH",
             headers: { "Content-Type": "application/json" },
@@ -2014,7 +2030,7 @@ export default function PresentationsPage() {
           }),
         ]);
         const [data, lockData] = await Promise.all([
-          res ? res.json() : Promise.resolve(null),
+          Promise.resolve(res ? res.data : null),
           lockRes.json().catch(() => ({})),
         ]);
         setPreviewLoadingModal(null);
@@ -2050,11 +2066,11 @@ export default function PresentationsPage() {
 
       let loadedSlides: SlideItem[] = cached ? cached.slides : [];
       if (!cached) {
-        const res = await fetch(`/api/presentations/${item._id}`, {
+        const res = await shieldedFetchJson(`/api/presentations/${item._id}`, {
           signal: controller.signal,
         });
-        const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Sunu alınamadı");
+        const data = res.data;
+        if (!res.ok) throw new Error(data?.error || "Sunu alınamadı");
         loadedSlides = data.presentation.slides || [];
         slideCacheRef.current.set(item._id, {
           meetingId: String(data.presentation.meetingId || item.meetingId),
@@ -2233,13 +2249,12 @@ export default function PresentationsPage() {
     try {
       const url = editingId ? `/api/presentations/${editingId}` : "/api/presentations";
       const method = editingId ? "PUT" : "POST";
-      const res = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ meetingId: editorMeetingId, slides: normalizedSlides }),
+      const res = await shieldedSendJson(url, method, {
+        meetingId: editorMeetingId,
+        slides: normalizedSlides,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Sunu kaydedilemedi");
+      const data = res.data;
+      if (!res.ok) throw new Error(data?.error || "Sunu kaydedilemedi");
 
       const wasEditingId = editingId;
       if (wasEditingId) {
@@ -2403,12 +2418,12 @@ export default function PresentationsPage() {
       const fastParams = new URLSearchParams({ fast: "1" });
       if (filterPersonnelName) fastParams.set("author", filterPersonnelName);
 
-      const res = await fetch(
+      const res = await shieldedFetchJson(
         `/api/presentations/meetings/${meeting._id}?${fastParams.toString()}`,
         { signal: controller.signal }
       );
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Toplantı slaytları alınamadı");
+      const data = res.data;
+      if (!res.ok) throw new Error(data?.error || "Toplantı slaytları alınamadı");
 
       const allGroups: OrderedPresentationGroup[] = data.orderedPresentations || [];
       const groups = filterPersonnelName
@@ -2443,13 +2458,13 @@ export default function PresentationsPage() {
         wakeSlideshowHud();
       }
 
-      // Kalan slaytları kullanıcıyı hiç bekletmeden arka planda sessizce doldur!
+      // Kalan slaytları kullanıcıyı hiç bekletmeden arka planda şifreli kanaldan doldur!
       if (data.hasDeferred) {
         setIsHydratingBulkSlides(true);
-        fetch(`/api/presentations/meetings/${meeting._id}`, {
+        shieldedFetchJson(`/api/presentations/meetings/${meeting._id}`, {
           signal: controller.signal,
         })
-          .then((fullRes) => (fullRes.ok ? fullRes.json() : null))
+          .then((fullRes) => (fullRes.ok ? fullRes.data : null))
           .then((fullData) => {
             if (!fullData?.orderedPresentations) return;
             const fullMap = new Map<string, OrderedPresentationGroup>();
@@ -2773,13 +2788,13 @@ export default function PresentationsPage() {
 
     setSavingBulkEdit(true);
     try {
-      const res = await fetch(`/api/presentations/${current.presentationId}`, {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ slides: updatedGroupSlides }),
-      });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Slayt güncellenemedi");
+      const res = await shieldedSendJson(
+        `/api/presentations/${current.presentationId}`,
+        "PUT",
+        { slides: updatedGroupSlides }
+      );
+      const data = res.data;
+      if (!res.ok) throw new Error(data?.error || "Slayt güncellenemedi");
 
       setBulkPreviewModal((prev) => {
         if (!prev) return null;
@@ -2822,12 +2837,12 @@ export default function PresentationsPage() {
       subtitle: `${meeting.title} • Sunu listesi hazırlanıyor`,
     });
     try {
-      const res = await fetch(`/api/presentations/meetings/${meeting._id}`, {
+      const res = await shieldedFetchJson(`/api/presentations/meetings/${meeting._id}`, {
         signal: controller.signal,
       });
-      const data = await res.json();
+      const data = res.data;
       setPreviewLoadingModal(null);
-      if (!res.ok) throw new Error(data.error || "Toplantı slaytları alınamadı");
+      if (!res.ok) throw new Error(data?.error || "Toplantı slaytları alınamadı");
       setManageMeetingModal({
         meeting: data.meeting,
         orderedPresentations: data.orderedPresentations || [],
@@ -2916,13 +2931,15 @@ export default function PresentationsPage() {
         }
       }
 
-      // 2. Güncel arşiv yoksa veya slaytlar değiştiyse eksiksiz tüm slaytları al
+      // 2. Güncel arşiv yoksa veya slaytlar değiştiyse eksiksiz tüm slaytları şifreli kanaldan al
       let fullGroups = orderedGroups || [];
       if (fullGroups.length === 0 || fullGroups.some((g) => g.isPartial)) {
-        const fullRes = await fetch(`/api/presentations/meetings/${meeting._id}`);
-        const fullData = await fullRes.json();
+        const fullRes = await shieldedFetchJson(
+          `/api/presentations/meetings/${meeting._id}`
+        );
+        const fullData = fullRes.data;
         if (!fullRes.ok) {
-          throw new Error(fullData.error || "Toplantı slaytları alınamadı.");
+          throw new Error(fullData?.error || "Toplantı slaytları alınamadı.");
         }
         fullGroups = fullData.orderedPresentations || [];
       }
@@ -2958,8 +2975,10 @@ export default function PresentationsPage() {
         .catch(() => {});
 
       if (manageMeetingModal && manageMeetingModal.meeting._id === meeting._id) {
-        const refreshed = await fetch(`/api/presentations/meetings/${meeting._id}`);
-        const refData = await refreshed.json();
+        const refreshed = await shieldedFetchJson(
+          `/api/presentations/meetings/${meeting._id}`
+        );
+        const refData = refreshed.data;
         if (refreshed.ok) {
           setManageMeetingModal({
             meeting: refData.meeting,
@@ -3358,10 +3377,11 @@ export default function PresentationsPage() {
                         key={idx}
                         className="relative aspect-square rounded-xl border border-slate-200 overflow-hidden bg-slate-50 group"
                       >
-                        <img
+                        <ProtectedCanvasImage
                           src={src}
                           alt={`Foto ${idx + 1}`}
-                          className="w-full h-full object-contain"
+                          fit="contain"
+                          className="w-full h-full"
                         />
                         <button
                           type="button"
@@ -4524,10 +4544,11 @@ export default function PresentationsPage() {
                                   className="relative w-24 h-18 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shrink-0 shadow-xs"
                                 >
                                   {item.firstPhoto ? (
-                                    <img
+                                    <ProtectedCanvasImage
                                       src={item.firstPhoto}
                                       alt="Slayt Önizleme"
-                                      className="w-full h-full object-cover group-hover:scale-105 transition-transform duration-300"
+                                      fit="cover"
+                                      className="w-full h-full group-hover:scale-105 transition-transform duration-300"
                                     />
                                   ) : (
                                     <div className="w-full h-full flex items-center justify-center text-slate-400 bg-gradient-to-br from-slate-50 to-slate-100">
@@ -4785,10 +4806,11 @@ export default function PresentationsPage() {
                                           className="w-12 h-9 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shrink-0"
                                         >
                                           {item.firstPhoto ? (
-                                            <img
+                                            <ProtectedCanvasImage
                                               src={item.firstPhoto}
                                               alt=""
-                                              className="w-full h-full object-cover"
+                                              fit="cover"
+                                              className="w-full h-full"
                                             />
                                           ) : (
                                             <div className="w-full h-full flex items-center justify-center text-slate-400">
@@ -4987,11 +5009,14 @@ export default function PresentationsPage() {
                         </button>
                       </div>
                       {tpl.backgroundImageBase64 && (
-                        <img
-                          src={tpl.backgroundImageBase64}
-                          alt={tpl.name}
-                          className="w-full aspect-[4/3] object-cover rounded-xl border border-slate-200"
-                        />
+                        <div className="w-full aspect-[4/3] rounded-xl border border-slate-200 overflow-hidden">
+                          <ProtectedCanvasImage
+                            src={tpl.backgroundImageBase64}
+                            alt={tpl.name}
+                            fit="cover"
+                            className="w-full h-full"
+                          />
+                        </div>
                       )}
                     </div>
                   ))}
@@ -5334,11 +5359,14 @@ export default function PresentationsPage() {
                         {idx + 1}
                       </span>
                       {grp.firstPhoto ? (
-                        <img
-                          src={grp.firstPhoto}
-                          alt="Thumb"
-                          className="w-14 h-10 rounded-lg object-cover border border-slate-200 shrink-0"
-                        />
+                        <div className="w-14 h-10 rounded-lg overflow-hidden border border-slate-200 shrink-0">
+                          <ProtectedCanvasImage
+                            src={grp.firstPhoto}
+                            alt=""
+                            fit="cover"
+                            className="w-14 h-10"
+                          />
+                        </div>
                       ) : (
                         <div className="w-14 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
                           <Sparkles className="w-4 h-4" />

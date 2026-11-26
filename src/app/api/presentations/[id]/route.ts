@@ -12,9 +12,10 @@ import {
   sanitizeSlidePlainText,
   sanitizeSlideHtmlServer,
 } from "@/lib/presentationUtils";
+import { parseShieldedRequestJson, respondShieldedJson } from "@/lib/payloadShield";
 
 export async function GET(
-  _req: NextRequest,
+  req: NextRequest,
   context: { params: Promise<{ id: string }> }
 ) {
   try {
@@ -22,6 +23,7 @@ export async function GET(
     if (!session?.user) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
+    const userId = String((session.user as any)?.id || "");
 
     const { id } = await context.params;
     await dbConnect();
@@ -41,7 +43,7 @@ export async function GET(
       record.slidesCompressed
     );
 
-    return NextResponse.json({
+    return respondShieldedJson(req, userId, {
       presentation: {
         _id: record._id,
         meetingId: (record.meetingId as any)?._id || record.meetingId,
@@ -76,8 +78,11 @@ export async function PUT(
     }
 
     const { id } = await context.params;
-    const body = await req.json();
-    const { slides } = body as { slides: ISlideData[] };
+    const body = await parseShieldedRequestJson<{ slides: ISlideData[] }>(
+      req,
+      String(userId)
+    );
+    const { slides } = body;
 
     if (!Array.isArray(slides) || slides.length === 0) {
       return NextResponse.json(
@@ -271,7 +276,7 @@ export async function PUT(
         }
       : null;
 
-    return NextResponse.json({ success: true, presentationCard });
+    return respondShieldedJson(req, String(userId), { success: true, presentationCard });
   } catch (error: any) {
     console.error("PUT /api/presentations/[id] error:", error);
     return NextResponse.json(

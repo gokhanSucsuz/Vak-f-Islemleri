@@ -12,6 +12,7 @@ import {
   sanitizeSlidePlainText,
   sanitizeSlideHtmlServer,
 } from "@/lib/presentationUtils";
+import { parseShieldedRequestJson, respondShieldedJson } from "@/lib/payloadShield";
 
 export async function GET(req: NextRequest) {
   try {
@@ -123,7 +124,8 @@ export async function GET(req: NextRequest) {
         )
       : mapped;
 
-    return NextResponse.json({ presentations: filtered });
+    const userId = String((session.user as any)?.id || "");
+    return respondShieldedJson(req, userId, { presentations: filtered });
   } catch (error: any) {
     console.error("GET /api/presentations error:", error);
     return NextResponse.json(
@@ -141,11 +143,11 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 
-    const body = await req.json();
-    const { meetingId, slides } = body as {
+    const body = await parseShieldedRequestJson<{
       meetingId: string;
       slides: ISlideData[];
-    };
+    }>(req, String(userId));
+    const { meetingId, slides } = body;
 
     if (!meetingId) {
       return NextResponse.json(
@@ -311,7 +313,7 @@ export async function POST(req: NextRequest) {
       updatedAt: created.updatedAt,
     };
 
-    return NextResponse.json({ success: true, presentationCard }, { status: 201 });
+    return respondShieldedJson(req, String(userId), { success: true, presentationCard }, 201);
   } catch (error: any) {
     console.error("POST /api/presentations error:", error);
     return NextResponse.json(

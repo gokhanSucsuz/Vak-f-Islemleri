@@ -12,6 +12,7 @@ import {
   buildMeetingArchiveSignature,
   pruneOldMeetingArchives,
 } from "@/lib/presentationUtils";
+import { respondShieldedJson } from "@/lib/payloadShield";
 
 export async function GET(
   req: NextRequest,
@@ -233,7 +234,8 @@ export async function GET(
       };
     });
 
-    return NextResponse.json({
+    const userId = String((session.user as any)?.id || "");
+    return respondShieldedJson(req, userId, {
       meeting: {
         _id: meeting._id,
         title: meeting.title,
