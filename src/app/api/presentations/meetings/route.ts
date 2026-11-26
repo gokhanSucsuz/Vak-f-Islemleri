@@ -18,6 +18,7 @@ export async function GET() {
 
     const [meetings, presCounts] = await Promise.all([
       PresentationMeeting.find({})
+        .select("-combinedPptxCompressed")
         .populate("openedBy", "name")
         .populate("closedBy", "name")
         .populate("authorizedUserId", "name email")
@@ -61,6 +62,8 @@ export async function GET() {
         photosExpireAt: m.photosExpireAt,
         photosPurged: m.photosPurged,
         photosPurgedAt: m.photosPurgedAt,
+        combinedPptxSize: (m as any).combinedPptxSize || 0,
+        combinedPptxUpdatedAt: (m as any).combinedPptxUpdatedAt || null,
         recordCount: counts.recordCount,
         totalSlides: counts.totalSlides,
         createdAt: m.createdAt,

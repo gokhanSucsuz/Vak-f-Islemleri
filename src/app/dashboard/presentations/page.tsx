@@ -33,6 +33,9 @@ import {
   Underline,
   Eraser,
   Maximize2,
+  Minimize2,
+  Play,
+  Crosshair,
   LayoutGrid,
   List,
   GripVertical,
@@ -75,6 +78,8 @@ interface MeetingItem {
   photosExpireAt?: string;
   photosPurged: boolean;
   photosPurgedAt?: string;
+  combinedPptxSize?: number;
+  combinedPptxUpdatedAt?: string | null;
   recordCount: number;
   totalSlides: number;
 }
@@ -533,12 +538,14 @@ function SlidePreviewCard({
   templates,
   meetingBackgroundPreset,
   meetingPhotoFramePreset,
+  projectorMode = false,
   onReorderPhotos,
 }: {
   slide: SlideItem;
   templates: PresentationTemplateClient[];
   meetingBackgroundPreset?: string;
   meetingPhotoFramePreset?: string;
+  projectorMode?: boolean;
   onReorderPhotos?: (newPhotos: string[]) => void;
 }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -716,7 +723,11 @@ function SlidePreviewCard({
   return (
     <div
       ref={wrapperRef}
-      className="relative w-full aspect-[4/3] rounded-xl overflow-hidden border border-slate-300 shadow-md select-none bg-gradient-to-br from-slate-200 via-slate-100 to-slate-300"
+      className={`relative w-full aspect-[4/3] overflow-hidden select-none bg-gradient-to-br from-slate-200 via-slate-100 to-slate-300 ${
+        projectorMode
+          ? "rounded-none border-0 shadow-[0_0_90px_rgba(0,0,0,0.92)]"
+          : "rounded-xl border border-slate-300 shadow-md"
+      }`}
     >
       <div
         ref={cardRef}
@@ -1432,6 +1443,206 @@ export default function PresentationsPage() {
   const bulkFilmstripRef = useRef<HTMLDivElement | null>(null);
   const singleFilmstripRef = useRef<HTMLDivElement | null>(null);
 
+  // PowerPoint Tam Ekran Projeksiyon Sunum Gösterisi Modu
+  const [isSlideshowOpen, setIsSlideshowOpen] = useState(false);
+  const [slideshowHudVisible, setSlideshowHudVisible] = useState(true);
+  const [isLaserActive, setIsLaserActive] = useState(false);
+  const [laserPos, setLaserPos] = useState<{ x: number; y: number } | null>(null);
+  const [projectorStageBox, setProjectorStageBox] = useState<{ w: number; h: number }>({
+    w: 960,
+    h: 720,
+  });
+  const slideshowStageRef = useRef<HTMLDivElement | null>(null);
+  const slideshowLaunchBtnRef = useRef<HTMLButtonElement | null>(null);
+  const isSlideshowActiveRef = useRef(false);
+  const lastSlideshowExitAtRef = useRef(0);
+  const slideshowIdleTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const wakeSlideshowHud = useCallback(() => {
+    setSlideshowHudVisible(true);
+    if (slideshowIdleTimerRef.current) {
+      clearTimeout(slideshowIdleTimerRef.current);
+    }
+    slideshowIdleTimerRef.current = setTimeout(() => {
+      setSlideshowHudVisible(false);
+    }, 2400);
+  }, []);
+
+  const exitSlideshowMode = useCallback(() => {
+    isSlideshowActiveRef.current = false;
+    lastSlideshowExitAtRef.current = Date.now();
+    setIsSlideshowOpen(false);
+    setIsLaserActive(false);
+    setLaserPos(null);
+    if (slideshowIdleTimerRef.current) {
+      clearTimeout(slideshowIdleTimerRef.current);
+      slideshowIdleTimerRef.current = null;
+    }
+    if (typeof document !== "undefined" && document.fullscreenElement) {
+      document.exitFullscreen().catch(() => {});
+    }
+    setTimeout(() => {
+      slideshowLaunchBtnRef.current?.focus();
+    }, 30);
+  }, []);
+
+  const enterSlideshowMode = useCallback(() => {
+    isSlideshowActiveRef.current = true;
+    setIsSlideshowOpen(true);
+    wakeSlideshowHud();
+    if (typeof document !== "undefined" && !document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    }
+  }, [wakeSlideshowHud]);
+
+  const navigateSlideshow = useCallback(
+    (deltaOrTarget: number, isAbsolute = false) => {
+      if (!bulkPreviewModal) return;
+      const total = bulkPreviewModal.flatSlides.length;
+      if (total <= 1) return;
+
+      setBulkIdx((prev) => {
+        const next = isAbsolute
+          ? Math.max(0, Math.min(total - 1, deltaOrTarget))
+          : Math.max(0, Math.min(total - 1, prev + deltaOrTarget));
+        if (next === prev) return prev;
+        return next;
+      });
+    },
+    [bulkPreviewModal]
+  );
+
+  const stepSlideshowWithTransition = useCallback(
+    (dir: -1 | 1) => {
+      if (!bulkPreviewModal) return;
+      const total = bulkPreviewModal.flatSlides.length;
+      if (total <= 1) return;
+      const targetIdx = Math.max(0, Math.min(total - 1, bulkIdx + dir));
+      if (targetIdx === bulkIdx) return;
+
+      const updateDOM = () => {
+        setBulkIdx(targetIdx);
+      };
+
+      const docAny = typeof document !== "undefined" ? (document as any) : null;
+      if (!docAny?.startViewTransition) {
+        updateDOM();
+        return;
+      }
+      try {
+        docAny.startViewTransition({
+          update: updateDOM,
+          types: [dir === 1 ? "slideshow-forward" : "slideshow-backward"],
+        });
+      } catch {
+        updateDOM();
+      }
+    },
+    [bulkPreviewModal, bulkIdx]
+  );
+
+  // Tarayıcı tam ekranından ESC ile çıkıldığında otomatik olarak önizleme penceresine geri dön
+  useEffect(() => {
+    const onFullscreenChange = () => {
+      if (!document.fullscreenElement && isSlideshowActiveRef.current) {
+        isSlideshowActiveRef.current = false;
+        lastSlideshowExitAtRef.current = Date.now();
+        setIsSlideshowOpen(false);
+        setIsLaserActive(false);
+        setLaserPos(null);
+        setTimeout(() => {
+          slideshowLaunchBtnRef.current?.focus();
+        }, 30);
+      }
+    };
+    document.addEventListener("fullscreenchange", onFullscreenChange);
+    return () => document.removeEventListener("fullscreenchange", onFullscreenChange);
+  }, []);
+
+  // Projeksiyon sahnesi boyutunu ekran/projeksiyon çözünürlüğüne göre 4:3 tam sığacak şekilde hesapla
+  useLayoutEffect(() => {
+    if (!isSlideshowOpen) return;
+    const updateStageSize = () => {
+      const stage = slideshowStageRef.current;
+      const vw = stage?.clientWidth || window.innerWidth || 1024;
+      const vh = stage?.clientHeight || window.innerHeight || 768;
+      const fitW = Math.min(vw, (vh * 4) / 3);
+      const fitH = (fitW * 3) / 4;
+      setProjectorStageBox({
+        w: Math.max(240, Math.floor(fitW)),
+        h: Math.max(180, Math.floor(fitH)),
+      });
+    };
+    updateStageSize();
+    const ro = new ResizeObserver(updateStageSize);
+    if (slideshowStageRef.current) ro.observe(slideshowStageRef.current);
+    window.addEventListener("resize", updateStageSize);
+    return () => {
+      ro.disconnect();
+      window.removeEventListener("resize", updateStageSize);
+    };
+  }, [isSlideshowOpen]);
+
+  // Tam ekran sunum modunda PowerPoint klavye & kumanda kısayolları (ESC -> Önizlemeye dön!)
+  useEffect(() => {
+    if (!isSlideshowOpen || !bulkPreviewModal) return;
+    const onKeyDownCapture = (e: KeyboardEvent) => {
+      if (e.altKey || e.ctrlKey || e.metaKey) return;
+      if (e.key === "Escape") {
+        e.preventDefault();
+        e.stopPropagation();
+        exitSlideshowMode();
+        return;
+      }
+      if (
+        e.key === "ArrowRight" ||
+        e.key === "ArrowDown" ||
+        e.key === "PageDown" ||
+        e.key === " " ||
+        e.key === "Enter"
+      ) {
+        const target = e.target as HTMLElement | null;
+        if (target && target.closest("[data-slideshow-hud='true']") && e.key === "Enter") {
+          return;
+        }
+        e.preventDefault();
+        e.stopPropagation();
+        stepSlideshowWithTransition(1);
+      } else if (
+        e.key === "ArrowLeft" ||
+        e.key === "ArrowUp" ||
+        e.key === "PageUp" ||
+        e.key === "Backspace"
+      ) {
+        e.preventDefault();
+        e.stopPropagation();
+        stepSlideshowWithTransition(-1);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        e.stopPropagation();
+        navigateSlideshow(0, true);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        e.stopPropagation();
+        navigateSlideshow(bulkPreviewModal.flatSlides.length - 1, true);
+      } else if (e.key === "l" || e.key === "L") {
+        e.preventDefault();
+        e.stopPropagation();
+        setIsLaserActive((prev) => !prev);
+        wakeSlideshowHud();
+      }
+    };
+    window.addEventListener("keydown", onKeyDownCapture, true);
+    return () => window.removeEventListener("keydown", onKeyDownCapture, true);
+  }, [
+    isSlideshowOpen,
+    bulkPreviewModal,
+    exitSlideshowMode,
+    stepSlideshowWithTransition,
+    navigateSlideshow,
+    wakeSlideshowHud,
+  ]);
+
   const isBulkOrderDirty = useMemo(() => {
     if (!bulkPreviewModal) return false;
     return (
@@ -1470,7 +1681,14 @@ export default function PresentationsPage() {
   useEffect(() => {
     if (!bulkPreviewModal && !previewRecord) return;
     const onKeyDown = (e: KeyboardEvent) => {
-      if (isBulkOrderConfirmOpen || filmstripDragRef.current) return;
+      if (
+        isSlideshowActiveRef.current ||
+        Date.now() - lastSlideshowExitAtRef.current < 450 ||
+        isBulkOrderConfirmOpen ||
+        filmstripDragRef.current
+      ) {
+        return;
+      }
       const target = e.target as HTMLElement | null;
       if (
         target &&
@@ -1479,6 +1697,11 @@ export default function PresentationsPage() {
           target.tagName === "SELECT" ||
           target.isContentEditable)
       ) {
+        return;
+      }
+      if (e.key === "F5" && bulkPreviewModal) {
+        e.preventDefault();
+        enterSlideshowMode();
         return;
       }
       if (e.altKey) return;
@@ -2152,18 +2375,28 @@ export default function PresentationsPage() {
     }
   };
 
-  // Toplantı Toplu Önizleme Modalını Aç (2 Aşamalı Hızlı Yükleme + 0ms Hareketli Hazırlık Ekranı)
-  const openBulkPreview = async (meeting: MeetingItem, filterPersonnelName?: string) => {
+  // Toplantı Toplu Önizleme Modalını Aç (2 Aşamalı Hızlı Yükleme + İsteğe Bağlı Doğrudan Tam Ekran Sunum Başlatma)
+  const openBulkPreview = async (
+    meeting: MeetingItem,
+    filterPersonnelName?: string,
+    opts?: { startInSlideshow?: boolean }
+  ) => {
     previewAbortRef.current?.abort();
     const controller = new AbortController();
     previewAbortRef.current = controller;
 
+    if (opts?.startInSlideshow && typeof document !== "undefined" && !document.fullscreenElement) {
+      document.documentElement.requestFullscreen?.().catch(() => {});
+    }
+
     setLoadingMeetingSlides(true);
     setPreviewLoadingModal({
-      title: "Toplantı Sunuları Yükleniyor...",
+      title: opts?.startInSlideshow
+        ? "Tam Ekran Sunum Gösterisi Başlatılıyor..."
+        : "Toplantı Sunuları Yükleniyor...",
       subtitle: filterPersonnelName
         ? `${filterPersonnelName} sunu slaytları hazırlanıyor`
-        : `${meeting.title} • Slayt sahnesi hazırlanıyor`,
+        : `${meeting.title} • Belirlenen sıralamayla sahne hazırlanıyor`,
     });
 
     try {
@@ -2186,6 +2419,9 @@ export default function PresentationsPage() {
       setPreviewLoadingModal(null);
 
       if (flatSlides.length === 0) {
+        if (opts?.startInSlideshow && document.fullscreenElement) {
+          document.exitFullscreen().catch(() => {});
+        }
         toast.error("Bu toplantıda önizlenecek slayt bulunmuyor.");
         return;
       }
@@ -2200,6 +2436,12 @@ export default function PresentationsPage() {
         flatSlides,
       });
       setBulkIdx(0);
+
+      if (opts?.startInSlideshow) {
+        isSlideshowActiveRef.current = true;
+        setIsSlideshowOpen(true);
+        wakeSlideshowHud();
+      }
 
       // Kalan slaytları kullanıcıyı hiç bekletmeden arka planda sessizce doldur!
       if (data.hasDeferred) {
@@ -2629,45 +2871,93 @@ export default function PresentationsPage() {
     }
   };
 
-  const handleMeetingAction = async (
-    action: "reorder" | "lock" | "unlock" | "close" | "downloadCombined"
-  ) => {
-    if (!manageMeetingModal) return;
-    const { meeting, orderedPresentations } = manageMeetingModal;
-    const presentationOrder = orderedPresentations.map((g) => g.presentationId);
-
-    if (action === "downloadCombined") {
-      const combinedSlides = orderedPresentations.flatMap((g) => g.slides);
-      if (combinedSlides.length === 0) {
-        toast.error("Bu toplantıda indirilecek slayt bulunmuyor.");
-        return;
-      }
-      setExportingMeeting(true);
-      try {
+  // Birleştirilmiş Sunuyu Sıkıştırılmış Olarak İndir & VDS Üzerinde Sıkıştırılmış Sakla
+  const downloadCombinedMeetingPptx = async (params: {
+    meeting: MeetingItem;
+    orderedGroups?: OrderedPresentationGroup[];
+    saveOrderFirst?: boolean;
+  }) => {
+    const { meeting, orderedGroups, saveOrderFirst = false } = params;
+    setExportingMeeting(true);
+    try {
+      if (saveOrderFirst && orderedGroups && meeting.status === "open") {
+        const presentationOrder = orderedGroups.map((g) => g.presentationId);
         await fetch(`/api/presentations/meetings/${meeting._id}`, {
           method: "PATCH",
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ action: "reorder", presentationOrder }),
         });
+      }
 
-        await exportSlidesToPptx({
-          slides: combinedSlides,
-          fileName: `${meeting.title}.pptx`,
-          templates,
-          meetingBackgroundPreset: meeting.backgroundPreset || "template",
-          meetingPhotoFramePreset: meeting.photoFramePreset || "none",
-        });
+      // 1. Önce sunucuda güncel sıkıştırılmış .pptx arşivi var mı kontrol et (varsa 0ms yeniden üretimle anında indir!)
+      const cachedRes = await fetch(
+        `/api/presentations/meetings/${meeting._id}?downloadCombined=1`
+      );
+      if (cachedRes.status === 200) {
+        const archivedBlob = await cachedRes.blob();
+        if (archivedBlob.size > 0) {
+          const safeName = `${meeting.title.replace(/[\\/:*?"<>|]/g, "_")}.pptx`;
+          const url = URL.createObjectURL(archivedBlob);
+          const a = document.createElement("a");
+          a.style.display = "none";
+          a.href = url;
+          a.download = safeName;
+          document.body.appendChild(a);
+          a.click();
+          setTimeout(() => {
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+          }, 1000);
+          toast.success(
+            `Sıkıştırılmış birleştirilmiş sunum indirildi (${formatBytesLabel(archivedBlob.size)}).`
+          );
+          void fetchAll({ silent: true });
+          return;
+        }
+      }
 
-        await fetch(`/api/presentations/meetings/${meeting._id}`, {
-          method: "PATCH",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ action: "markDownloaded" }),
-        });
+      // 2. Güncel arşiv yoksa veya slaytlar değiştiyse eksiksiz tüm slaytları al
+      let fullGroups = orderedGroups || [];
+      if (fullGroups.length === 0 || fullGroups.some((g) => g.isPartial)) {
+        const fullRes = await fetch(`/api/presentations/meetings/${meeting._id}`);
+        const fullData = await fullRes.json();
+        if (!fullRes.ok) {
+          throw new Error(fullData.error || "Toplantı slaytları alınamadı.");
+        }
+        fullGroups = fullData.orderedPresentations || [];
+      }
 
-        toast.success(
-          "Tüm slaytlar belirlenen sırayla tek dosya (.pptx) olarak indirildi."
-        );
-        await fetchAll();
+      const combinedSlides = fullGroups.flatMap((g) => g.slides);
+      if (combinedSlides.length === 0) {
+        toast.error("Bu toplantıda indirilecek slayt bulunmuyor.");
+        return;
+      }
+
+      // 3. Kayıpsız yüksek çözünürlüklü + SlideMaster tekilleştirmeli + DEFLATE-9 sıkıştırmalı .pptx üret ve indir
+      const { blob, fileName } = await exportSlidesToPptx({
+        slides: combinedSlides,
+        fileName: `${meeting.title}.pptx`,
+        templates,
+        meetingBackgroundPreset: meeting.backgroundPreset || "template",
+        meetingPhotoFramePreset: meeting.photoFramePreset || "none",
+        triggerDownload: true,
+      });
+
+      toast.success(
+        `Birleştirilmiş sunum sıkıştırılmış olarak indirildi (${formatBytesLabel(blob.size)}).`
+      );
+
+      // 4. VDS üzerinde Brotli + AES-256 ile sıkıştırılmış olarak arka planda sakla (kullanıcıyı bekletmez)
+      const fd = new FormData();
+      fd.append("file", blob, fileName);
+      fetch(`/api/presentations/meetings/${meeting._id}`, {
+        method: "PUT",
+        body: fd,
+      })
+        .then(() => fetchAll({ silent: true }))
+        .catch(() => {});
+
+      if (manageMeetingModal && manageMeetingModal.meeting._id === meeting._id) {
         const refreshed = await fetch(`/api/presentations/meetings/${meeting._id}`);
         const refData = await refreshed.json();
         if (refreshed.ok) {
@@ -2676,11 +2966,27 @@ export default function PresentationsPage() {
             orderedPresentations: refData.orderedPresentations || [],
           });
         }
-      } catch (err: any) {
-        toast.error(err.message || "Toplu sunu indirilemedi.");
-      } finally {
-        setExportingMeeting(false);
       }
+    } catch (err: any) {
+      toast.error(err.message || "Toplu sunu indirilemedi.");
+    } finally {
+      setExportingMeeting(false);
+    }
+  };
+
+  const handleMeetingAction = async (
+    action: "reorder" | "lock" | "unlock" | "close" | "downloadCombined"
+  ) => {
+    if (!manageMeetingModal) return;
+    const { meeting, orderedPresentations } = manageMeetingModal;
+    const presentationOrder = orderedPresentations.map((g) => g.presentationId);
+
+    if (action === "downloadCombined") {
+      await downloadCombinedMeetingPptx({
+        meeting,
+        orderedGroups: orderedPresentations,
+        saveOrderFirst: true,
+      });
       return;
     }
 
@@ -3763,6 +4069,24 @@ export default function PresentationsPage() {
                   </span>
                 </button>
 
+                <button
+                  type="button"
+                  onClick={() => {
+                    const selAuthor = selectedPersonnelId
+                      ? presentations.find(
+                          (p) => String(p.createdBy?._id || "") === selectedPersonnelId
+                        )?.createdBy?.name
+                      : undefined;
+                    openBulkPreview(selectedMeeting, selAuthor, { startInSlideshow: true });
+                  }}
+                  disabled={loadingMeetingSlides || selectedMeeting.recordCount === 0}
+                  title="Belirlenen sıralamayla projeksiyon için tam ekran sunum gösterisini başlat (ESC ile önizlemeye döner)"
+                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white text-xs font-extrabold shadow-md shadow-emerald-600/25 flex items-center gap-2 transition-all active:scale-95"
+                >
+                  <Play aria-hidden="true" className="w-4 h-4 fill-current" />
+                  <span>Tam Ekran Sunum</span>
+                </button>
+
                 {isSuperAdmin && selectedMeeting.status === "open" && (
                   <select
                     value={selectedMeeting.authorizedUserId?._id || ""}
@@ -4269,30 +4593,35 @@ export default function PresentationsPage() {
                                     Görüntüle
                                   </button>
                                   <button
+                                    type="button"
                                     onClick={() => handleOpenRecord(item, "download")}
                                     title=".pptx Olarak İndir"
+                                    aria-label={`${item.summaryTitle} sunusunu .pptx olarak indir`}
                                     className="p-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/70 transition-colors"
                                   >
-                                    <Download className="w-4 h-4" />
+                                    <Download aria-hidden="true" className="w-4 h-4" />
                                   </button>
                                 </div>
 
                                 {canModify && (
                                   <div className="flex items-center gap-1.5">
                                     <button
+                                      type="button"
                                       onClick={() => handleOpenRecord(item, "edit")}
                                       title="Sunuyu Düzenle"
-                                      className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1 shadow-xs transition-colors"
+                                      aria-label={`${item.summaryTitle} sunusunu düzenle`}
+                                      className="p-1.5 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white border border-blue-200/80 hover:border-blue-600 transition-colors"
                                     >
-                                      <Edit3 className="w-3.5 h-3.5" />
-                                      Düzenle
+                                      <Edit3 aria-hidden="true" className="w-4 h-4" />
                                     </button>
                                     <button
+                                      type="button"
                                       onClick={() => setDeleteTarget(item)}
                                       title="Sunuyu Sil"
+                                      aria-label={`${item.summaryTitle} sunusunu sil`}
                                       className="p-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/70 transition-colors"
                                     >
-                                      <Trash2 className="w-4 h-4" />
+                                      <Trash2 aria-hidden="true" className="w-4 h-4" />
                                     </button>
                                   </div>
                                 )}
@@ -4416,7 +4745,7 @@ export default function PresentationsPage() {
                                 </th>
                                 <th
                                   scope="col"
-                                  className="py-3 pl-2.5 pr-4 w-[242px] text-right border-b border-slate-200/80 sticky right-0 bg-slate-50 z-10"
+                                  className="py-3 pl-2.5 pr-4 w-[196px] text-right border-b border-slate-200/80 sticky right-0 bg-slate-50 z-10"
                                 >
                                   İşlemler
                                 </th>
@@ -4530,10 +4859,10 @@ export default function PresentationsPage() {
                                           type="button"
                                           onClick={() => handleOpenRecord(item, "download")}
                                           title=".pptx Olarak İndir"
-                                          aria-label=".pptx olarak indir"
+                                          aria-label={`${item.summaryTitle} sunusunu .pptx olarak indir`}
                                           className="p-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/70 transition-colors shrink-0"
                                         >
-                                          <Download className="w-4 h-4" />
+                                          <Download aria-hidden="true" className="w-4 h-4" />
                                         </button>
                                         {canModify ? (
                                           <>
@@ -4541,19 +4870,19 @@ export default function PresentationsPage() {
                                               type="button"
                                               onClick={() => handleOpenRecord(item, "edit")}
                                               title="Sunuyu Düzenle"
-                                              className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1 shadow-xs transition-colors"
+                                              aria-label={`${item.summaryTitle} sunusunu düzenle`}
+                                              className="p-1.5 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white border border-blue-200/80 hover:border-blue-600 transition-colors shrink-0"
                                             >
-                                              <Edit3 className="w-3.5 h-3.5 shrink-0" />
-                                              <span>Düzenle</span>
+                                              <Edit3 aria-hidden="true" className="w-4 h-4" />
                                             </button>
                                             <button
                                               type="button"
                                               onClick={() => setDeleteTarget(item)}
                                               title="Sunuyu Sil"
-                                              aria-label="Sunuyu sil"
+                                              aria-label={`${item.summaryTitle} sunusunu sil`}
                                               className="p-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/70 transition-colors shrink-0"
                                             >
-                                              <Trash2 className="w-4 h-4" />
+                                              <Trash2 aria-hidden="true" className="w-4 h-4" />
                                             </button>
                                           </>
                                         ) : (
@@ -5215,13 +5544,50 @@ export default function PresentationsPage() {
                       onClick={() => saveBulkPreviewOrder(false)}
                       className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 text-white text-xs font-extrabold shadow-md shadow-emerald-950/30 flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-60"
                     >
-                      <Save className="w-3.5 h-3.5" />
+                      <Save aria-hidden="true" className="w-3.5 h-3.5" />
                       <span className="hidden md:inline">
                         {savingBulkOrder ? "Kaydediliyor..." : "Sıralamayı Kaydet"}
                       </span>
                       <span className="md:hidden">Kaydet</span>
                     </button>
                   )}
+
+                  {/* Tek Tıkla Tam Ekran Projeksiyon Sunum Modu (F5) */}
+                  <button
+                    ref={slideshowLaunchBtnRef}
+                    type="button"
+                    onClick={enterSlideshowMode}
+                    title="Projeksiyona yansıtmak için Tam Ekran Sunum Gösterisini başlat (Kısayol: F5 • Çıkış: ESC)"
+                    className="px-3 sm:px-3.5 py-1.5 rounded-xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:via-orange-400 hover:to-rose-400 text-white text-xs font-extrabold shadow-lg shadow-orange-950/30 ring-1 ring-white/25 flex items-center gap-1.5 transition-all active:scale-95"
+                  >
+                    <Play aria-hidden="true" className="w-3.5 h-3.5 fill-current shrink-0" />
+                    <span className="hidden sm:inline">Sunum Başlat</span>
+                    <span className="sm:hidden">Sunum</span>
+                    <kbd className="hidden xl:inline-block px-1.5 py-0.5 rounded bg-black/25 text-[10px] font-mono">
+                      F5
+                    </kbd>
+                  </button>
+
+                  {/* Toplu Sıkıştırılmış .pptx İndirme Butonu */}
+                  <button
+                    type="button"
+                    disabled={exportingMeeting}
+                    onClick={() =>
+                      downloadCombinedMeetingPptx({
+                        meeting: bulkPreviewModal.meeting,
+                        orderedGroups: bulkPreviewModal.allGroups,
+                        saveOrderFirst: isBulkOrderDirty,
+                      })
+                    }
+                    title="Birleştirilmiş sunumu sıkıştırılmış (.pptx) olarak indir"
+                    aria-label="Birleştirilmiş sunumu sıkıştırılmış .pptx olarak indir"
+                    className="px-2.5 py-1.5 rounded-xl bg-emerald-500/20 hover:bg-emerald-500/35 border border-emerald-300/30 text-emerald-100 text-xs font-extrabold flex items-center gap-1.5 transition-all active:scale-95 disabled:opacity-50"
+                  >
+                    <Download aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
+                    <span className="hidden xl:inline">
+                      {exportingMeeting ? "Hazırlanıyor..." : "Toplu İndir"}
+                    </span>
+                  </button>
 
                   <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-xl p-0.5 sm:p-1 gap-0.5 sm:gap-1">
                     <button
@@ -5585,6 +5951,199 @@ export default function PresentationsPage() {
                   </aside>
                 )}
               </div>
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* PowerPoint Tarzı Tam Ekran Kurumsal Projeksiyon Sunum Gösterisi Modu (ESC -> Önizleme Ekranına Döner) */}
+      {isSlideshowOpen && bulkPreviewModal && (() => {
+        const activeSlideEntry = bulkPreviewModal.flatSlides[bulkIdx];
+        const totalSlidesCount = bulkPreviewModal.flatSlides.length;
+
+        return (
+          <div
+            ref={slideshowStageRef}
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${bulkPreviewModal.meeting.title} tam ekran sunum gösterisi`}
+            onMouseMove={(e) => {
+              wakeSlideshowHud();
+              if (isLaserActive) {
+                setLaserPos({ x: e.clientX, y: e.clientY });
+              }
+            }}
+            onMouseLeave={() => setLaserPos(null)}
+            onTouchStart={(e) => {
+              wakeSlideshowHud();
+              const t = e.touches[0];
+              if (t) touchSwipeRef.current = { x: t.clientX, y: t.clientY };
+            }}
+            onTouchEnd={(e) => {
+              const start = touchSwipeRef.current;
+              touchSwipeRef.current = null;
+              const t = e.changedTouches[0];
+              if (!start || !t || totalSlidesCount <= 1) return;
+              const dx = t.clientX - start.x;
+              const dy = t.clientY - start.y;
+              if (Math.abs(dx) > 45 && Math.abs(dx) > Math.abs(dy) * 1.35) {
+                if (dx < 0) stepSlideshowWithTransition(1);
+                else stepSlideshowWithTransition(-1);
+              }
+            }}
+            onClick={(e) => {
+              const target = e.target as HTMLElement | null;
+              if (target?.closest("[data-slideshow-hud='true']")) return;
+              if (bulkIdx < totalSlidesCount - 1) {
+                stepSlideshowWithTransition(1);
+              } else {
+                wakeSlideshowHud();
+              }
+            }}
+            className={`fixed inset-0 z-[100] bg-black flex items-center justify-center overflow-hidden select-none ${
+              isLaserActive
+                ? "cursor-none"
+                : slideshowHudVisible
+                  ? "cursor-default"
+                  : "cursor-none"
+            }`}
+          >
+            {/* 4:3 Projeksiyon Tam Saha Slayt Sahnesi */}
+            <div
+              style={{
+                width: `${projectorStageBox.w}px`,
+                height: `${projectorStageBox.h}px`,
+              }}
+              className="relative flex items-center justify-center"
+            >
+              <SlidePreviewCard
+                slide={activeSlideEntry?.slide || emptySlide()}
+                templates={templates}
+                meetingBackgroundPreset={
+                  bulkPreviewModal.meeting.backgroundPreset || "template"
+                }
+                meetingPhotoFramePreset={
+                  bulkPreviewModal.meeting.photoFramePreset || "none"
+                }
+                projectorMode={true}
+              />
+            </div>
+
+            {/* Kırmızı Lazer İşaretçi Noktası (L Tuşu veya HUD Butonu ile Aktifleşir) */}
+            {isLaserActive && laserPos && (
+              <div
+                aria-hidden="true"
+                style={{
+                  transform: `translate3d(${laserPos.x - 10}px, ${laserPos.y - 10}px, 0)`,
+                }}
+                className="fixed top-0 left-0 w-5 h-5 rounded-full pointer-events-none z-[110] flex items-center justify-center"
+              >
+                <span className="w-3.5 h-3.5 rounded-full bg-red-500 shadow-[0_0_16px_6px_rgba(239,68,68,0.9),0_0_32px_12px_rgba(220,38,38,0.55)] ring-2 ring-white/90" />
+              </div>
+            )}
+
+            {/* Sol Üst: Hafif Kurumsal Sunum Bilgisi (Fare hareketsiz kalınca tamamen gizlenir) */}
+            <div
+              data-slideshow-hud="true"
+              className={`fixed top-4 left-4 z-[105] px-3.5 py-2 rounded-2xl bg-slate-950/75 backdrop-blur-md border border-white/15 text-white shadow-2xl transition-opacity duration-300 ${
+                slideshowHudVisible ? "opacity-100" : "opacity-0 pointer-events-none"
+              }`}
+            >
+              <div className="flex items-center gap-2.5 text-xs">
+                <span className="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/35 text-emerald-300 text-[10px] font-extrabold uppercase tracking-wider">
+                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
+                  Sunum Modu
+                </span>
+                <span className="font-bold text-slate-100 truncate max-w-[260px] sm:max-w-[420px]">
+                  {bulkPreviewModal.meeting.title}
+                </span>
+                {isHydratingBulkSlides && (
+                  <span className="text-[10px] text-sky-300 font-semibold">
+                    (Slaytlar senkronize ediliyor...)
+                  </span>
+                )}
+              </div>
+            </div>
+
+            {/* Alt Merkez / Sağ: PowerPoint Sunucu Kontrol Çubuğu (Fare hareketsiz kalınca gizlenir) */}
+            <div
+              data-slideshow-hud="true"
+              onClick={(e) => e.stopPropagation()}
+              className={`fixed bottom-5 left-1/2 -translate-x-1/2 z-[105] px-3 sm:px-4 py-2 rounded-2xl bg-slate-950/80 backdrop-blur-md border border-white/15 text-white shadow-2xl flex items-center gap-2 sm:gap-3 transition-opacity duration-300 max-w-[96vw] ${
+                slideshowHudVisible ? "opacity-100" : "opacity-0 pointer-events-none"
+              }`}
+            >
+              <button
+                type="button"
+                disabled={bulkIdx === 0}
+                onClick={() => stepSlideshowWithTransition(-1)}
+                aria-label="Önceki slayt"
+                title="Önceki Slayt (← / ↑)"
+                className="p-2 rounded-xl bg-white/10 hover:bg-white/20 disabled:opacity-30 transition-colors"
+              >
+                <ChevronLeft aria-hidden="true" className="w-4.5 h-4.5" />
+              </button>
+
+              <div className="px-2 text-center min-w-[92px]">
+                <div className="text-xs sm:text-sm font-extrabold tabular-nums">
+                  {bulkIdx + 1}{" "}
+                  <span className="text-slate-400 font-semibold">/ {totalSlidesCount}</span>
+                </div>
+                <div className="text-[10px] text-sky-300 font-semibold truncate max-w-[160px] sm:max-w-[240px]">
+                  {activeSlideEntry?.slide.fullName || "-"}
+                </div>
+              </div>
+
+              <button
+                type="button"
+                disabled={bulkIdx >= totalSlidesCount - 1}
+                onClick={() => stepSlideshowWithTransition(1)}
+                aria-label="Sonraki slayt"
+                title="Sonraki Slayt (→ / Boşluk / Sol Tık)"
+                className="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 disabled:bg-white/10 disabled:opacity-30 transition-colors"
+              >
+                <ChevronRight aria-hidden="true" className="w-4.5 h-4.5" />
+              </button>
+
+              <div className="h-5 w-px bg-white/15 mx-0.5 hidden sm:block" />
+
+              <button
+                type="button"
+                aria-pressed={isLaserActive}
+                onClick={() => setIsLaserActive((p) => !p)}
+                title="Lazer İşaretçi Aç/Kapat (Kısayol: L)"
+                className={`hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-all ${
+                  isLaserActive
+                    ? "bg-red-600 border-red-400 text-white shadow-md shadow-red-600/40"
+                    : "bg-white/10 hover:bg-white/20 border-white/15 text-slate-200"
+                }`}
+              >
+                <Crosshair aria-hidden="true" className="w-3.5 h-3.5" />
+                <span>Lazer</span>
+              </button>
+
+              <button
+                type="button"
+                onClick={exitSlideshowMode}
+                title="Sunum modundan çık ve önizleme ekranına dön (ESC)"
+                className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-rose-600/90 hover:bg-rose-500 text-white text-xs font-extrabold transition-colors"
+              >
+                <Minimize2 aria-hidden="true" className="w-3.5 h-3.5" />
+                <span>Önizlemeye Dön</span>
+                <kbd className="hidden md:inline-block px-1.5 py-0.5 rounded bg-black/30 text-[10px] font-mono">
+                  ESC
+                </kbd>
+              </button>
+            </div>
+
+            {/* Alt Kenar İnce Sunum İlerleme Çizgisi */}
+            <div className="fixed inset-x-0 bottom-0 h-1 bg-white/10 z-[105] pointer-events-none">
+              <div
+                className="h-full bg-gradient-to-r from-sky-400 via-blue-500 to-emerald-400 transition-all duration-200"
+                style={{
+                  width: `${((bulkIdx + 1) / Math.max(1, totalSlidesCount)) * 100}%`,
+                }}
+              />
             </div>
           </div>
         );

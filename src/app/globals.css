@@ -145,6 +145,64 @@
   }
 }
 
+/* Kurumsal Tam Ekran Sunum Gösterisi (Projector Mode) Yönlü Slayt Geçiş Animasyonları */
+@keyframes slideshow-to-left {
+  to {
+    transform: translateX(-6%) scale(0.985);
+    opacity: 0;
+  }
+}
+
+@keyframes slideshow-from-right {
+  from {
+    transform: translateX(6%) scale(0.985);
+    opacity: 0;
+  }
+}
+
+@keyframes slideshow-to-right {
+  to {
+    transform: translateX(6%) scale(0.985);
+    opacity: 0;
+  }
+}
+
+@keyframes slideshow-from-left {
+  from {
+    transform: translateX(-6%) scale(0.985);
+    opacity: 0;
+  }
+}
+
+html:active-view-transition-type(slideshow-forward)::view-transition-group(root),
+html:active-view-transition-type(slideshow-backward)::view-transition-group(root) {
+  animation: 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+}
+
+html:active-view-transition-type(slideshow-forward)::view-transition-old(root) {
+  animation: 0.24s ease-in-out both slideshow-to-left;
+}
+
+html:active-view-transition-type(slideshow-forward)::view-transition-new(root) {
+  animation: 0.28s cubic-bezier(0.22, 1, 0.36, 1) both slideshow-from-right;
+}
+
+html:active-view-transition-type(slideshow-backward)::view-transition-old(root) {
+  animation: 0.24s ease-in-out both slideshow-to-right;
+}
+
+html:active-view-transition-type(slideshow-backward)::view-transition-new(root) {
+  animation: 0.28s cubic-bezier(0.22, 1, 0.36, 1) both slideshow-from-left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(root),
+  ::view-transition-old(root),
+  ::view-transition-new(root) {
+    animation: none !important;
+  }
+}
+
 @layer utilities {
   .visually-hidden:where(:not(:focus-within, :active)) {
     position: absolute !important;

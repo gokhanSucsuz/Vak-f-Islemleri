@@ -17,6 +17,10 @@ export interface IPresentationMeeting extends Document {
   photosExpireAt?: Date;
   photosPurged: boolean;
   photosPurgedAt?: Date;
+  combinedPptxCompressed?: Buffer;
+  combinedPptxHash?: string;
+  combinedPptxSize?: number;
+  combinedPptxUpdatedAt?: Date;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -58,6 +62,11 @@ const PresentationMeetingSchema = new Schema<IPresentationMeeting>(
     photosExpireAt: { type: Date, index: true },
     photosPurged: { type: Boolean, default: false },
     photosPurgedAt: { type: Date },
+    // Birleştirilmiş sunumun VDS üzerinde yüksek sıkıştırmalı + AES-256-GCM şifreli tekil arşivi
+    combinedPptxCompressed: { type: Buffer },
+    combinedPptxHash: { type: String, default: "" },
+    combinedPptxSize: { type: Number, default: 0 },
+    combinedPptxUpdatedAt: { type: Date },
   },
   { timestamps: true }
 );
@@ -66,6 +75,7 @@ PresentationMeetingSchema.index({ createdAt: -1 });
 
 applyFieldEncryption(PresentationMeetingSchema, {
   stringFields: ["title"],
+  bufferFields: ["combinedPptxCompressed"],
 });
 
 export default mongoose.models.PresentationMeeting ||

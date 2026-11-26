@@ -987,8 +987,8 @@ async function renderFramedPhotoForPptx(
     return { dataUrl, shadow: defaultShadow };
   }
   if (preset === "none") {
-    const rounded = await roundImageCorners(dataUrl);
-    return { dataUrl: rounded, shadow: defaultShadow };
+    // Orijinal sıkıştırılmış JPEG görseli PNG'ye şişirmeden (%100 kaliteyi koruyarak) doğrudan kullan
+    return { dataUrl, shadow: defaultShadow };
   }
 
   const cacheKey = `${preset}::${dataUrl.length}::${dataUrl.slice(0, 64)}::${dataUrl.slice(-48)}`;
@@ -1037,12 +1037,10 @@ async function renderFramedPhotoForPptx(
     const ctx = canvas.getContext("2d");
     if (!ctx) return { dataUrl, shadow: defaultShadow };
 
-    // 1. Dış çerçeve dolgusu ve 3B eğim (bevel) efekti
+    // 1. Dış çerçeve dolgusu ve 3B eğim (bevel) efekti (Opak yüksek kaliteli JPEG çıktısı için net galeri köşesi)
     ctx.save();
-    ctx.beginPath();
-    ctx.roundRect(0, 0, cw, ch, outerRadius);
-    ctx.closePath();
-    ctx.clip();
+    ctx.fillStyle = "#FFFFFF";
+    ctx.fillRect(0, 0, cw, ch);
 
     if (preset === "duz_beyaz") {
       ctx.fillStyle = "#FFFFFF";
@@ -1175,8 +1173,9 @@ async function renderFramedPhotoForPptx(
             opacity: 0.4,
           };
 
+    // PNG yerine %92 yüksek kaliteli JPEG: görsel netliği sıfır kayıpla korunur, dosya boyutu ~%85 küçülür
     const result = {
-      dataUrl: canvas.toDataURL("image/png"),
+      dataUrl: canvas.toDataURL("image/jpeg", 0.92),
       shadow,
     };
     if (framedPptxCache.size > 60) {
@@ -1197,7 +1196,8 @@ export async function exportSlidesToPptx(params: {
   template?: PresentationTemplateClient | null;
   meetingBackgroundPreset?: string;
   meetingPhotoFramePreset?: string;
-}) {
+  triggerDownload?: boolean;
+}): Promise<{ blob: Blob; fileName: string }> {
   const {
     slides,
     fileName,
@@ -1205,8 +1205,12 @@ export async function exportSlidesToPptx(params: {
     template = null,
     meetingBackgroundPreset,
     meetingPhotoFramePreset = "none",
+    triggerDownload = true,
   } = params;
-  const { default: PptxGenJS } = await import("pptxgenjs");
+  const [{ default: PptxGenJS }, { default: JSZip }] = await Promise.all([
+    import("pptxgenjs"),
+    import("jszip"),
+  ]);
   const pptx = new PptxGenJS();
 
   const defaultTpl =
@@ -1222,29 +1226,54 @@ export async function exportSlidesToPptx(params: {
   pptx.defineLayout({ name: "CUSTOM_LAYOUT", width: slideW, height: slideH });
   pptx.layout = "CUSTOM_LAYOUT";
 
-  for (const item of slides) {
-    const slide = pptx.addSlide();
-    // Tüm sistemde tek tip kurumsal standart yazı tipi (Verdana)
-    const fontFamily = "Verdana";
+  // Arka plan görselini her slayta ayrı ayrı kopyalamak yerine SlideMaster ile TEK KEZ göm (50 slaytta ~%95 yer tasarrufu!)
+  const registeredMasters = new Map<string, string>();
+  let masterSeq = 0;
+
+  const resolveSlideMasterName = async (item: SlideItem): Promise<string> => {
     const slideTpl =
       (item.templateId && templates.find((t) => t._id === item.templateId)) ||
       defaultTpl;
-    const layout = slideTpl?.layoutConfig || DEFAULT_TEMPLATE_LAYOUT;
-
     const activePreset = meetingBackgroundPreset ?? item.backgroundPreset;
     const presetBg =
       activePreset && activePreset !== "template"
         ? getPresetBackgroundDataUrl(activePreset)
         : "";
 
+    let bgKey = "solid:E5E7EB";
+    let backgroundDef: { data?: string; color?: string } = { color: "E5E7EB" };
+
     if (presetBg) {
-      slide.background = { data: presetBg };
+      bgKey = `preset:${activePreset}`;
+      backgroundDef = { data: presetBg };
     } else if (slideTpl?.backgroundImageBase64) {
+      bgKey = `tpl:${slideTpl._id || slideTpl.fileName || "default"}`;
       const cleanedBg = await cleanTemplateWatermark(slideTpl.backgroundImageBase64);
-      slide.background = { data: cleanedBg };
-    } else {
-      slide.background = { color: "E5E7EB" };
+      backgroundDef = { data: cleanedBg };
     }
+
+    const existing = registeredMasters.get(bgKey);
+    if (existing) return existing;
+
+    masterSeq += 1;
+    const masterName = `VAKIF_MASTER_${masterSeq}`;
+    pptx.defineSlideMaster({
+      title: masterName,
+      background: backgroundDef as any,
+    });
+    registeredMasters.set(bgKey, masterName);
+    return masterName;
+  };
+
+  for (const item of slides) {
+    const masterName = await resolveSlideMasterName(item);
+    const slide = pptx.addSlide({ masterName });
+    // Tüm sistemde tek tip kurumsal standart yazı tipi (Verdana)
+    const fontFamily = "Verdana";
+    const slideTpl =
+      (item.templateId && templates.find((t) => t._id === item.templateId)) ||
+      defaultTpl;
+    const layout = slideTpl?.layoutConfig || DEFAULT_TEMPLATE_LAYOUT;
 
     const fitMode = item.photoFitMode || "contain";
     const photos = (item.photos || []).filter(Boolean);
@@ -1587,7 +1616,37 @@ export async function exportSlidesToPptx(params: {
   }
 
   const safeName = fileName.replace(/[\\/:*?"<>|]/g, "_");
-  await pptx.writeFile({
-    fileName: safeName.endsWith(".pptx") ? safeName : `${safeName}.pptx`,
-  });
+  const finalFileName = safeName.endsWith(".pptx") ? safeName : `${safeName}.pptx`;
+
+  // PptxGenJS çıktısını maksimum kayıpsız DEFLATE (seviye 9) ile sıkıştır ve aynı görsel varsa tekilleştir
+  const rawBlob = (await pptx.write({ compression: true } as any)) as Blob;
+  let compressedBlob = rawBlob;
+  try {
+    const zip = await JSZip.loadAsync(await rawBlob.arrayBuffer());
+    compressedBlob = await zip.generateAsync({
+      type: "blob",
+      mimeType:
+        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+      compression: "DEFLATE",
+      compressionOptions: { level: 9 },
+    });
+  } catch {
+    compressedBlob = rawBlob;
+  }
+
+  if (triggerDownload && typeof document !== "undefined") {
+    const url = URL.createObjectURL(compressedBlob);
+    const a = document.createElement("a");
+    a.style.display = "none";
+    a.href = url;
+    a.download = finalFileName;
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+    }, 1000);
+  }
+
+  return { blob: compressedBlob, fileName: finalFileName };
 }

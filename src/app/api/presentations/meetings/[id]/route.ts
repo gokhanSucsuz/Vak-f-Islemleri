@@ -7,7 +7,10 @@ import Presentation, { ISlideData } from "@/models/Presentation";
 import Log from "@/models/Log";
 import {
   decompressSlidesCached,
-  purgeExpiredMeetingPhotos,
+  compressPptxArchive,
+  decompressPptxArchive,
+  buildMeetingArchiveSignature,
+  pruneOldMeetingArchives,
 } from "@/lib/presentationUtils";
 
 export async function GET(
@@ -23,10 +26,84 @@ export async function GET(
     const { id } = await context.params;
     const { searchParams } = new URL(req.url);
     const fastMode = searchParams.get("fast") === "1";
+    const downloadCombined = searchParams.get("downloadCombined") === "1";
     const filterAuthor = (searchParams.get("author") || "").trim();
     await dbConnect();
 
+    if (downloadCombined) {
+      const meetingDoc = await PresentationMeeting.findById(id);
+      if (!meetingDoc) {
+        return NextResponse.json({ error: "Toplantı bulunamadı." }, { status: 404 });
+      }
+
+      const lightMeta = (await Presentation.find({ meetingId: id })
+        .select("_id updatedAt createdAt")
+        .sort({ createdAt: 1 })
+        .lean()) as Array<{ _id: any; updatedAt?: Date }>;
+
+      const byId = new Map(lightMeta.map((d) => [String(d._id), d]));
+      const orderedLight: Array<{ _id: any; updatedAt?: Date }> = [];
+      const seen = new Set<string>();
+      for (const pid of meetingDoc.presentationOrder || []) {
+        const hit = byId.get(String(pid));
+        if (hit && !seen.has(String(hit._id))) {
+          orderedLight.push(hit);
+          seen.add(String(hit._id));
+        }
+      }
+      for (const d of lightMeta) {
+        if (!seen.has(String(d._id))) {
+          orderedLight.push(d);
+          seen.add(String(d._id));
+        }
+      }
+
+      const expectedSig = buildMeetingArchiveSignature({
+        orderedDocs: orderedLight,
+        backgroundPreset: meetingDoc.backgroundPreset,
+        photoFramePreset: meetingDoc.photoFramePreset,
+      });
+
+      if (
+        !meetingDoc.combinedPptxCompressed ||
+        meetingDoc.combinedPptxCompressed.length === 0 ||
+        meetingDoc.combinedPptxHash !== expectedSig
+      ) {
+        return new NextResponse(null, {
+          status: 204,
+          headers: { "X-Archive-Signature": expectedSig },
+        });
+      }
+
+      const rawPptx = await decompressPptxArchive(meetingDoc.combinedPptxCompressed);
+      if (!rawPptx || rawPptx.length === 0) {
+        return new NextResponse(null, { status: 204 });
+      }
+
+      if (!meetingDoc.downloadedAt) {
+        const now = new Date();
+        meetingDoc.downloadedAt = now;
+        meetingDoc.photosExpireAt = new Date(now.getTime() + 12 * 60 * 60 * 1000);
+        meetingDoc.photosPurged = false;
+        void meetingDoc.save().catch(() => {});
+      }
+
+      const safeTitle = (meetingDoc.title || "Toplanti_Sunumu").replace(/[\\/:*?"<>|]/g, "_");
+      return new NextResponse(new Uint8Array(rawPptx), {
+        status: 200,
+        headers: {
+          "Content-Type":
+            "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+          "Content-Disposition": `attachment; filename*=UTF-8''${encodeURIComponent(
+            `${safeTitle}.pptx`
+          )}`,
+          "Cache-Control": "private, no-store",
+        },
+      });
+    }
+
     const meeting = (await PresentationMeeting.findById(id)
+      .select("-combinedPptxCompressed")
       .populate("openedBy", "name")
       .populate("closedBy", "name")
       .populate("authorizedUserId", "name email")
@@ -458,12 +535,103 @@ export async function PATCH(
         downloadedAt: meeting.downloadedAt,
         photosExpireAt: meeting.photosExpireAt,
         photosPurged: meeting.photosPurged,
+        combinedPptxSize: meeting.combinedPptxSize || 0,
+        combinedPptxUpdatedAt: meeting.combinedPptxUpdatedAt || null,
       },
     });
   } catch (error: any) {
     console.error("PATCH /api/presentations/meetings/[id] error:", error);
     return NextResponse.json(
       { error: error.message || "Toplantı güncellenemedi." },
+      { status: 500 }
+    );
+  }
+}
+
+/**
+ * İndirilen birleştirilmiş toplantı sunusunu (.pptx) kayıpsız Brotli + AES-256-GCM ile
+ * sıkıştırılmış olarak toplantı kaydında saklar; eski toplantı önbelleklerini otomatik temizler.
+ */
+export async function PUT(
+  req: NextRequest,
+  context: { params: Promise<{ id: string }> }
+) {
+  try {
+    const session = await getServerSession(authOptions);
+    const userId = (session?.user as any)?.id;
+    if (!session?.user || !userId) {
+      return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
+    }
+
+    const { id } = await context.params;
+    const formData = await req.formData();
+    const file = formData.get("file") as File | null;
+    if (!file) {
+      return NextResponse.json({ error: "Dosya bulunamadı." }, { status: 400 });
+    }
+
+    await dbConnect();
+    const meeting = await PresentationMeeting.findById(id);
+    if (!meeting) {
+      return NextResponse.json({ error: "Toplantı bulunamadı." }, { status: 404 });
+    }
+
+    const lightMeta = (await Presentation.find({ meetingId: id })
+      .select("_id updatedAt createdAt")
+      .sort({ createdAt: 1 })
+      .lean()) as Array<{ _id: any; updatedAt?: Date }>;
+
+    const byId = new Map(lightMeta.map((d) => [String(d._id), d]));
+    const orderedLight: Array<{ _id: any; updatedAt?: Date }> = [];
+    const seen = new Set<string>();
+    for (const pid of meeting.presentationOrder || []) {
+      const hit = byId.get(String(pid));
+      if (hit && !seen.has(String(hit._id))) {
+        orderedLight.push(hit);
+        seen.add(String(hit._id));
+      }
+    }
+    for (const d of lightMeta) {
+      if (!seen.has(String(d._id))) {
+        orderedLight.push(d);
+        seen.add(String(d._id));
+      }
+    }
+
+    const signature = buildMeetingArchiveSignature({
+      orderedDocs: orderedLight,
+      backgroundPreset: meeting.backgroundPreset,
+      photoFramePreset: meeting.photoFramePreset,
+    });
+
+    const rawBuf = Buffer.from(await file.arrayBuffer());
+    const compressedBuf = await compressPptxArchive(rawBuf);
+    const now = new Date();
+
+    meeting.combinedPptxCompressed = compressedBuf;
+    meeting.combinedPptxHash = signature;
+    meeting.combinedPptxSize = compressedBuf.length;
+    meeting.combinedPptxUpdatedAt = now;
+    if (!meeting.downloadedAt) {
+      meeting.downloadedAt = now;
+      meeting.photosExpireAt = new Date(now.getTime() + 12 * 60 * 60 * 1000);
+      meeting.photosPurged = false;
+    }
+    await meeting.save();
+
+    // VDS disk alanını korumak için yalnızca son 5 toplantının birleştirilmiş ikili arşivini tut
+    void pruneOldMeetingArchives(5);
+
+    return NextResponse.json({
+      success: true,
+      combinedPptxSize: compressedBuf.length,
+      rawPptxSize: rawBuf.length,
+      combinedPptxUpdatedAt: now,
+    });
+  } catch (error: any) {
+    console.error("PUT /api/presentations/meetings/[id] error:", error);
+    return NextResponse.json(
+      { error: error.message || "Sıkıştırılmış sunum arşivi kaydedilemedi." },
       { status: 500 }
     );
   }

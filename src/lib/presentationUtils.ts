@@ -7,6 +7,8 @@ import type { ITemplateBox, ITemplateLayoutConfig } from "@/models/PresentationT
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
+const brotliCompress = promisify(zlib.brotliCompress);
+const brotliDecompress = promisify(zlib.brotliDecompress);
 
 // Kopyala-yapıştır kaynaklı yabancı font/boyut/bullet kirliliğini sunucu tarafında da temizler
 const LEADING_BULLET_RE = /^\s*(?:[➢➤➔→•●▪▫◦❖✓✔✦»›]|[-–—*]+(?=\s))\s*/u;
@@ -78,7 +80,8 @@ const decompressedSlideCache = new Map<string, ISlideData[]>();
 
 export async function decompressSlides(buf: Buffer): Promise<ISlideData[]> {
   if (!buf || buf.length === 0) return [];
-  const raw = await gunzip(buf);
+  const isGzip = buf.length >= 2 && buf[0] === 0x1f && buf[1] === 0x8b;
+  const raw = isGzip ? await gunzip(buf) : await brotliDecompress(buf);
   const parsed = JSON.parse(raw.toString("utf8"));
   return Array.isArray(parsed) ? parsed : [];
 }
@@ -105,7 +108,67 @@ export async function decompressSlidesCached(
 
 export async function compressSlides(slides: ISlideData[]): Promise<Buffer> {
   const json = JSON.stringify(slides);
-  return gzip(Buffer.from(json, "utf8"), { level: 1 });
+  // Maksimum kayıpsız sıkıştırma (VDS disk alanını minimumda tutar, resimleri hiç bozmaz)
+  return gzip(Buffer.from(json, "utf8"), { level: 9 });
+}
+
+export async function compressPptxArchive(rawPptx: Buffer): Promise<Buffer> {
+  if (!rawPptx || rawPptx.length === 0) return Buffer.alloc(0);
+  return brotliCompress(rawPptx, {
+    params: {
+      [zlib.constants.BROTLI_PARAM_QUALITY]: 6,
+    },
+  });
+}
+
+export async function decompressPptxArchive(compressedBuf: Buffer): Promise<Buffer> {
+  if (!compressedBuf || compressedBuf.length === 0) return Buffer.alloc(0);
+  const isGzip =
+    compressedBuf.length >= 2 && compressedBuf[0] === 0x1f && compressedBuf[1] === 0x8b;
+  // Eski/ham ZIP ('PK' = 0x50 0x4b) kontrolü
+  const isRawZip =
+    compressedBuf.length >= 2 && compressedBuf[0] === 0x50 && compressedBuf[1] === 0x4b;
+  if (isRawZip) return compressedBuf;
+  return isGzip ? gunzip(compressedBuf) : brotliDecompress(compressedBuf);
+}
+
+export function buildMeetingArchiveSignature(params: {
+  orderedDocs: Array<{ _id: any; updatedAt?: Date | string }>;
+  backgroundPreset?: string;
+  photoFramePreset?: string;
+}): string {
+  const parts = params.orderedDocs.map((d) => {
+    const ts = d.updatedAt ? new Date(d.updatedAt).getTime() : 0;
+    return `${String(d._id)}:${ts}`;
+  });
+  return `v2|bg=${params.backgroundPreset || "template"}|fr=${params.photoFramePreset || "none"}|${parts.join(",")}`;
+}
+
+/**
+ * VDS diskinde gereksiz birikimi önlemek için yalnızca son `keepCount` toplantının
+ * sıkıştırılmış toplu .pptx önbelleğini tutar; daha eski arşiv ikililerini temizler.
+ */
+export async function pruneOldMeetingArchives(keepCount = 5): Promise<void> {
+  try {
+    const withArchive = await PresentationMeeting.find({
+      combinedPptxSize: { $gt: 0 },
+    })
+      .select("_id updatedAt combinedPptxUpdatedAt")
+      .sort({ combinedPptxUpdatedAt: -1, updatedAt: -1 })
+      .lean();
+
+    if (withArchive.length <= keepCount) return;
+    const staleIds = withArchive.slice(keepCount).map((m: any) => m._id);
+    await PresentationMeeting.updateMany(
+      { _id: { $in: staleIds } },
+      {
+        $unset: { combinedPptxCompressed: 1 },
+        $set: { combinedPptxSize: 0, combinedPptxHash: "" },
+      }
+    );
+  } catch {
+    // sessiz
+  }
 }
 
 export function computeSlideStats(slides: ISlideData[], compressedLength: number) {
