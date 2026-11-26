@@ -133,6 +133,18 @@
   }
 }
 
+/* Uzun veri listeleri ve kart ızgaralarında sayfa geneli reflow/boyama maliyetini izole et */
+.perf-contained-list {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none auto 420px;
+}
+
+@supports not (content-visibility: auto) {
+  .perf-contained-list {
+    contain: layout style paint;
+  }
+}
+
 @layer utilities {
   .visually-hidden:where(:not(:focus-within, :active)) {
     position: absolute !important;

@@ -50,11 +50,19 @@ export async function GET(req: Request) {
     }
 
     const query = conditions.length > 0 ? { $and: conditions } : {};
+    const hasFilter = Boolean(
+      dateStart || dateEnd || userId || aidType || (search && search.trim())
+    );
 
-    const records = await InKindAid.find(query)
+    let dbQuery = InKindAid.find(query)
       .populate("createdBy", "name email")
-      .sort({ deliveryDate: -1, createdAt: -1 })
-      .lean();
+      .sort({ deliveryDate: -1, createdAt: -1 });
+
+    if (!hasFilter) {
+      dbQuery = dbQuery.limit(400);
+    }
+
+    const records = await dbQuery.lean();
 
     const filteredRecords =
       search && search.trim()

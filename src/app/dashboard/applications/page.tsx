@@ -2097,7 +2097,7 @@ export default function ApplicationsPage() {
       )}
 
       {/* Kayıt Listesi & Tablosu (%100 Mobil Kart + Masaüstü Dinamik Excel Sütun Düzeni) */}
-      <div className="order-3 md:order-6 bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
+      <div className="perf-contained-list order-3 md:order-6 bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden">
         {/* MOBİL GÖRÜNÜM: Hızlı Dosya Kartları (Sıfır Yatay Kaydırma) */}
         <div className="md:hidden divide-y divide-slate-100">
           {loading && records.length === 0 ? (

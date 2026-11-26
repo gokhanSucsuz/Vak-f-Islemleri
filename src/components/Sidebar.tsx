@@ -38,13 +38,20 @@ export default function Sidebar() {
   const { data: session } = useSession();
   const [isOpen, setIsOpen] = useState(false);
 
-  // Arka planda Başvuru Dosyaları önbelleğini sessizce ısıt (kullanıcı sekmeye tıkladığında 0ms açılış)
+  // Arka planda sık kullanılan modüllerin önbelleklerini boşta kalma anında sessizce ısıt (0ms sayfa geçişi)
   useEffect(() => {
     if (!session?.user?.id) return;
-    const t = setTimeout(() => {
+    const t1 = setTimeout(() => {
       fetch("/api/application-files?warm=1").catch(() => {});
-    }, 900);
-    return () => clearTimeout(t);
+    }, 600);
+    const t2 = setTimeout(() => {
+      fetch("/api/help-types").catch(() => {});
+      fetch("/api/presentations/template").catch(() => {});
+    }, 1400);
+    return () => {
+      clearTimeout(t1);
+      clearTimeout(t2);
+    };
   }, [session?.user?.id]);
 
   const navItems: NavItem[] = [
@@ -166,6 +173,7 @@ export default function Sidebar() {
                       <li key={item.href}>
                         <Link
                           href={item.href}
+                          prefetch={true}
                           onClick={() => setIsOpen(false)}
                           aria-current={isActive ? "page" : undefined}
                           className={clsx(

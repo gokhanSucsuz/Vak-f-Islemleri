@@ -4,7 +4,8 @@ import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import Transaction from "@/models/Transaction";
 import User from "@/models/User";
-import { normalizeTurkish } from "@/lib/turkish";
+import "@/models/HelpType";
+import { normalizeTurkish, turkishIncludes } from "@/lib/turkish";
 
 export async function POST(req: Request) {
   try {
@@ -20,7 +21,6 @@ export async function POST(req: Request) {
     }
 
     await dbConnect();
-    await import("@/models/HelpType");
 
     // 15 saniye içinde aynı kullanıcı tarafından aynı kişi ve tür için çift tıklama koruması
     const fifteenSecondsAgo = new Date(Date.now() - 15_000);
@@ -92,7 +92,6 @@ export async function GET(req: Request) {
     const filterHelpType = searchParams.get("helpType");
 
     await dbConnect();
-    await import("@/models/HelpType"); // ensure model is registered
 
     const query: any = {};
 
@@ -112,17 +111,26 @@ export async function GET(req: Request) {
       query.helpType = filterHelpType;
     }
 
-    const transactions = await Transaction.find(query)
+    const hasAnyFilter = Boolean(
+      filterUserId || dateStart || dateEnd || filterHelpType || (searchText && searchText.trim())
+    );
+
+    let txQuery = Transaction.find(query)
       .populate("userId", "name email")
       .populate("helpType", "name")
-      .sort({ createdAt: -1 })
-      .lean();
+      .sort({ createdAt: -1 });
+
+    // Filtresiz ilk açılışta tüm geçmişi çözmek yerine en güncel 300 kaydı hızla getir
+    if (!hasAnyFilter) {
+      txQuery = txQuery.limit(300);
+    }
+
+    const transactions = await txQuery.lean();
       
     // Apply in-memory Turkish-aware text search because fields are encrypted in DB
     let filteredTransactions = transactions;
     
     if (searchText && searchText.trim().length > 0) {
-      const { turkishIncludes } = await import("@/lib/turkish");
       const cleanQ = searchText.trim();
       filteredTransactions = transactions.filter((t: any) => {
         const infoMatch = t.citizenInfo && turkishIncludes(t.citizenInfo, cleanQ);

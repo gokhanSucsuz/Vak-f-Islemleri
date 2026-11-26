@@ -667,16 +667,16 @@ function SlidePreviewCard({
     }
 
     if (!list || displayLines.length === 0) {
-      setFittedPx(12.5);
+      setFittedPx(13.5);
       return;
     }
 
-    let size = 13;
+    let size = 15;
     list.style.fontSize = `${size}px`;
     list.style.lineHeight = "1.28";
 
-    while (box.scrollHeight > box.clientHeight && size > 5.5) {
-      size -= 0.4;
+    while (box.scrollHeight > box.clientHeight && size > 6.5) {
+      size -= 0.5;
       list.style.fontSize = `${size}px`;
     }
     setFittedPx(size);
@@ -4171,7 +4171,7 @@ export default function PresentationsPage() {
                 ) : (
                   <>
                     {presViewMode === "card" ? (
-                      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                      <div className="perf-contained-list grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
                         {paginatedPresentations.map((item) => {
                           const isOwnRecord = String(item.createdBy?._id) === String(userId);
                           const canModify =

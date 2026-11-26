@@ -5,17 +5,24 @@ import dbConnect from "@/lib/db";
 import User from "@/models/User";
 import bcrypt from "bcryptjs";
 
-const sessionUserCache = new Map<
-  string,
-  {
-    expiresAt: number;
-    role: string;
-    title: string;
-    authorizedModules: string[];
-    isAuthorized: boolean;
-    canManageSystem: boolean;
-  }
->();
+type SessionUserCacheEntry = {
+  expiresAt: number;
+  role: string;
+  title: string;
+  authorizedModules: string[];
+  isAuthorized: boolean;
+  canManageSystem: boolean;
+};
+
+const globalAuthCache = globalThis as unknown as {
+  __vakifSessionUserCache?: Map<string, SessionUserCacheEntry>;
+};
+
+const sessionUserCache =
+  globalAuthCache.__vakifSessionUserCache ||
+  (globalAuthCache.__vakifSessionUserCache = new Map<string, SessionUserCacheEntry>());
+
+const SESSION_USER_CACHE_TTL_MS = 5 * 60 * 1000; // 5 dakika (yetki değişiminde anında temizlenir)
 
 export function invalidateUserSessionCache(userId?: string) {
   if (userId) sessionUserCache.delete(String(userId));
@@ -186,7 +193,7 @@ export const authOptions: NextAuthOptions = {
             session.user.isAuthorized = isAuthorized;
             session.user.canManageSystem = canManageSystem;
             sessionUserCache.set(uid, {
-              expiresAt: Date.now() + 30_000,
+              expiresAt: Date.now() + SESSION_USER_CACHE_TTL_MS,
               role: liveRole,
               title: dbUser.title || "",
               authorizedModules,

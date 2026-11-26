@@ -601,29 +601,78 @@ async function roundImageCorners(dataUrl: string, radiusRatio = 0.04): Promise<s
   }
 }
 
+let autoFitMeasureCtx: CanvasRenderingContext2D | null = null;
+
+function getAutoFitMeasureCtx(): CanvasRenderingContext2D | null {
+  if (typeof document === "undefined") return null;
+  if (!autoFitMeasureCtx) {
+    const canvas = document.createElement("canvas");
+    autoFitMeasureCtx = canvas.getContext("2d");
+  }
+  return autoFitMeasureCtx;
+}
+
 export function computeAutoFontSizePt(
   lines: string[],
   boxWidthIn: number,
   boxHeightIn: number
 ): number {
-  if (lines.length === 0) return 12.5;
-  const usableW = Math.max(2, boxWidthIn - 0.32);
-  const usableH = Math.max(1, boxHeightIn - 0.2);
+  if (lines.length === 0) return 13.5;
 
-  for (let pt = 13.5; pt >= 7; pt -= 0.5) {
-    const charsPerLine = Math.max(14, Math.floor((usableW * 72) / (pt * 0.56)));
+  // Web önizlemedeki (720x540px = 10x7.5 inç) px-3 (12pt) ve py-2 (7.5pt) iç boşluklarıyla birebir aynı kullanılabilir alan
+  const usableWidthPt = Math.max(120, boxWidthIn * 72 - 24);
+  const usableHeightPt = Math.max(60, boxHeightIn * 72 - 14);
+  const ctx = getAutoFitMeasureCtx();
+
+  for (let pt = 15; pt >= 6.5; pt -= 0.5) {
+    const bulletIndentPt = pt * 0.84 + 3.6;
+    const lineTextWidthPt = Math.max(80, usableWidthPt - bulletIndentPt);
     let totalVisualLines = 0;
-    for (const line of lines) {
-      const len = line.length + 3;
-      totalVisualLines += Math.max(1, Math.ceil(len / charsPerLine));
+
+    if (ctx) {
+      ctx.font = `bold ${pt}px Verdana, Geneva, sans-serif`;
+      for (const rawLine of lines) {
+        const clean = rawLine.trim();
+        if (!clean) continue;
+        const words = clean.split(/\s+/);
+        let currentW = 0;
+        let wrappedLines = 1;
+        const spaceW = ctx.measureText(" ").width;
+
+        for (const word of words) {
+          const wordW = ctx.measureText(word).width;
+          if (currentW === 0) {
+            if (wordW > lineTextWidthPt) {
+              const extra = Math.ceil(wordW / lineTextWidthPt) - 1;
+              wrappedLines += extra;
+              currentW = wordW % lineTextWidthPt;
+            } else {
+              currentW = wordW;
+            }
+          } else if (currentW + spaceW + wordW <= lineTextWidthPt) {
+            currentW += spaceW + wordW;
+          } else {
+            wrappedLines += 1;
+            currentW = wordW;
+          }
+        }
+        totalVisualLines += wrappedLines;
+      }
+    } else {
+      // Sunucu/fallback tahmini (Verdana Bold ortalama karakter genişliği ~0.65em)
+      const charsPerLine = Math.max(12, Math.floor(lineTextWidthPt / (pt * 0.65)));
+      for (const rawLine of lines) {
+        totalVisualLines += Math.max(1, Math.ceil(rawLine.trim().length / charsPerLine));
+      }
     }
-    const lineHeightIn = (pt * 1.32) / 72;
-    const totalHeightIn = totalVisualLines * lineHeightIn + lines.length * (2.5 / 72);
-    if (totalHeightIn <= usableH) {
+
+    const paraGapTotalPt = Math.max(0, lines.length - 1) * 1.5;
+    const totalHeightPt = totalVisualLines * (pt * 1.28) + paraGapTotalPt;
+    if (totalHeightPt <= usableHeightPt) {
       return pt;
     }
   }
-  return 7;
+  return 6.5;
 }
 
 interface RichRun {
@@ -819,7 +868,30 @@ function htmlToLinesOfRuns(html: string): RichRun[][] {
 
   const flushLine = () => {
     const combined = currentLine.map((r) => r.text).join("").trim();
-    if (combined) lines.push(currentLine);
+    if (combined) {
+      // Ardışık aynı biçimlendirmeye sahip parçaları birleştir (temiz tek <a:r> OOXML üretimi için)
+      const merged: RichRun[] = [];
+      for (const run of currentLine) {
+        if (!run.text) continue;
+        const prev = merged[merged.length - 1];
+        if (
+          prev &&
+          Boolean(prev.italic) === Boolean(run.italic) &&
+          Boolean(prev.underline) === Boolean(run.underline) &&
+          (prev.color || "") === (run.color || "")
+        ) {
+          prev.text += run.text;
+        } else {
+          merged.push({ ...run });
+        }
+      }
+      if (merged.length > 0) {
+        merged[0].text = merged[0].text.replace(CLIENT_LEADING_BULLET_RE, "").trimStart();
+        merged[merged.length - 1].text = merged[merged.length - 1].text.trimEnd();
+        const nonEmpty = merged.filter((m) => m.text.length > 0);
+        if (nonEmpty.length > 0) lines.push(nonEmpty);
+      }
+    }
     currentLine = [];
   };
 
@@ -1137,7 +1209,11 @@ export async function exportSlidesToPptx(params: {
   const { default: PptxGenJS } = await import("pptxgenjs");
   const pptx = new PptxGenJS();
 
-  const defaultTpl = templates[0] || template;
+  const defaultTpl =
+    (slides[0]?.templateId &&
+      templates.find((t) => t._id === slides[0].templateId)) ||
+    templates[0] ||
+    template;
   const slideW = defaultTpl?.slideWidthIn || 10;
   const slideH = defaultTpl?.slideHeightIn || 7.5;
   const sx = slideW / 10;
@@ -1383,11 +1459,13 @@ export async function exportSlidesToPptx(params: {
       );
     }
 
-    // 3. AÇIKLAMA KUTUSU (Sadece şablonda descBox varsa çizilir)
+    // 3. AÇIKLAMA KUTUSU (Sadece şablonda descBox varsa çizilir — Web önizleme ile 1:1 aynı oran ve sıfır fazla boşluk)
     if (layout.descBox) {
-      let descX = (layout.descBox.xPct / 100) * slideW;
+      const descLeftPct = layout.mode === "classic" ? 3.2 : layout.descBox.xPct;
+      const descWidthPct = layout.mode === "classic" ? 93.6 : layout.descBox.wPct;
+      const descX = (descLeftPct / 100) * slideW;
       let descY = (layout.descBox.yPct / 100) * slideH;
-      let descW = (layout.descBox.wPct / 100) * slideW;
+      const descW = (descWidthPct / 100) * slideW;
       let descH = (layout.descBox.hPct / 100) * slideH;
 
       if (layout.mode === "classic") {
@@ -1416,32 +1494,35 @@ export async function exportSlidesToPptx(params: {
       });
 
       const richLines = item.descriptionHtml ? htmlToLinesOfRuns(item.descriptionHtml) : [];
-      const plainLines = (item.description || "")
-        .split(/\r?\n/)
-        .map((l) => l.trim())
-        .filter(Boolean);
+      const plainLines = extractCleanPlainLines(item.description || "");
 
       const textLinesForSizing =
         richLines.length > 0
           ? richLines.map((runs) => runs.map((r) => r.text).join(""))
           : plainLines;
 
-      const fontSize =
+      // Sanal 10x7.5 inç (720x540px) sahne üzerinde puntoyu hesapla, farklı boyutta şablon varsa orantılı ölçekle
+      const virtualDescW = (descW / slideW) * 10;
+      const virtualDescH = (descH / slideH) * 7.5;
+      const baseFontSize =
         item.fontSize && item.fontSize !== "auto"
           ? Number(item.fontSize)
-          : computeAutoFontSizePt(textLinesForSizing, descW, descH);
+          : computeAutoFontSizePt(textLinesForSizing, virtualDescW, virtualDescH);
+      const fontScale = Math.min(sx, sy);
+      const fontSize = Math.round(baseFontSize * fontScale * 10) / 10;
 
+      // Gerçek PowerPoint madde işareti (U+27A2 '➢') ve asılı girinti:
+      // Fazladan çift boşluk karakteri EKLEMEZ, alt satıra taşan metni web önizlemedeki gibi tam harf hizasından başlatır
+      const bulletIndentPt = Math.round((fontSize * 0.84 + 3.6 * fontScale) * 10) / 10;
+      const paraGapPt = Math.round(1.5 * fontScale * 10) / 10;
       const pptxRuns: any[] = [];
 
       if (richLines.length > 0) {
         richLines.forEach((runs, lineIdx) => {
-          pptxRuns.push({
-            text: "➢  ",
-            options: { fontSize, bold: true, color: "0F172A" },
-          });
+          const isLastLine = lineIdx === richLines.length - 1;
           runs.forEach((r, rIdx) => {
+            const isFirstRun = rIdx === 0;
             const isLastRunOfLine = rIdx === runs.length - 1;
-            const isLastLine = lineIdx === richLines.length - 1;
             pptxRuns.push({
               text: r.text,
               options: {
@@ -1450,8 +1531,16 @@ export async function exportSlidesToPptx(params: {
                 italic: r.italic,
                 underline: r.underline ? { style: "sng" } : undefined,
                 color: r.color || "020617",
+                ...(isFirstRun
+                  ? {
+                      bullet: {
+                        characterCode: "27A2",
+                        indent: bulletIndentPt,
+                      },
+                    }
+                  : {}),
                 breakLine: isLastRunOfLine && !isLastLine,
-                paraSpaceAfter: 0,
+                paraSpaceAfter: isLastRunOfLine && !isLastLine ? paraGapPt : 0,
                 paraSpaceBefore: 0,
               },
             });
@@ -1459,14 +1548,19 @@ export async function exportSlidesToPptx(params: {
         });
       } else if (plainLines.length > 0) {
         plainLines.forEach((line, idx) => {
+          const isLastLine = idx === plainLines.length - 1;
           pptxRuns.push({
-            text: `➢  ${line}`,
+            text: line,
             options: {
               fontSize,
               bold: true,
               color: "020617",
-              breakLine: idx < plainLines.length - 1,
-              paraSpaceAfter: 0,
+              bullet: {
+                characterCode: "27A2",
+                indent: bulletIndentPt,
+              },
+              breakLine: !isLastLine,
+              paraSpaceAfter: !isLastLine ? paraGapPt : 0,
               paraSpaceBefore: 0,
             },
           });
@@ -1474,13 +1568,17 @@ export async function exportSlidesToPptx(params: {
       }
 
       if (pptxRuns.length > 0) {
+        // Web önizlemedeki px-3 (12/720) ve py-2 (8/540) iç boşluklarıyla birebir örtüşen koordinatlar
+        const padX = (12 / 720) * slideW;
+        const padTop = (7.5 / 540) * slideH;
+        const padBottom = (5.5 / 540) * slideH;
         slide.addText(pptxRuns, {
-          x: descX + 0.1 * sx,
-          y: descY + 0.06 * sy,
-          w: descW - 0.2 * sx,
-          h: descH - 0.12 * sy,
+          x: descX + padX,
+          y: descY + padTop,
+          w: Math.max(1, descW - padX * 2),
+          h: Math.max(0.5, descH - padTop - padBottom),
           margin: 0,
-          lineSpacingMultiple: 1.08,
+          lineSpacingMultiple: 1.06,
           valign: "top",
           fontFace: fontFamily,
         });

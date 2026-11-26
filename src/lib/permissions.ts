@@ -39,11 +39,17 @@ export interface EffectivePermissions {
   canManageInKindAid: boolean;
 }
 
-const permissionsCache = new Map<
-  string,
-  { expiresAt: number; value: EffectivePermissions }
->();
-const PERMISSIONS_CACHE_TTL_MS = 30_000;
+type PermissionsCacheEntry = { expiresAt: number; value: EffectivePermissions };
+
+const globalPermCache = globalThis as unknown as {
+  __vakifPermissionsCache?: Map<string, PermissionsCacheEntry>;
+};
+
+const permissionsCache =
+  globalPermCache.__vakifPermissionsCache ||
+  (globalPermCache.__vakifPermissionsCache = new Map<string, PermissionsCacheEntry>());
+
+const PERMISSIONS_CACHE_TTL_MS = 5 * 60 * 1000; // 5 dakika (yetki değişiminde anında sıfırlanır)
 
 export function invalidatePermissionsCache(userId?: string) {
   if (userId) permissionsCache.delete(String(userId));
