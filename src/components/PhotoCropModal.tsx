@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, type SyntheticEvent, type PointerEvent as ReactPointerEvent } from "react";
 import {
   Crop,
   RotateCw,
@@ -11,10 +11,13 @@ import {
   Check,
   X,
   Maximize2,
-  ZoomIn,
-  ZoomOut,
   Scissors,
-  Layers,
+  Sun,
+  Contrast,
+  Palette,
+  Flame,
+  Sparkles,
+  SlidersHorizontal,
 } from "lucide-react";
 
 interface CropRect {
@@ -25,22 +28,102 @@ interface CropRect {
 }
 
 type AspectRatioOption = "free" | "4:3" | "16:9" | "1:1" | "3:4";
+type EditorTab = "crop" | "adjust";
 
 interface PhotoCropModalProps {
   isOpen: boolean;
   photoSrc: string;
   allPhotos?: string[];
   activePhotoIdx?: number;
+  initialTab?: EditorTab;
   onSelectPhotoIdx?: (idx: number) => void;
   onClose: () => void;
   onApplyCrop: (croppedBase64: string, targetIdx: number) => void;
 }
+
+// Hazır Işık ve Renk Filtreleri
+interface FilterPreset {
+  id: string;
+  name: string;
+  icon: string;
+  brightness: number;
+  contrast: number;
+  saturation: number;
+  warmth: number;
+}
+
+const PRESETS: FilterPreset[] = [
+  {
+    id: "original",
+    name: "Orijinal",
+    icon: "✨",
+    brightness: 100,
+    contrast: 100,
+    saturation: 100,
+    warmth: 0,
+  },
+  {
+    id: "bright",
+    name: "Aydınlık (Işık Aç)",
+    icon: "☀️",
+    brightness: 122,
+    contrast: 106,
+    saturation: 104,
+    warmth: 0,
+  },
+  {
+    id: "vivid",
+    name: "Canlı Renkler",
+    icon: "🎨",
+    brightness: 106,
+    contrast: 114,
+    saturation: 135,
+    warmth: 4,
+  },
+  {
+    id: "warm",
+    name: "Sıcak Günışığı",
+    icon: "🔥",
+    brightness: 106,
+    contrast: 104,
+    saturation: 108,
+    warmth: 18,
+  },
+  {
+    id: "cool",
+    name: "Soğuk & Net",
+    icon: "❄️",
+    brightness: 103,
+    contrast: 108,
+    saturation: 96,
+    warmth: -16,
+  },
+  {
+    id: "shadow_lift",
+    name: "Karanlık Alanları Aç",
+    icon: "🌓",
+    brightness: 130,
+    contrast: 94,
+    saturation: 106,
+    warmth: 0,
+  },
+  {
+    id: "bw",
+    name: "Siyah - Beyaz",
+    icon: "🖤",
+    brightness: 105,
+    contrast: 122,
+    saturation: 0,
+    warmth: 0,
+  },
+];
 
 export default function PhotoCropModal({
   isOpen,
   photoSrc,
   allPhotos = [],
   activePhotoIdx = 0,
+  initialTab = "crop",
   onSelectPhotoIdx,
   onClose,
   onApplyCrop,
@@ -48,12 +131,23 @@ export default function PhotoCropModal({
   const containerRef = useRef<HTMLDivElement>(null);
   const imageRef = useRef<HTMLImageElement>(null);
 
+  // Aktif Sekme (Kırpma / Işık-Renk)
+  const [activeTab, setActiveTab] = useState<EditorTab>(initialTab);
+
+  // Kırpma & Döndürme Durumları
   const [rotation, setRotation] = useState<number>(0); // 0, 90, 180, 270
   const [flipH, setFlipH] = useState<boolean>(false);
   const [flipV, setFlipV] = useState<boolean>(false);
   const [aspect, setAspect] = useState<AspectRatioOption>("free");
   const [crop, setCrop] = useState<CropRect>({ x: 5, y: 5, w: 90, h: 90 });
   const [imgNaturalSize, setImgNaturalSize] = useState<{ w: number; h: number }>({ w: 0, h: 0 });
+
+  // Işıklandırma ve Renk Durumları
+  const [brightness, setBrightness] = useState<number>(100); // 40..180 (%)
+  const [contrast, setContrast] = useState<number>(100); // 40..180 (%)
+  const [saturation, setSaturation] = useState<number>(100); // 0..200 (%)
+  const [warmth, setWarmth] = useState<number>(0); // -30..+30
+
   const [processing, setProcessing] = useState<boolean>(false);
 
   // Sürükleme / Boyutlandırma durumu
@@ -71,19 +165,24 @@ export default function PhotoCropModal({
     startCrop: { x: 5, y: 5, w: 90, h: 90 },
   });
 
-  // Modal her açıldığında veya aktif fotoğraf değiştiğinde durumları sıfırla
+  // Modal her açıldığında veya aktif fotoğraf değiştiğinde durumları ayarla
   useEffect(() => {
     if (isOpen) {
+      setActiveTab(initialTab);
       setRotation(0);
       setFlipH(false);
       setFlipV(false);
       setAspect("free");
       setCrop({ x: 5, y: 5, w: 90, h: 90 });
+      setBrightness(100);
+      setContrast(100);
+      setSaturation(100);
+      setWarmth(0);
     }
-  }, [isOpen, photoSrc]);
+  }, [isOpen, photoSrc, initialTab]);
 
   // Görsel yüklendiğinde doğal boyutunu al
-  const handleImageLoad = (e: React.SyntheticEvent<HTMLImageElement>) => {
+  const handleImageLoad = (e: SyntheticEvent<HTMLImageElement>) => {
     const img = e.currentTarget;
     setImgNaturalSize({ w: img.naturalWidth, h: img.naturalHeight });
   };
@@ -94,7 +193,6 @@ export default function PhotoCropModal({
       setAspect(newAspect);
       if (newAspect === "free" || !imgNaturalSize.w || !imgNaturalSize.h) return;
 
-      // Döndürme 90 veya 270 ise boyutlar yer değiştirir
       const isSwapped = rotation === 90 || rotation === 270;
       const currentW = isSwapped ? imgNaturalSize.h : imgNaturalSize.w;
       const currentH = isSwapped ? imgNaturalSize.w : imgNaturalSize.h;
@@ -106,7 +204,6 @@ export default function PhotoCropModal({
       else if (newAspect === "1:1") targetRatio = 1;
       else if (newAspect === "3:4") targetRatio = 3 / 4;
 
-      // Kırpma alanının yüzde cinsinden w / h oranı = (targetRatio / imageAspect)
       const relativeRatio = targetRatio / imageAspect;
 
       let newW = 85;
@@ -146,8 +243,8 @@ export default function PhotoCropModal({
     setCrop({ x: 5, y: 5, w: 90, h: 90 });
   };
 
-  // Sıfırla
-  const handleReset = () => {
+  // Kırpma Sıfırla
+  const handleResetCrop = () => {
     setRotation(0);
     setFlipH(false);
     setFlipV(false);
@@ -155,9 +252,40 @@ export default function PhotoCropModal({
     setCrop({ x: 5, y: 5, w: 90, h: 90 });
   };
 
+  // Işık & Renk Sıfırla
+  const handleResetAdjustments = () => {
+    setBrightness(100);
+    setContrast(100);
+    setSaturation(100);
+    setWarmth(0);
+  };
+
+  // Hazır Filtre Seçimi
+  const applyPreset = (preset: FilterPreset) => {
+    setBrightness(preset.brightness);
+    setContrast(preset.contrast);
+    setSaturation(preset.saturation);
+    setWarmth(preset.warmth);
+  };
+
+  // Işık / Renk değiştirildi mi kontrolü
+  const isAdjusted =
+    brightness !== 100 || contrast !== 100 || saturation !== 100 || warmth !== 0;
+
+  // CSS Filtre Dizesini Oluştur
+  const buildFilterString = useCallback(() => {
+    const parts: string[] = [];
+    if (brightness !== 100) parts.push(`brightness(${brightness}%)`);
+    if (contrast !== 100) parts.push(`contrast(${contrast}%)`);
+    if (saturation !== 100) parts.push(`saturate(${saturation}%)`);
+    if (warmth > 0) parts.push(`sepia(${warmth * 0.7}%)`);
+    if (warmth < 0) parts.push(`hue-rotate(${warmth * 0.8}deg)`);
+    return parts.length > 0 ? parts.join(" ") : "none";
+  }, [brightness, contrast, saturation, warmth]);
+
   // Pointer Başlatma (Taşıma veya Tutamaç)
   const handlePointerDown = (
-    e: React.PointerEvent,
+    e: ReactPointerEvent,
     mode: "move" | "nw" | "ne" | "se" | "sw" | "n" | "s" | "e" | "w"
   ) => {
     e.preventDefault();
@@ -249,7 +377,7 @@ export default function PhotoCropModal({
     window.removeEventListener("pointerup", handlePointerUp);
   }, [handlePointerMove]);
 
-  // Kırpma ve Tuvale Çizip Çıktı Alma
+  // Kırpma, Döndürme, Işıklandırma ve Renk Ayarlarını Tuvale İşleyip Çıktı Alma
   const handleApply = async () => {
     if (!imageRef.current || !photoSrc) return;
     setProcessing(true);
@@ -266,7 +394,7 @@ export default function PhotoCropModal({
       const natW = img.naturalWidth;
       const natH = img.naturalHeight;
 
-      // 1. Adım: Döndürme & Aynalama içeren ara tuval oluştur
+      // 1. Adım: Döndürme, Aynalama ve IŞIK/RENK FİLTRELERİ içeren ara tuval oluştur
       const isRotated = rotation === 90 || rotation === 270;
       const rotCanvasW = isRotated ? natH : natW;
       const rotCanvasH = isRotated ? natW : natH;
@@ -276,6 +404,16 @@ export default function PhotoCropModal({
       transCanvas.height = rotCanvasH;
       const tCtx = transCanvas.getContext("2d");
       if (!tCtx) throw new Error("Canvas context oluşturulamadı.");
+
+      // Işık, kontrast ve renk filtrelerini canvas üzerine uygula
+      const currentFilter = buildFilterString();
+      if (currentFilter && currentFilter !== "none") {
+        try {
+          tCtx.filter = currentFilter;
+        } catch {
+          // Desteklemeyen eski tarayıcılar için sessizce devam et
+        }
+      }
 
       tCtx.translate(rotCanvasW / 2, rotCanvasH / 2);
       if (rotation !== 0) {
@@ -290,7 +428,7 @@ export default function PhotoCropModal({
       const cropPxW = Math.round((crop.w / 100) * rotCanvasW);
       const cropPxH = Math.round((crop.h / 100) * rotCanvasH);
 
-      // Çıktı tuvali
+      // Çıktı tuvali boyutlandırması
       const maxOutputDim = 1250;
       let outW = cropPxW;
       let outH = cropPxH;
@@ -328,11 +466,11 @@ export default function PhotoCropModal({
       );
 
       // Sıkıştırılmış JPEG data URI al
-      const resultDataUrl = finalCanvas.toDataURL("image/jpeg", 0.86);
+      const resultDataUrl = finalCanvas.toDataURL("image/jpeg", 0.88);
       onApplyCrop(resultDataUrl, activePhotoIdx);
       onClose();
     } catch (err: any) {
-      console.error("Fotoğraf kırpma hatası:", err);
+      console.error("Fotoğraf işleme hatası:", err);
     } finally {
       setProcessing(false);
     }
@@ -340,36 +478,74 @@ export default function PhotoCropModal({
 
   if (!isOpen) return null;
 
+  const currentFilterStyle = buildFilterString();
+
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-950/80 backdrop-blur-md animate-in fade-in duration-200">
-      <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl flex flex-col max-h-[94vh] overflow-hidden text-slate-100">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-2.5 sm:p-5 bg-slate-950/85 backdrop-blur-md animate-in fade-in duration-200">
+      <div className="relative w-full max-w-4xl bg-slate-900 border border-slate-700/80 rounded-3xl shadow-2xl flex flex-col max-h-[95vh] overflow-hidden text-slate-100">
         
-        {/* Üst Başlık Barı */}
-        <div className="flex items-center justify-between px-5 py-4 border-b border-slate-800 bg-slate-900/90">
+        {/* Üst Başlık & Sekme Çubuğu */}
+        <div className="px-5 py-3.5 border-b border-slate-800 bg-slate-900/95 flex flex-wrap items-center justify-between gap-3">
           <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 to-indigo-500 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white">
-              <Scissors className="w-5 h-5" />
+            <div className="w-9 h-9 rounded-xl bg-gradient-to-tr from-blue-600 via-indigo-600 to-amber-500 flex items-center justify-center shadow-lg shadow-blue-500/20 text-white">
+              {activeTab === "crop" ? (
+                <Scissors className="w-5 h-5" />
+              ) : (
+                <Sun className="w-5 h-5" />
+              )}
             </div>
             <div>
               <div className="flex items-center gap-2">
                 <h3 className="text-base font-bold text-white tracking-wide">
-                  Fotoğrafı Kırp, Kes ve Düzenle
+                  Fotoğrafı Kırp, Kes ve Işıklandır
                 </h3>
                 {imgNaturalSize.w > 0 && (
-                  <span className="px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px] font-mono border border-slate-700">
+                  <span className="hidden sm:inline-block px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 text-[10px] font-mono border border-slate-700">
                     {imgNaturalSize.w} × {imgNaturalSize.h} px
                   </span>
                 )}
               </div>
-              <p className="text-xs text-slate-400">
-                Alanı sürükleyerek veya kenarlardan tutarak kırpın, döndürün ve uygulayın.
+              <p className="text-xs text-slate-400 hidden sm:block">
+                Kırpma, döndürme ve gelişmiş ışık, kontrast ve renk canlılığı ayarlarını yapın.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-2.5">
+            {/* Sekme Seçiciler */}
+            <div className="flex items-center p-1 rounded-xl bg-slate-800/90 border border-slate-700">
+              <button
+                type="button"
+                onClick={() => setActiveTab("crop")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all ${
+                  activeTab === "crop"
+                    ? "bg-blue-600 text-white shadow-md shadow-blue-600/30"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Scissors className="w-3.5 h-3.5" />
+                <span>Kırp & Kes</span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setActiveTab("adjust")}
+                className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center gap-1.5 transition-all relative ${
+                  activeTab === "adjust"
+                    ? "bg-amber-600 text-white shadow-md shadow-amber-600/30"
+                    : "text-slate-400 hover:text-white"
+                }`}
+              >
+                <Sun className="w-3.5 h-3.5" />
+                <span>Işık & Renk</span>
+                {isAdjusted && (
+                  <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                )}
+              </button>
+            </div>
+
+            {/* Çoklu Fotoğraf Seçici */}
             {allPhotos.length > 1 && onSelectPhotoIdx && (
-              <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-xl border border-slate-700 mr-2">
+              <div className="flex items-center gap-1 bg-slate-800/80 p-1 rounded-xl border border-slate-700">
                 {allPhotos.map((_, i) => (
                   <button
                     key={i}
@@ -386,6 +562,7 @@ export default function PhotoCropModal({
                 ))}
               </div>
             )}
+
             <button
               type="button"
               onClick={onClose}
@@ -396,39 +573,47 @@ export default function PhotoCropModal({
           </div>
         </div>
 
-        {/* Ana Kırpma Alanı (Çalışma Tuvali) */}
-        <div className="flex-1 bg-slate-950 p-4 sm:p-6 flex items-center justify-center overflow-hidden min-h-[340px] max-h-[58vh]">
+        {/* Ana Fotoğraf Önizleme Alanı */}
+        <div className="flex-1 bg-slate-950 p-3 sm:p-5 flex items-center justify-center overflow-hidden min-h-[300px] max-h-[52vh]">
           <div
             ref={containerRef}
             className="relative select-none touch-none max-w-full max-h-full flex items-center justify-center overflow-hidden rounded-xl border border-slate-800/80 shadow-2xl"
             style={{
-              maxHeight: "54vh",
+              maxHeight: "48vh",
             }}
           >
-            {/* Gösterilen Görsel */}
+            {/* Gösterilen Görsel - Canlı Filtre ve Döndürme Uygulanır */}
             <img
               ref={imageRef}
               src={photoSrc}
-              alt="Kırpılacak fotoğraf"
+              alt="Düzenlenen fotoğraf"
               onLoad={handleImageLoad}
               draggable={false}
-              className="max-h-[54vh] max-w-full object-contain pointer-events-none transition-transform duration-150"
+              className="max-h-[48vh] max-w-full object-contain pointer-events-none transition-[filter] duration-75"
               style={{
                 transform: `rotate(${rotation}deg) scale(${flipH ? -1 : 1}, ${flipV ? -1 : 1})`,
+                filter: currentFilterStyle,
               }}
             />
 
-            {/* İnteraktif Kırpma Kutusu Overlay */}
+            {/* İnteraktif Kırpma Kutusu Overlay (Kırpma sekmesinde veya açıkken aktiftir) */}
             <div
               style={{
                 left: `${crop.x}%`,
                 top: `${crop.y}%`,
                 width: `${crop.w}%`,
                 height: `${crop.h}%`,
-                boxShadow: "0 0 0 9999px rgba(2, 6, 23, 0.65)",
+                boxShadow:
+                  activeTab === "crop"
+                    ? "0 0 0 9999px rgba(2, 6, 23, 0.65)"
+                    : "0 0 0 9999px rgba(2, 6, 23, 0.35)",
               }}
               onPointerDown={(e) => handlePointerDown(e, "move")}
-              className="absolute border-2 border-blue-400 cursor-move group touch-none"
+              className={`absolute border-2 cursor-move group touch-none transition-colors ${
+                activeTab === "crop"
+                  ? "border-blue-400 shadow-md"
+                  : "border-blue-400/40 hover:border-blue-400"
+              }`}
             >
               {/* 3x3 Üçte Bir Kuralı Kılavuz Çizgileri */}
               <div className="absolute inset-0 grid grid-cols-3 grid-rows-3 pointer-events-none opacity-40 group-hover:opacity-75 transition-opacity">
@@ -438,8 +623,8 @@ export default function PhotoCropModal({
                 <div className="border-r border-b border-white/60"></div>
                 <div className="border-r border-b border-white/60"></div>
                 <div className="border-b border-white/60"></div>
-                <div className="border-r border-white/60"></div>
-                <div className="border-r border-white/60"></div>
+                <div className="border-r border-b border-white/60"></div>
+                <div className="border-r border-b border-white/60"></div>
                 <div></div>
               </div>
 
@@ -482,100 +667,251 @@ export default function PhotoCropModal({
           </div>
         </div>
 
-        {/* Alt Araç Çubuğu (En-Boy Oranları, Döndürme, Sıfırlama ve Uygulama) */}
-        <div className="p-4 sm:p-5 bg-slate-900 border-t border-slate-800 space-y-3.5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            
-            {/* En-Boy Oranı Butonları */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-semibold text-slate-400 mr-1 flex items-center gap-1">
-                <Maximize2 className="w-3.5 h-3.5 text-blue-400" />
-                Oran:
-              </span>
-              {(
-                [
-                  { id: "free", label: "Serbest" },
-                  { id: "4:3", label: "4:3 (Sunu)" },
-                  { id: "16:9", label: "16:9" },
-                  { id: "1:1", label: "1:1 Kare" },
-                  { id: "3:4", label: "3:4 Dikey" },
-                ] as const
-              ).map((opt) => (
+        {/* Alt Düzenleme Paneli */}
+        <div className="p-3.5 sm:p-5 bg-slate-900 border-t border-slate-800 space-y-3.5">
+          
+          {/* 1. SEKME: Kırpma & Açı Araçları */}
+          {activeTab === "crop" && (
+            <div className="space-y-3 animate-in fade-in duration-150">
+              <div className="flex flex-wrap items-center justify-between gap-3">
+                {/* En-Boy Oranı Butonları */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-semibold text-slate-400 mr-1 flex items-center gap-1">
+                    <Maximize2 className="w-3.5 h-3.5 text-blue-400" />
+                    Oran:
+                  </span>
+                  {(
+                    [
+                      { id: "free", label: "Serbest" },
+                      { id: "4:3", label: "4:3 (Sunu)" },
+                      { id: "16:9", label: "16:9" },
+                      { id: "1:1", label: "1:1 Kare" },
+                      { id: "3:4", label: "3:4 Dikey" },
+                    ] as const
+                  ).map((opt) => (
+                    <button
+                      key={opt.id}
+                      type="button"
+                      onClick={() => applyAspectRatio(opt.id)}
+                      className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
+                        aspect === opt.id
+                          ? "bg-blue-600 text-white shadow-md shadow-blue-600/30 font-bold"
+                          : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white"
+                      }`}
+                    >
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+
+                {/* Döndürme & Aynalama Araçları */}
+                <div className="flex items-center gap-1.5">
+                  <span className="text-[11px] font-semibold text-slate-400 mr-1">Döndür:</span>
+                  <button
+                    type="button"
+                    onClick={handleRotateCcw}
+                    className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors shadow-sm"
+                    title="Sola 90° Döndür"
+                  >
+                    <RotateCcw className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRotateCw}
+                    className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors shadow-sm"
+                    title="Sağa 90° Döndür"
+                  >
+                    <RotateCw className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFlipH(!flipH)}
+                    className={`p-2 rounded-xl transition-colors shadow-sm ${
+                      flipH
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700"
+                    }`}
+                    title="Yatay Aynala"
+                  >
+                    <FlipHorizontal className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setFlipV(!flipV)}
+                    className={`p-2 rounded-xl transition-colors shadow-sm ${
+                      flipV
+                        ? "bg-blue-600 text-white"
+                        : "bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700"
+                    }`}
+                    title="Dikey Aynala"
+                  >
+                    <FlipVertical className="w-4 h-4" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleResetCrop}
+                    className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-amber-400 hover:bg-slate-700 transition-colors shadow-sm ml-1"
+                    title="Kırpma ve Açıyı Sıfırla"
+                  >
+                    <RefreshCw className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* 2. SEKME: Işıklandırma ve Renklendirme Araçları */}
+          {activeTab === "adjust" && (
+            <div className="space-y-3.5 animate-in fade-in duration-150">
+              
+              {/* Hazır Filtre Butonları */}
+              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 scrollbar-thin">
+                <span className="text-[11px] font-semibold text-slate-400 mr-1 flex items-center gap-1 shrink-0">
+                  <Sparkles className="w-3.5 h-3.5 text-amber-400" />
+                  Hazır Efekt:
+                </span>
+                {PRESETS.map((p) => {
+                  const isCurrent =
+                    brightness === p.brightness &&
+                    contrast === p.contrast &&
+                    saturation === p.saturation &&
+                    warmth === p.warmth;
+                  return (
+                    <button
+                      key={p.id}
+                      type="button"
+                      onClick={() => applyPreset(p)}
+                      className={`px-2.5 py-1 rounded-xl text-xs font-semibold shrink-0 transition-all flex items-center gap-1 ${
+                        isCurrent
+                          ? "bg-amber-600 text-white shadow-md shadow-amber-600/30 font-bold"
+                          : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white"
+                      }`}
+                    >
+                      <span>{p.icon}</span>
+                      <span>{p.name}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Sürgülü Ayarlar (Parlaklık, Kontrast, Doygunluk, Sıcaklık) */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+                {/* Parlaklık (Brightness) */}
+                <div className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/70 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 flex items-center gap-1.5 font-medium">
+                      <Sun className="w-3.5 h-3.5 text-amber-400" />
+                      Parlaklık / Işık
+                    </span>
+                    <span className="font-mono text-[11px] text-amber-300 font-bold">
+                      %{brightness}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="40"
+                    max="180"
+                    step="1"
+                    value={brightness}
+                    onChange={(e) => setBrightness(Number(e.target.value))}
+                    className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-amber-500"
+                  />
+                </div>
+
+                {/* Kontrast (Contrast) */}
+                <div className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/70 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 flex items-center gap-1.5 font-medium">
+                      <Contrast className="w-3.5 h-3.5 text-blue-400" />
+                      Kontrast / Karşıtlık
+                    </span>
+                    <span className="font-mono text-[11px] text-blue-300 font-bold">
+                      %{contrast}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="40"
+                    max="180"
+                    step="1"
+                    value={contrast}
+                    onChange={(e) => setContrast(Number(e.target.value))}
+                    className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-blue-500"
+                  />
+                </div>
+
+                {/* Doygunluk / Canlılık (Saturation) */}
+                <div className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/70 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 flex items-center gap-1.5 font-medium">
+                      <Palette className="w-3.5 h-3.5 text-emerald-400" />
+                      Renk Doygunluğu
+                    </span>
+                    <span className="font-mono text-[11px] text-emerald-300 font-bold">
+                      %{saturation}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0"
+                    max="200"
+                    step="1"
+                    value={saturation}
+                    onChange={(e) => setSaturation(Number(e.target.value))}
+                    className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-emerald-500"
+                  />
+                </div>
+
+                {/* Renk Sıcaklığı (Warmth) */}
+                <div className="p-2.5 rounded-xl bg-slate-800/80 border border-slate-700/70 space-y-1.5">
+                  <div className="flex items-center justify-between text-xs">
+                    <span className="text-slate-300 flex items-center gap-1.5 font-medium">
+                      <Flame className="w-3.5 h-3.5 text-orange-400" />
+                      Renk Sıcaklığı
+                    </span>
+                    <span className="font-mono text-[11px] text-orange-300 font-bold">
+                      {warmth > 0 ? `+${warmth}` : warmth}
+                    </span>
+                  </div>
+                  <input
+                    type="range"
+                    min="-30"
+                    max="30"
+                    step="1"
+                    value={warmth}
+                    onChange={(e) => setWarmth(Number(e.target.value))}
+                    className="w-full h-1.5 bg-slate-700 rounded-lg appearance-none cursor-pointer accent-orange-500"
+                  />
+                </div>
+              </div>
+
+              {/* Işık Sıfırlama Butonu */}
+              <div className="flex justify-end">
                 <button
-                  key={opt.id}
                   type="button"
-                  onClick={() => applyAspectRatio(opt.id)}
-                  className={`px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all ${
-                    aspect === opt.id
-                      ? "bg-blue-600 text-white shadow-md shadow-blue-600/30 font-bold"
-                      : "bg-slate-800 text-slate-300 hover:bg-slate-700 hover:text-white"
-                  }`}
+                  onClick={handleResetAdjustments}
+                  className="px-3 py-1 rounded-lg text-xs font-semibold text-slate-400 hover:text-amber-400 hover:bg-slate-800 transition-colors flex items-center gap-1"
                 >
-                  {opt.label}
+                  <RefreshCw className="w-3 h-3" />
+                  Işık ve Renk Ayarlarını Sıfırla
                 </button>
-              ))}
+              </div>
             </div>
+          )}
 
-            {/* Döndürme & Aynalama Araçları */}
-            <div className="flex items-center gap-1.5">
-              <span className="text-[11px] font-semibold text-slate-400 mr-1">Döndür:</span>
-              <button
-                type="button"
-                onClick={handleRotateCcw}
-                className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors shadow-sm"
-                title="Sola 90° Döndür"
-              >
-                <RotateCcw className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={handleRotateCw}
-                className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700 transition-colors shadow-sm"
-                title="Sağa 90° Döndür"
-              >
-                <RotateCw className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setFlipH(!flipH)}
-                className={`p-2 rounded-xl transition-colors shadow-sm ${
-                  flipH
-                    ? "bg-blue-600 text-white"
-                    : "bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700"
-                }`}
-                title="Yatay Aynala"
-              >
-                <FlipHorizontal className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={() => setFlipV(!flipV)}
-                className={`p-2 rounded-xl transition-colors shadow-sm ${
-                  flipV
-                    ? "bg-blue-600 text-white"
-                    : "bg-slate-800 text-slate-300 hover:text-white hover:bg-slate-700"
-                }`}
-                title="Dikey Aynala"
-              >
-                <FlipVertical className="w-4 h-4" />
-              </button>
-              <button
-                type="button"
-                onClick={handleReset}
-                className="p-2 rounded-xl bg-slate-800 text-slate-300 hover:text-amber-400 hover:bg-slate-700 transition-colors shadow-sm ml-1"
-                title="İlk Haline Sıfırla"
-              >
-                <RefreshCw className="w-4 h-4" />
-              </button>
-            </div>
-          </div>
-
-          {/* Alt Butonlar */}
-          <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-            <div className="text-xs text-slate-400">
-              Kırpma Oranı: <span className="font-semibold text-slate-200">%{crop.w.toFixed(0)} × %{crop.h.toFixed(0)}</span>
+          {/* Alt Durum ve Kaydet/Uygula Butonları */}
+          <div className="flex items-center justify-between pt-2.5 border-t border-slate-800">
+            <div className="text-xs text-slate-400 flex flex-wrap items-center gap-2">
+              <span>
+                Kırpma: <span className="font-semibold text-slate-200">%{crop.w.toFixed(0)} × %{crop.h.toFixed(0)}</span>
+              </span>
               {rotation !== 0 && (
-                <span className="ml-2 text-blue-400">({rotation}° Döndürüldü)</span>
+                <span className="text-blue-400">({rotation}° Döndürüldü)</span>
+              )}
+              {isAdjusted && (
+                <span className="text-amber-400 flex items-center gap-1 font-medium">
+                  <Sun className="w-3 h-3" /> Işık ayarı uygulandı
+                </span>
               )}
             </div>
 
@@ -592,7 +928,7 @@ export default function PhotoCropModal({
                 type="button"
                 onClick={handleApply}
                 disabled={processing}
-                className="px-5 py-2 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-blue-600/30 disabled:opacity-50"
+                className="px-5 py-2 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-amber-600 hover:from-blue-500 hover:to-amber-500 text-white text-xs sm:text-sm font-bold flex items-center gap-2 transition-all shadow-lg shadow-blue-600/30 disabled:opacity-50"
               >
                 {processing ? (
                   <>
@@ -602,7 +938,7 @@ export default function PhotoCropModal({
                 ) : (
                   <>
                     <Check className="w-4 h-4" />
-                    Kırp ve Uygula
+                    Düzenlemeleri Uygula
                   </>
                 )}
               </button>

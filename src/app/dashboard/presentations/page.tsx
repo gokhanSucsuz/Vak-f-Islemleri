@@ -38,6 +38,7 @@ import {
   GripVertical,
   Crop,
   Scissors,
+  Sun,
 } from "lucide-react";
 import ModernConfirmDialog from "@/components/ModernConfirmDialog";
 import PaginationControls from "@/components/PaginationControls";
@@ -1141,13 +1142,15 @@ export default function PresentationsPage() {
   const [saving, setSaving] = useState(false);
   const [compressingPhotos, setCompressingPhotos] = useState(false);
 
-  // Fotoğraf Kırpma / Kesme Modalı State
+  // Fotoğraf Kırpma / Kesme / Işıklandırma Modalı State
   const [cropModal, setCropModal] = useState<{
     isOpen: boolean;
     photoIdx: number;
+    initialTab: "crop" | "adjust";
   }>({
     isOpen: false,
     photoIdx: 0,
+    initialTab: "crop",
   });
 
   // Önizleme Modalı (Tekil)
@@ -1642,16 +1645,17 @@ export default function PresentationsPage() {
     }
   };
 
-  const handleOpenCropModal = (idx = 0) => {
+  const handleOpenCropModal = (idx = 0, initialTab: "crop" | "adjust" = "crop") => {
     const current = slides[activeSlideIdx];
     if (!current?.photos || current.photos.length === 0) {
-      toast.error("Kırpılacak fotoğraf bulunamadı. Lütfen önce bir fotoğraf yükleyin.");
+      toast.error("Düzenlenecek fotoğraf bulunamadı. Lütfen önce bir fotoğraf yükleyin.");
       return;
     }
     const safeIdx = Math.max(0, Math.min(current.photos.length - 1, idx));
     setCropModal({
       isOpen: true,
       photoIdx: safeIdx,
+      initialTab,
     });
   };
 
@@ -2628,11 +2632,19 @@ export default function PresentationsPage() {
                         />
                         <button
                           type="button"
-                          onClick={() => handleOpenCropModal(idx)}
+                          onClick={() => handleOpenCropModal(idx, "crop")}
                           className="absolute top-1 left-1 p-1 rounded-full bg-blue-600/90 text-white hover:bg-blue-600 transition-all shadow-md group-hover:scale-105"
                           title="Fotoğrafı Kırp / Kes"
                         >
                           <Scissors className="w-3 h-3" />
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handleOpenCropModal(idx, "adjust")}
+                          className="absolute top-1 left-7 p-1 rounded-full bg-amber-600/90 text-white hover:bg-amber-600 transition-all shadow-md group-hover:scale-105"
+                          title="Fotoğraf Işık ve Renk Ayarları"
+                        >
+                          <Sun className="w-3 h-3" />
                         </button>
                         <button
                           type="button"
@@ -2661,7 +2673,7 @@ export default function PresentationsPage() {
                       <button
                         type="button"
                         disabled={!activeSlide.photos || activeSlide.photos.length === 0}
-                        onClick={() => handleOpenCropModal(0)}
+                        onClick={() => handleOpenCropModal(0, "crop")}
                         className="px-2.5 py-1 rounded-lg text-[10.5px] font-bold bg-blue-50 hover:bg-blue-100 text-blue-700 border border-blue-200 flex items-center gap-1.5 transition-colors shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
                         title={
                           activeSlide.photos?.length > 0
@@ -2670,7 +2682,21 @@ export default function PresentationsPage() {
                         }
                       >
                         <Scissors className="w-3 h-3 text-blue-600" />
-                        Fotoğrafı Kırp / Kes
+                        Kırp / Kes
+                      </button>
+                      <button
+                        type="button"
+                        disabled={!activeSlide.photos || activeSlide.photos.length === 0}
+                        onClick={() => handleOpenCropModal(0, "adjust")}
+                        className="px-2.5 py-1 rounded-lg text-[10.5px] font-bold bg-amber-50 hover:bg-amber-100 text-amber-700 border border-amber-200 flex items-center gap-1.5 transition-colors shadow-xs disabled:opacity-40 disabled:cursor-not-allowed"
+                        title={
+                          activeSlide.photos?.length > 0
+                            ? "Fotoğrafın ışık, parlaklık, kontrast ve renk ayarlarını yapın"
+                            : "Önce fotoğraf yükleyin"
+                        }
+                      >
+                        <Sun className="w-3 h-3 text-amber-600" />
+                        Işık & Renk
                       </button>
                     </div>
                     <div className="flex items-center gap-1">
@@ -2995,13 +3021,14 @@ export default function PresentationsPage() {
           </div>
         </div>
 
-        {/* Fotoğraf Kırpma / Kesme Modalı */}
+        {/* Fotoğraf Kırpma, Kesme & Işıklandırma Modalı */}
         {cropModal.isOpen && activeSlide?.photos?.[cropModal.photoIdx] && (
           <PhotoCropModal
             isOpen={cropModal.isOpen}
             photoSrc={activeSlide.photos[cropModal.photoIdx]}
             allPhotos={activeSlide.photos}
             activePhotoIdx={cropModal.photoIdx}
+            initialTab={cropModal.initialTab}
             onSelectPhotoIdx={(newIdx) =>
               setCropModal((prev) => ({ ...prev, photoIdx: newIdx }))
             }
