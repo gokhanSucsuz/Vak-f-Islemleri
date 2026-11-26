@@ -754,14 +754,86 @@ export interface TemplateLayoutConfig {
   photoSlots: TemplateBox[];
 }
 
+export interface CoverImageBox {
+  dataUrl: string;
+  xPct: number;
+  yPct: number;
+  wPct: number;
+  hPct: number;
+}
+
+export interface CoverTextBox {
+  text: string;
+  xPct: number;
+  yPct: number;
+  wPct: number;
+  hPct: number;
+  fontSizePt: number;
+  bold: boolean;
+  colorHex: string;
+  align: "left" | "center" | "right";
+}
+
+export interface CoverTemplateSpec {
+  images: CoverImageBox[];
+  texts: CoverTextBox[];
+}
+
+export interface SlideshowTransitionPresetOption {
+  id: string;
+  label: string;
+  description: string;
+}
+
+export const SLIDESHOW_TRANSITION_PRESETS: SlideshowTransitionPresetOption[] = [
+  {
+    id: "kurumsal_kaydir",
+    label: "Kurumsal Kaydırma",
+    description: "Akıcı yatay slayt geçişi (Varsayılan)",
+  },
+  {
+    id: "yumusak_gecis",
+    label: "Sinematik Yumuşak Geçiş",
+    description: "Projeksiyon dostu zarif erime (Crossfade)",
+  },
+  {
+    id: "derinlik_3b",
+    label: "3B Sahne Derinliği",
+    description: "Perspektifli derin sahne geçişi",
+  },
+  {
+    id: "yakinlastir_zoom",
+    label: "Odak Yakınlaştırma (Zoom)",
+    description: "Hafif ölçekli modern odak geçişi",
+  },
+  {
+    id: "perde_acilisi",
+    label: "Kurumsal Perde Açılışı",
+    description: "Soldan sağa temiz perde geçişi",
+  },
+  {
+    id: "dikey_akis",
+    label: "Dikey Sahne Akışı",
+    description: "Yukarıdan aşağıya dikey geçiş",
+  },
+  {
+    id: "anlik_kesme",
+    label: "Anlık Net Geçiş (Efektsiz)",
+    description: "Animasyonsuz anında slayt değişimi",
+  },
+];
+
 export interface PresentationTemplateClient {
   _id: string;
   name: string;
   fileName: string;
+  templateKind?: "slide" | "cover";
+  isActiveCover?: boolean;
   backgroundImageBase64: string;
   slideWidthIn: number;
   slideHeightIn: number;
   layoutConfig?: TemplateLayoutConfig;
+  coverSpec?: CoverTemplateSpec;
 }
 
 export const DEFAULT_TEMPLATE_LAYOUT: TemplateLayoutConfig = {
@@ -876,12 +948,12 @@ export function computeAutoFontSizePt(
 ): number {
   if (lines.length === 0) return 13.5;
 
-  // Web önizlemedeki (720x540px = 10x7.5 inç) px-3 (12pt) ve py-2 (7.5pt) iç boşluklarıyla birebir aynı kullanılabilir alan
-  const usableWidthPt = Math.max(120, boxWidthIn * 72 - 24);
-  const usableHeightPt = Math.max(60, boxHeightIn * 72 - 14);
+  // Web önizlemedeki (720x540px = 10x7.5 inç) px-3 (12pt) ve py-2 (8pt) + güvenli alt boşluk
+  const usableWidthPt = Math.max(120, boxWidthIn * 72 - 26);
+  const usableHeightPt = Math.max(54, boxHeightIn * 72 - 18);
   const ctx = getAutoFitMeasureCtx();
 
-  for (let pt = 15; pt >= 6.5; pt -= 0.5) {
+  for (let pt = 15; pt >= 5.5; pt -= 0.5) {
     const bulletIndentPt = pt * 0.84 + 3.6;
     const lineTextWidthPt = Math.max(80, usableWidthPt - bulletIndentPt);
     let totalVisualLines = 0;
@@ -923,13 +995,13 @@ export function computeAutoFontSizePt(
       }
     }
 
-    const paraGapTotalPt = Math.max(0, lines.length - 1) * 1.5;
-    const totalHeightPt = totalVisualLines * (pt * 1.28) + paraGapTotalPt;
+    const paraGapTotalPt = Math.max(0, lines.length - 1) * 1.6;
+    const totalHeightPt = totalVisualLines * (pt * 1.29) + paraGapTotalPt;
     if (totalHeightPt <= usableHeightPt) {
       return pt;
     }
   }
-  return 6.5;
+  return 5.5;
 }
 
 interface RichRun {
@@ -1086,7 +1158,10 @@ export function sanitizeSlideDescriptionHtml(
     const tag = el.tagName.toUpperCase();
     if (IGNORED_TAGS.has(tag)) return;
     if (tag === "BR") {
-      flushLine();
+      // Paragraf içi yumuşak <br> yeni madde oluşturmasın, tek boşlukla birleşsin
+      if (currentRuns.length > 0) {
+        currentRuns.push({ text: " ", ...style });
+      }
       return;
     }
 
@@ -1170,7 +1245,10 @@ function htmlToLinesOfRuns(html: string): RichRun[][] {
     const tag = el.tagName.toUpperCase();
 
     if (tag === "BR") {
-      flushLine();
+      // Paragraf içi yumuşak <br> yeni madde oluşturmasın, tek boşlukla birleşsin
+      if (currentLine.length > 0) {
+        currentLine.push({ text: " ", ...style });
+      }
       return;
     }
 
@@ -1447,6 +1525,7 @@ export async function exportSlidesToPptx(params: {
   fileName: string;
   templates?: PresentationTemplateClient[];
   template?: PresentationTemplateClient | null;
+  coverTemplate?: PresentationTemplateClient | null;
   meetingBackgroundPreset?: string;
   meetingPhotoFramePreset?: string;
   triggerDownload?: boolean;
@@ -1456,6 +1535,7 @@ export async function exportSlidesToPptx(params: {
     fileName,
     templates = [],
     template = null,
+    coverTemplate = null,
     meetingBackgroundPreset,
     meetingPhotoFramePreset = "none",
     triggerDownload = true,
@@ -1517,6 +1597,54 @@ export async function exportSlidesToPptx(params: {
     registeredMasters.set(bgKey, masterName);
     return masterName;
   };
+
+  // 0. SÜPER ADMİN AKTİF KAPAK ŞABLONU VARSA SLAYTLARIN EN BAŞINA (SAYFA 1) EKLE
+  if (coverTemplate) {
+    let coverMasterName = "";
+    if (coverTemplate.backgroundImageBase64) {
+      const cleanedCoverBg = await cleanTemplateWatermark(coverTemplate.backgroundImageBase64);
+      coverMasterName = "VAKIF_COVER_MASTER";
+      pptx.defineSlideMaster({
+        title: coverMasterName,
+        background: { data: cleanedCoverBg } as any,
+      });
+    }
+    const coverSlide = coverMasterName
+      ? pptx.addSlide({ masterName: coverMasterName })
+      : pptx.addSlide();
+    if (!coverMasterName) {
+      coverSlide.background = { color: "0B192C" };
+    }
+
+    for (const imgBox of coverTemplate.coverSpec?.images || []) {
+      if (!imgBox.dataUrl) continue;
+      coverSlide.addImage({
+        data: imgBox.dataUrl,
+        x: (imgBox.xPct / 100) * slideW,
+        y: (imgBox.yPct / 100) * slideH,
+        w: (imgBox.wPct / 100) * slideW,
+        h: (imgBox.hPct / 100) * slideH,
+      });
+    }
+
+    for (const txtBox of coverTemplate.coverSpec?.texts || []) {
+      if (!txtBox.text?.trim()) continue;
+      const scaledPt = Math.round(txtBox.fontSizePt * Math.min(sx, sy) * 10) / 10;
+      coverSlide.addText(txtBox.text, {
+        x: (txtBox.xPct / 100) * slideW,
+        y: (txtBox.yPct / 100) * slideH,
+        w: (txtBox.wPct / 100) * slideW,
+        h: (txtBox.hPct / 100) * slideH,
+        fontSize: scaledPt,
+        bold: txtBox.bold,
+        color: txtBox.colorHex || "0F172A",
+        align: txtBox.align || "center",
+        valign: "middle",
+        fontFace: "Verdana",
+        margin: 0,
+      });
+    }
+  }
 
   for (const item of slides) {
     const masterName = await resolveSlideMasterName(item);
@@ -1783,13 +1911,19 @@ export async function exportSlidesToPptx(params: {
           ? richLines.map((runs) => runs.map((r) => r.text).join(""))
           : plainLines;
 
-      // Sanal 10x7.5 inç (720x540px) sahne üzerinde puntoyu hesapla, farklı boyutta şablon varsa orantılı ölçekle
+      // Sanal 10x7.5 inç (720x540px) sahne üzerinde kutuya sığan maksimum güvenli puntoyu hesapla;
+      // manuel punto girilmiş olsa bile metnin kutudan taşmasına ASLA izin verme!
       const virtualDescW = (descW / slideW) * 10;
       const virtualDescH = (descH / slideH) * 7.5;
+      const maxSafeAutoPt = computeAutoFontSizePt(
+        textLinesForSizing,
+        virtualDescW,
+        virtualDescH
+      );
       const baseFontSize =
         item.fontSize && item.fontSize !== "auto"
-          ? Number(item.fontSize)
-          : computeAutoFontSizePt(textLinesForSizing, virtualDescW, virtualDescH);
+          ? Math.min(Number(item.fontSize), maxSafeAutoPt)
+          : maxSafeAutoPt;
       const fontScale = Math.min(sx, sy);
       const fontSize = Math.round(baseFontSize * fontScale * 10) / 10;
 

@@ -55,6 +55,7 @@ export async function GET() {
         authorizedUserId: m.authorizedUserId || null,
         backgroundPreset: m.backgroundPreset || "template",
         photoFramePreset: (m as any).photoFramePreset || "none",
+        transitionPreset: (m as any).transitionPreset || "kurumsal_kaydir",
         openedBy: m.openedBy,
         closedBy: m.closedBy,
         closedAt: m.closedAt,

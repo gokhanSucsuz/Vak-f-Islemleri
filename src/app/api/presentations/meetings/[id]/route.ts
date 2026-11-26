@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
 import PresentationMeeting from "@/models/PresentationMeeting";
 import Presentation, { ISlideData } from "@/models/Presentation";
+import PresentationTemplate from "@/models/PresentationTemplate";
 import Log from "@/models/Log";
 import {
   decompressSlidesCached,
@@ -59,10 +60,21 @@ export async function GET(
         }
       }
 
+      const activeCover = (await PresentationTemplate.findOne({
+        templateKind: "cover",
+        isActiveCover: true,
+      })
+        .select("_id updatedAt")
+        .lean()) as { _id?: any; updatedAt?: Date } | null;
+      const coverStamp = activeCover
+        ? `${String(activeCover._id)}:${activeCover.updatedAt ? new Date(activeCover.updatedAt).getTime() : 0}`
+        : "none";
+
       const expectedSig = buildMeetingArchiveSignature({
         orderedDocs: orderedLight,
         backgroundPreset: meetingDoc.backgroundPreset,
         photoFramePreset: meetingDoc.photoFramePreset,
+        coverStamp,
       });
 
       if (
@@ -245,6 +257,7 @@ export async function GET(
         authorizedUserId: meeting.authorizedUserId || null,
         backgroundPreset: meeting.backgroundPreset || "template",
         photoFramePreset: meeting.photoFramePreset || "none",
+        transitionPreset: (meeting as any).transitionPreset || "kurumsal_kaydir",
         openedBy: meeting.openedBy,
         closedBy: meeting.closedBy,
         closedAt: meeting.closedAt,
@@ -286,6 +299,7 @@ export async function PATCH(
       authorizedUserId,
       backgroundPreset,
       photoFramePreset,
+      transitionPreset,
     } = body;
 
     await dbConnect();
@@ -389,6 +403,35 @@ export async function PATCH(
           downloadedAt: meeting.downloadedAt,
           photosExpireAt: meeting.photosExpireAt,
           photosPurged: meeting.photosPurged,
+        },
+      });
+    }
+
+    // Tam ekran sunum slayt geçiş efekti seçimi yalnızca Süper Admin'e aittir (açık/kapalı tüm toplantılarda seçilebilir)
+    if (action === "setTransitionPreset") {
+      if (role !== "superadmin") {
+        return NextResponse.json(
+          {
+            error:
+              "Tam ekran sunum slayt geçiş efektini değiştirme yetkisi yalnızca Süper Admin'e aittir.",
+          },
+          { status: 403 }
+        );
+      }
+      meeting.transitionPreset = transitionPreset
+        ? String(transitionPreset).slice(0, 40)
+        : "kurumsal_kaydir";
+      await meeting.save();
+      void Log.create({
+        userId,
+        action: "TOPLANTI_GECIS_EFEKTI_GUNCELLENDI",
+        details: `Toplantı (${meeting.title}) tam ekran slayt geçiş efekti güncellendi: ${meeting.transitionPreset}`,
+      }).catch(() => {});
+      return NextResponse.json({
+        success: true,
+        meeting: {
+          _id: meeting._id,
+          transitionPreset: meeting.transitionPreset,
         },
       });
     }
@@ -600,10 +643,21 @@ export async function PUT(
       }
     }
 
+    const activeCover = (await PresentationTemplate.findOne({
+      templateKind: "cover",
+      isActiveCover: true,
+    })
+      .select("_id updatedAt")
+      .lean()) as { _id?: any; updatedAt?: Date } | null;
+    const coverStamp = activeCover
+      ? `${String(activeCover._id)}:${activeCover.updatedAt ? new Date(activeCover.updatedAt).getTime() : 0}`
+      : "none";
+
     const signature = buildMeetingArchiveSignature({
       orderedDocs: orderedLight,
       backgroundPreset: meeting.backgroundPreset,
       photoFramePreset: meeting.photoFramePreset,
+      coverStamp,
     });
 
     const rawBuf = Buffer.from(await file.arrayBuffer());

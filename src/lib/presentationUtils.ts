@@ -3,7 +3,13 @@ import { promisify } from "util";
 import JSZip from "jszip";
 import Presentation, { ISlideData } from "@/models/Presentation";
 import PresentationMeeting from "@/models/PresentationMeeting";
-import type { ITemplateBox, ITemplateLayoutConfig } from "@/models/PresentationTemplate";
+import type {
+  ITemplateBox,
+  ITemplateLayoutConfig,
+  ICoverRenderSpec,
+  ICoverImageItem,
+  ICoverTextItem,
+} from "@/models/PresentationTemplate";
 
 const gzip = promisify(zlib.gzip);
 const gunzip = promisify(zlib.gunzip);
@@ -39,9 +45,11 @@ export function sanitizeSlideHtmlServer(rawHtml: string, fallbackPlain = ""): st
   }
 
   // Tüm yabancı font-family, font-size, line-height, background, class, <font> ve script/on* özniteliklerini temizle
+  // NOT: Paragraf içi yumuşak <br> etiketlerini yeni maddeye bölmemek için boşluğa dönüştürürüz;
+  // yalnızca blok kapanışları (</p>, </div>, </li>) yeni madde satırı oluşturur.
   const withoutDangerous = source
     .replace(/<(script|style|iframe|object|embed|meta|link)[\s\S]*?<\/\1>/gi, "")
-    .replace(/<\s*br\s*\/?>/gi, "\n")
+    .replace(/<\s*br\s*\/?>/gi, " ")
     .replace(/<\/(p|div|li|h[1-6]|tr|blockquote)>/gi, "\n")
     .replace(/<(p|div|li|h[1-6]|tr|blockquote)\b[^>]*>/gi, "")
     .replace(/<\/?font\b[^>]*>/gi, "")
@@ -136,12 +144,13 @@ export function buildMeetingArchiveSignature(params: {
   orderedDocs: Array<{ _id: any; updatedAt?: Date | string }>;
   backgroundPreset?: string;
   photoFramePreset?: string;
+  coverStamp?: string;
 }): string {
   const parts = params.orderedDocs.map((d) => {
     const ts = d.updatedAt ? new Date(d.updatedAt).getTime() : 0;
     return `${String(d._id)}:${ts}`;
   });
-  return `v2|bg=${params.backgroundPreset || "template"}|fr=${params.photoFramePreset || "none"}|${parts.join(",")}`;
+  return `v3|cov=${params.coverStamp || "none"}|bg=${params.backgroundPreset || "template"}|fr=${params.photoFramePreset || "none"}|${parts.join(",")}`;
 }
 
 /**
@@ -412,6 +421,205 @@ export async function extractPptxTemplateInfo(buffer: Buffer): Promise<{
       titleBox,
       descBox,
       photoSlots,
+    },
+  };
+}
+
+function decodeXmlEntitiesServer(raw: string): string {
+  return raw
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/&quot;/g, '"')
+    .replace(/&apos;/g, "'");
+}
+
+/**
+ * Süper Admin tarafından yüklenen Kapak Şablonu (.pptx) dosyasından
+ * arka plan görselini, gömülü logo/görselleri ve başlık/alt başlık metin kutularını çıkarır.
+ */
+export async function extractCoverPptxInfo(buffer: Buffer): Promise<{
+  backgroundImageBase64: string;
+  slideWidthIn: number;
+  slideHeightIn: number;
+  coverSpec: ICoverRenderSpec;
+}> {
+  const zip = await JSZip.loadAsync(buffer);
+  let slideWidthIn = 10;
+  let slideHeightIn = 7.5;
+
+  const presXmlFile = zip.file("ppt/presentation.xml");
+  if (presXmlFile) {
+    const presXml = await presXmlFile.async("string");
+    const szMatch = presXml.match(/<p:sldSz[^>]*cx=["'](\d+)["'][^>]*cy=["'](\d+)["']/i);
+    if (szMatch) {
+      const cx = parseInt(szMatch[1], 10);
+      const cy = parseInt(szMatch[2], 10);
+      if (cx > 0 && cy > 0) {
+        slideWidthIn = Math.round((cx / 914400) * 100) / 100;
+        slideHeightIn = Math.round((cy / 914400) * 100) / 100;
+      }
+    }
+  }
+
+  const mediaAsDataUri = async (mediaRelTarget: string): Promise<string> => {
+    const cleanName = mediaRelTarget.replace(/^(\.\.\/)+media\//i, "").replace(/^ppt\/media\//i, "");
+    const path = `ppt/media/${cleanName}`;
+    const f = zip.file(path);
+    if (!f) return "";
+    const imgBuf = await f.async("nodebuffer");
+    const ext = cleanName.split(".").pop()?.toLowerCase() || "png";
+    const mime =
+      ext === "jpg" || ext === "jpeg"
+        ? "image/jpeg"
+        : ext === "webp"
+          ? "image/webp"
+          : "image/png";
+    return `data:${mime};base64,${imgBuf.toString("base64")}`;
+  };
+
+  // Slide1 rels haritası (rId -> media/...)
+  const slideRelsMap = new Map<string, string>();
+  const slide1RelsFile = zip.file("ppt/slides/_rels/slide1.xml.rels");
+  if (slide1RelsFile) {
+    const relXml = await slide1RelsFile.async("string");
+    for (const m of relXml.matchAll(/<Relationship\b[^>]*>/gi)) {
+      const tag = m[0];
+      const idM = tag.match(/\bId=["']([^"']+)["']/i);
+      const targetM = tag.match(/\bTarget=["']([^"']+)["']/i);
+      if (idM && targetM) {
+        slideRelsMap.set(idM[1], targetM[1]);
+      }
+    }
+  }
+
+  let backgroundImageBase64 = "";
+
+  // 1. Önce slide1 doğrudan arka plan görseli (p:bg -> a:blip r:embed)
+  const slide1File = zip.file("ppt/slides/slide1.xml");
+  const slide1Xml = slide1File ? await slide1File.async("string") : "";
+
+  const bgSection = slide1Xml.match(/<p:bg\b[\s\S]*?<\/p:bg>/i)?.[0] || "";
+  const bgEmbed = bgSection.match(/r:embed=["']([^"']+)["']/i)?.[1];
+  if (bgEmbed && slideRelsMap.has(bgEmbed)) {
+    backgroundImageBase64 = await mediaAsDataUri(slideRelsMap.get(bgEmbed)!);
+  }
+
+  // 2. Yoksa slideLayout / slideMaster arka plan görselini ara
+  if (!backgroundImageBase64) {
+    const relFiles = Object.keys(zip.files).filter(
+      (name) =>
+        (name.startsWith("ppt/slideLayouts/_rels/") ||
+          name.startsWith("ppt/slideMasters/_rels/")) &&
+        name.endsWith(".rels")
+    );
+    for (const rPath of relFiles) {
+      const rXml = await zip.file(rPath)!.async("string");
+      const mediaMatch = rXml.match(/Target=["']\.\.\/media\/([^"']+\.(?:png|jpe?g|webp))["']/i);
+      if (mediaMatch) {
+        backgroundImageBase64 = await mediaAsDataUri(mediaMatch[1]);
+        if (backgroundImageBase64) break;
+      }
+    }
+  }
+
+  const images: ICoverImageItem[] = [];
+  const texts: ICoverTextItem[] = [];
+
+  if (slide1Xml) {
+    const shapes = [...slide1Xml.matchAll(/<p:(sp|pic)\b[\s\S]*?<\/p:\1>/g)];
+    for (const m of shapes) {
+      const s = m[0];
+      const isPic = m[1] === "pic";
+      const spPr = s.match(/<p:spPr>[\s\S]*?<\/p:spPr>/)?.[0] || "";
+      const off = spPr.match(/<a:off x="(-?\d+)" y="(-?\d+)"/);
+      const ext = spPr.match(/<a:ext cx="(\d+)" cy="(\d+)"/);
+      if (!off || !ext) continue;
+
+      const xIn = Number(off[1]) / 914400;
+      const yIn = Number(off[2]) / 914400;
+      const wIn = Number(ext[1]) / 914400;
+      const hIn = Number(ext[2]) / 914400;
+      if (wIn <= 0.05 || hIn <= 0.05) continue;
+
+      const xPct = Math.max(0, Math.min(99, Math.round((xIn / slideWidthIn) * 1000) / 10));
+      const yPct = Math.max(0, Math.min(99, Math.round((yIn / slideHeightIn) * 1000) / 10));
+      const wPct = Math.max(1, Math.min(100, Math.round((wIn / slideWidthIn) * 1000) / 10));
+      const hPct = Math.max(1, Math.min(100, Math.round((hIn / slideHeightIn) * 1000) / 10));
+
+      if (isPic) {
+        const rId = s.match(/<a:blip[^>]*r:embed=["']([^"']+)["']/i)?.[1];
+        if (rId && slideRelsMap.has(rId)) {
+          const dataUrl = await mediaAsDataUri(slideRelsMap.get(rId)!);
+          if (dataUrl) {
+            // Tam sayfa kaplayan tek görselse ve arka plan boşsa doğrudan arka plan yap
+            if (!backgroundImageBase64 && wPct >= 95 && hPct >= 95 && images.length === 0) {
+              backgroundImageBase64 = dataUrl;
+            } else {
+              images.push({ dataUrl, xPct, yPct, wPct, hPct });
+            }
+          }
+        }
+      } else {
+        const paragraphs = [...s.matchAll(/<a:p\b[\s\S]*?<\/a:p>/g)];
+        const paraLines: string[] = [];
+        let detectedSz = 0;
+        let detectedBold = false;
+        let detectedColor = "";
+        let detectedAlign: "left" | "center" | "right" = "center";
+
+        for (const pm of paragraphs) {
+          const pXml = pm[0];
+          const algn = pXml.match(/<a:pPr[^>]*\balgn=["'](l|ctr|r)["']/i)?.[1];
+          if (algn === "l") detectedAlign = "left";
+          else if (algn === "r") detectedAlign = "right";
+          else if (algn === "ctr") detectedAlign = "center";
+
+          const szM = pXml.match(/\bsz=["'](\d+)["']/i);
+          if (szM && !detectedSz) {
+            detectedSz = Math.round(Number(szM[1]) / 100);
+          }
+          if (/\bb=["']1["']/i.test(pXml)) {
+            detectedBold = true;
+          }
+          const clrM = pXml.match(/<a:srgbClr[^>]*\bval=["']([0-9A-Fa-f]{6})["']/i);
+          if (clrM && !detectedColor) {
+            detectedColor = clrM[1].toUpperCase();
+          }
+
+          const runTexts = [...pXml.matchAll(/<a:t>([\s\S]*?)<\/a:t>/g)]
+            .map((t) => decodeXmlEntitiesServer(t[1]))
+            .join("");
+          if (runTexts.trim()) {
+            paraLines.push(runTexts.trim());
+          }
+        }
+
+        const fullText = paraLines.join("\n").trim();
+        if (fullText) {
+          texts.push({
+            text: fullText,
+            xPct,
+            yPct,
+            wPct,
+            hPct,
+            fontSizePt: Math.min(54, Math.max(11, detectedSz || 24)),
+            bold: detectedBold,
+            colorHex: detectedColor || "0F172A",
+            align: detectedAlign,
+          });
+        }
+      }
+    }
+  }
+
+  return {
+    backgroundImageBase64,
+    slideWidthIn,
+    slideHeightIn,
+    coverSpec: {
+      images,
+      texts,
     },
   };
 }

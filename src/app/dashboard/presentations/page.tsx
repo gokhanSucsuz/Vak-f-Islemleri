@@ -54,6 +54,7 @@ import {
   DEFAULT_TEMPLATE_LAYOUT,
   BACKGROUND_PRESETS,
   PHOTO_FRAME_PRESETS,
+  SLIDESHOW_TRANSITION_PRESETS,
   getPhotoFrameWebStyle,
   getPresetBackgroundDataUrl,
   cleanTemplateWatermark,
@@ -75,6 +76,7 @@ interface MeetingItem {
   authorizedUserId?: { _id: string; name: string; email?: string } | null;
   backgroundPreset?: string;
   photoFramePreset?: string;
+  transitionPreset?: string;
   openedBy?: { name: string };
   closedBy?: { name: string };
   closedAt?: string;
@@ -544,6 +546,7 @@ function SlidePreviewCard({
   meetingPhotoFramePreset,
   projectorMode = false,
   onReorderPhotos,
+  onMaxSafeFontSizeChange,
 }: {
   slide: SlideItem;
   templates: PresentationTemplateClient[];
@@ -551,6 +554,7 @@ function SlidePreviewCard({
   meetingPhotoFramePreset?: string;
   projectorMode?: boolean;
   onReorderPhotos?: (newPhotos: string[]) => void;
+  onMaxSafeFontSizeChange?: (maxPt: number) => void;
 }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
   const cardRef = useRef<HTMLDivElement>(null);
@@ -672,31 +676,66 @@ function SlidePreviewCard({
     const list = descListRef.current;
     if (!box) return;
 
-    if (slide.fontSize && slide.fontSize !== "auto") {
-      setFittedPx(Math.max(5.5, Number(slide.fontSize)));
-      return;
+    const runFit = () => {
+      const boxEl = descBoxRef.current;
+      const listEl = descListRef.current;
+      if (!boxEl) return;
+
+      if (!listEl || displayLines.length === 0) {
+        setFittedPx(
+          slide.fontSize && slide.fontSize !== "auto"
+            ? Math.max(5.5, Number(slide.fontSize))
+            : 13.5
+        );
+        onMaxSafeFontSizeChange?.(24);
+        return;
+      }
+
+      // Önce bu kutu ve metin için taşmayan mutlak maksimum güvenli puntoyu bul
+      // py-2 (8px üst + 8px alt = 16px) + 2px güvenlik payı = 18px iç boşluk garantisi
+      const innerMaxH = Math.max(20, boxEl.clientHeight - 18);
+      listEl.style.lineHeight = "1.26";
+
+      let maxSafe = 22;
+      listEl.style.fontSize = `${maxSafe}px`;
+      while (
+        (listEl.scrollHeight > innerMaxH || boxEl.scrollHeight > boxEl.clientHeight) &&
+        maxSafe > 5.25
+      ) {
+        maxSafe = Math.round((maxSafe - 0.25) * 100) / 100;
+        listEl.style.fontSize = `${maxSafe}px`;
+      }
+      onMaxSafeFontSizeChange?.(maxSafe);
+
+      // Manuel punto seçilmiş olsa dahi ASLA kutu dışına taşmasına izin verme (maxSafe ile sınırla!)
+      const requested =
+        slide.fontSize && slide.fontSize !== "auto"
+          ? Math.max(5.25, Number(slide.fontSize))
+          : Math.min(15, maxSafe);
+      const finalPx = Math.min(requested, maxSafe);
+      listEl.style.fontSize = `${finalPx}px`;
+      setFittedPx(finalPx);
+    };
+
+    runFit();
+    const ro = new ResizeObserver(runFit);
+    ro.observe(box);
+    if (typeof document !== "undefined" && (document as any).fonts?.ready) {
+      (document as any).fonts.ready.then(runFit).catch(() => {});
     }
+    return () => ro.disconnect();
+  }, [
+    hasDescBox,
+    slide.description,
+    slide.descriptionHtml,
+    slide.fontSize,
+    topPct,
+    bottomPct,
+    displayLines.length,
+    onMaxSafeFontSizeChange,
+  ]);
 
-    if (!list || displayLines.length === 0) {
-      setFittedPx(13.5);
-      return;
-    }
-
-    let size = 15;
-    list.style.fontSize = `${size}px`;
-    list.style.lineHeight = "1.28";
-
-    while (box.scrollHeight > box.clientHeight && size > 6.5) {
-      size -= 0.5;
-      list.style.fontSize = `${size}px`;
-    }
-    setFittedPx(size);
-  }, [hasDescBox, slide.description, slide.descriptionHtml, slide.fontSize, topPct, bottomPct, displayLines.length]);
-
-  const effectiveDescPt =
-    slide.fontSize && slide.fontSize !== "auto"
-      ? Number(slide.fontSize)
-      : Math.round(fittedPx);
+  const effectiveDescPt = Math.round(fittedPx * 10) / 10;
   const effectiveTitlePt = Math.min(
     26,
     Math.max(effectiveDescPt + 1, Number(slide.titleFontSize ?? 20))
@@ -1001,6 +1040,101 @@ function SlidePreviewCard({
   );
 }
 
+/**
+ * Süper Admin tarafından yüklenen Kapak Şablonunu (Sayfa 1) 4:3 sahnede birebir çizen bileşen.
+ */
+function CoverSlidePreviewCard({
+  cover,
+  projectorMode = false,
+}: {
+  cover: PresentationTemplateClient;
+  projectorMode?: boolean;
+}) {
+  const wrapperRef = useRef<HTMLDivElement>(null);
+  const [cardScale, setCardScale] = useState(1);
+
+  useLayoutEffect(() => {
+    const wrapper = wrapperRef.current;
+    if (!wrapper) return;
+    const updateScale = () => {
+      if (wrapper.clientWidth > 0) {
+        setCardScale(wrapper.clientWidth / 720);
+      }
+    };
+    updateScale();
+    const ro = new ResizeObserver(updateScale);
+    ro.observe(wrapper);
+    return () => ro.disconnect();
+  }, []);
+
+  return (
+    <div
+      ref={wrapperRef}
+      className={`relative w-full aspect-[4/3] overflow-hidden select-none bg-[#0b192c] ${
+        projectorMode
+          ? "rounded-none border-0 shadow-[0_0_90px_rgba(0,0,0,0.92)]"
+          : "rounded-xl border border-slate-300 shadow-md"
+      }`}
+    >
+      <div
+        className="relative origin-top-left"
+        style={{
+          width: "720px",
+          height: "540px",
+          transform: `scale(${cardScale})`,
+          fontFamily: "Verdana, Geneva, sans-serif",
+        }}
+      >
+        {cover.backgroundImageBase64 && (
+          <ProtectedCanvasImage
+            src={cover.backgroundImageBase64}
+            fit="cover"
+            className="absolute inset-0 w-full h-full pointer-events-none"
+          />
+        )}
+
+        {(cover.coverSpec?.images || []).map((imgBox, idx) => (
+          <div
+            key={idx}
+            style={{
+              left: `${imgBox.xPct}%`,
+              top: `${imgBox.yPct}%`,
+              width: `${imgBox.wPct}%`,
+              height: `${imgBox.hPct}%`,
+            }}
+            className="absolute flex items-center justify-center pointer-events-none"
+          >
+            <ProtectedCanvasImage
+              src={imgBox.dataUrl}
+              fit="contain"
+              className="w-full h-full"
+            />
+          </div>
+        ))}
+
+        {(cover.coverSpec?.texts || []).map((txtBox, idx) => (
+          <div
+            key={idx}
+            style={{
+              left: `${txtBox.xPct}%`,
+              top: `${txtBox.yPct}%`,
+              width: `${txtBox.wPct}%`,
+              height: `${txtBox.hPct}%`,
+              fontSize: `${txtBox.fontSizePt}px`,
+              fontWeight: txtBox.bold ? 800 : 600,
+              color: `#${txtBox.colorHex || "0F172A"}`,
+              textAlign: txtBox.align || "center",
+            }}
+            className="absolute flex items-center justify-center px-2 leading-snug whitespace-pre-line pointer-events-none"
+          >
+            <span className="w-full">{txtBox.text}</span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 type BulkFlatSlideItem = {
   presentationId: string;
   slideIndex: number;
@@ -1008,10 +1142,33 @@ type BulkFlatSlideItem = {
   groupSlideCount: number;
   authorName: string;
   slide: SlideItem;
+  isCoverSlide?: boolean;
+  coverTemplate?: PresentationTemplateClient;
 };
 
-function buildBulkFlatSlides(groups: OrderedPresentationGroup[]): BulkFlatSlideItem[] {
+function buildBulkFlatSlides(
+  groups: OrderedPresentationGroup[],
+  activeCover?: PresentationTemplateClient | null
+): BulkFlatSlideItem[] {
   const flat: BulkFlatSlideItem[] = [];
+  if (activeCover) {
+    flat.push({
+      presentationId: "__COVER__",
+      slideIndex: 0,
+      groupIndex: -1,
+      groupSlideCount: 1,
+      authorName: "Kurumsal Kapak",
+      isCoverSlide: true,
+      coverTemplate: activeCover,
+      slide: {
+        ...emptySlide(),
+        fullName: activeCover.name || "Toplantı Kapak Slaytı",
+        neighborhood: "",
+        description: "",
+        descriptionHtml: "",
+      },
+    });
+  }
   groups.forEach((grp, gIdx) => {
     grp.slides.forEach((s, idx) => {
       flat.push({
@@ -1036,6 +1193,8 @@ function SlideMiniThumbnail({
   slide,
   authorName,
   templates,
+  isCoverSlide = false,
+  coverTemplate,
   meetingBackgroundPreset,
   meetingPhotoFramePreset,
   onClick,
@@ -1058,6 +1217,8 @@ function SlideMiniThumbnail({
   slide: SlideItem;
   authorName?: string;
   templates: PresentationTemplateClient[];
+  isCoverSlide?: boolean;
+  coverTemplate?: PresentationTemplateClient;
   meetingBackgroundPreset?: string;
   meetingPhotoFramePreset?: string;
   onClick: () => void;
@@ -1209,6 +1370,24 @@ function SlideMiniThumbnail({
         className="flex-1 min-w-0 text-left space-y-1 sm:space-y-1.5 cursor-pointer focus:outline-none"
       >
         {/* 4:3 Mini Slayt Sahnesi */}
+        {isCoverSlide && coverTemplate ? (
+          <div
+            className={`w-full aspect-[4/3] rounded-lg overflow-hidden relative border transition-all bg-[#0b192c] ${
+              isActive ? "border-amber-500 shadow-xs" : "border-amber-300/80"
+            }`}
+          >
+            {coverTemplate.backgroundImageBase64 && (
+              <ProtectedCanvasImage
+                src={coverTemplate.backgroundImageBase64}
+                fit="cover"
+                className="absolute inset-0 w-full h-full pointer-events-none"
+              />
+            )}
+            <span className="absolute left-1 top-1 z-10 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[7px] font-black uppercase tracking-wider shadow-xs">
+              KAPAK
+            </span>
+          </div>
+        ) : (
         <div
           className={`w-full aspect-[4/3] rounded-lg overflow-hidden relative border transition-all ${
             isActive ? "border-blue-500 shadow-xs" : "border-slate-200/90"
@@ -1302,6 +1481,7 @@ function SlideMiniThumbnail({
             )}
           </div>
         </div>
+        )}
 
         {/* Alt Etiket */}
         <div className="px-0.5">
@@ -1334,6 +1514,11 @@ export default function PresentationsPage() {
     Boolean((session?.user as any)?.authorizedModules?.includes("presentations"));
 
   const [templates, setTemplates] = useState<PresentationTemplateClient[]>([]);
+  const [coverTemplates, setCoverTemplates] = useState<PresentationTemplateClient[]>([]);
+  const [activeCoverTemplate, setActiveCoverTemplate] =
+    useState<PresentationTemplateClient | null>(null);
+  const activeCoverRef = useRef<PresentationTemplateClient | null>(null);
+  activeCoverRef.current = activeCoverTemplate;
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
   const [selectedMeetingId, setSelectedMeetingId] = useState<string>("");
   const [insideFolder, setInsideFolder] = useState<boolean>(true);
@@ -1347,10 +1532,14 @@ export default function PresentationsPage() {
   const [presViewMode, setPresViewMode] = useState<"card" | "list">("card");
   const [loading, setLoading] = useState(true);
 
-  // Şablon Modalı
+  // Şablon Modalı & Kapak Şablonu Modalı (Süper Admin)
   const [isTemplateModalOpen, setIsTemplateModalOpen] = useState(false);
   const [newTemplateName, setNewTemplateName] = useState("");
   const [uploadingTemplate, setUploadingTemplate] = useState(false);
+  const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
+  const [newCoverName, setNewCoverName] = useState("");
+  const [uploadingCover, setUploadingCover] = useState(false);
+  const [editorMaxSafePt, setEditorMaxSafePt] = useState<number>(22);
 
   // Yeni Toplantı Modalı
   const [isNewMeetingOpen, setIsNewMeetingOpen] = useState(false);
@@ -1531,6 +1720,13 @@ export default function PresentationsPage() {
         setBulkIdx(targetIdx);
       };
 
+      const effectId =
+        bulkPreviewModal.meeting.transitionPreset || "kurumsal_kaydir";
+      if (effectId === "anlik_kesme") {
+        updateDOM();
+        return;
+      }
+
       const docAny = typeof document !== "undefined" ? (document as any) : null;
       if (!docAny?.startViewTransition) {
         updateDOM();
@@ -1539,7 +1735,7 @@ export default function PresentationsPage() {
       try {
         docAny.startViewTransition({
           update: updateDOM,
-          types: [dir === 1 ? "slideshow-forward" : "slideshow-backward"],
+          types: [`${effectId}-${dir === 1 ? "fwd" : "bwd"}`],
         });
       } catch {
         updateDOM();
@@ -1757,8 +1953,26 @@ export default function PresentationsPage() {
       const tplData = tplRes.data;
       const rawTpls: PresentationTemplateClient[] =
         tplData.templates || (tplData.template ? [tplData.template] : []);
-      // Önce ham şablonları anında göster, filigran temizliğini ana iş parçacığını bloklamadan arka planda uygula
+      const rawCovers: PresentationTemplateClient[] = tplData.coverTemplates || [];
+      const rawActiveCover: PresentationTemplateClient | null =
+        tplData.activeCoverTemplate ||
+        rawCovers.find((c) => c.isActiveCover) ||
+        null;
+
       setTemplates(rawTpls);
+      setCoverTemplates(rawCovers);
+      setActiveCoverTemplate(rawActiveCover);
+
+      // Aktif toplu önizleme açıksa kapak slaydını senkronize et
+      setBulkPreviewModal((prev) =>
+        prev
+          ? {
+              ...prev,
+              flatSlides: buildBulkFlatSlides(prev.groups, rawActiveCover),
+            }
+          : null
+      );
+
       setTimeout(() => {
         void Promise.all(
           rawTpls.map(async (t) =>
@@ -1772,6 +1986,24 @@ export default function PresentationsPage() {
               : t
           )
         ).then((cleaned) => setTemplates(cleaned));
+
+        void Promise.all(
+          rawCovers.map(async (c) =>
+            c.backgroundImageBase64
+              ? {
+                  ...c,
+                  backgroundImageBase64: await cleanTemplateWatermark(
+                    c.backgroundImageBase64
+                  ),
+                }
+              : c
+          )
+        ).then((cleanedCovers) => {
+          setCoverTemplates(cleanedCovers);
+          const nextActive =
+            cleanedCovers.find((c) => c.isActiveCover) || null;
+          setActiveCoverTemplate(nextActive);
+        });
       }, 0);
     } catch {
       // sessiz
@@ -1880,6 +2112,88 @@ export default function PresentationsPage() {
       if (!res.ok) throw new Error(data.error || "Şablon silinemedi");
       toast.success("Şablon silindi.");
       await fetchTemplates();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  // Süper Admin: Kapak Şablonu Yükle (Slaytların En Başında Sayfa 1 Olarak Görünür)
+  const handleUploadCoverTemplate = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadingCover(true);
+    try {
+      const fd = new FormData();
+      fd.append("file", file);
+      fd.append("kind", "cover");
+      if (newCoverName.trim()) fd.append("name", newCoverName.trim());
+      const res = await fetch("/api/presentations/template", {
+        method: "POST",
+        body: fd,
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kapak şablonu yüklenemedi");
+      setNewCoverName("");
+      toast.success(
+        "Kapak şablonu yüklendi ve tüm toplantı slaytlarının en başına (1. sayfa) eklendi."
+      );
+      await fetchTemplates();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setUploadingCover(false);
+      e.target.value = "";
+    }
+  };
+
+  // Süper Admin: Aktif Kapak Şablonunu Değiştir veya Devre Dışı Bırak
+  const handleSelectActiveCover = async (coverId: string | null) => {
+    try {
+      const res = await fetch("/api/presentations/template", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ activeCoverId: coverId }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kapak şablonu güncellenemedi");
+      toast.success(
+        coverId
+          ? "Seçilen kapak şablonu slaytların en başında gösterilecek şekilde aktif edildi."
+          : "Kapak şablonu devre dışı bırakıldı."
+      );
+      await fetchTemplates();
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  // Süper Admin: Tam Ekran Sunum Slaytlar Arası Geçiş Efektini Değiştir
+  const handleSetMeetingTransition = async (meetingId: string, presetId: string) => {
+    try {
+      const res = await fetch(`/api/presentations/meetings/${meetingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "setTransitionPreset",
+          transitionPreset: presetId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Geçiş efekti güncellenemedi");
+
+      setMeetings((prev) =>
+        prev.map((m) =>
+          m._id === meetingId ? { ...m, transitionPreset: presetId } : m
+        )
+      );
+      setBulkPreviewModal((prev) =>
+        prev && prev.meeting._id === meetingId
+          ? { ...prev, meeting: { ...prev.meeting, transitionPreset: presetId } }
+          : prev
+      );
+      const label =
+        SLIDESHOW_TRANSITION_PRESETS.find((p) => p.id === presetId)?.label || presetId;
+      toast.success(`Tam ekran sunum geçiş efekti güncellendi: ${label}`);
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -2429,7 +2743,8 @@ export default function PresentationsPage() {
       const groups = filterPersonnelName
         ? allGroups.filter((g) => g.authorName === filterPersonnelName)
         : allGroups;
-      const flatSlides = buildBulkFlatSlides(groups);
+      const coverForPreview = filterPersonnelName ? null : activeCoverRef.current;
+      const flatSlides = buildBulkFlatSlides(groups, coverForPreview);
 
       setPreviewLoadingModal(null);
 
@@ -2488,7 +2803,10 @@ export default function PresentationsPage() {
                 ...prev,
                 allGroups: nextAllGroups,
                 groups: nextGroups,
-                flatSlides: buildBulkFlatSlides(nextGroups),
+                flatSlides: buildBulkFlatSlides(
+                  nextGroups,
+                  filterPersonnelName ? null : activeCoverRef.current
+                ),
               };
             });
           })
@@ -2540,7 +2858,10 @@ export default function PresentationsPage() {
         );
       }
 
-      const nextFlat = buildBulkFlatSlides(nextGroups);
+      const nextFlat = buildBulkFlatSlides(
+        nextGroups,
+        prev.flatSlides[0]?.isCoverSlide ? activeCoverRef.current : null
+      );
       if (activeKey) {
         const nextSlidePos = nextFlat.findIndex(
           (fs) => `${fs.presentationId}_${fs.slideIndex}` === activeKey
@@ -2812,7 +3133,10 @@ export default function PresentationsPage() {
           ...prev,
           allGroups: nextAllGroups,
           groups: nextGroups,
-          flatSlides: buildBulkFlatSlides(nextGroups),
+          flatSlides: buildBulkFlatSlides(
+            nextGroups,
+            prev.flatSlides[0]?.isCoverSlide ? activeCoverRef.current : null
+          ),
         };
       });
       slideCacheRef.current.delete(current.presentationId);
@@ -2950,11 +3274,12 @@ export default function PresentationsPage() {
         return;
       }
 
-      // 3. Kayıpsız yüksek çözünürlüklü + SlideMaster tekilleştirmeli + DEFLATE-9 sıkıştırmalı .pptx üret ve indir
+      // 3. Kayıpsız yüksek çözünürlüklü + Kapak Slaytı (Sayfa 1) + SlideMaster tekilleştirmeli + DEFLATE-9 sıkıştırmalı .pptx üret ve indir
       const { blob, fileName } = await exportSlidesToPptx({
         slides: combinedSlides,
         fileName: `${meeting.title}.pptx`,
         templates,
+        coverTemplate: activeCoverRef.current,
         meetingBackgroundPreset: meeting.backgroundPreset || "template",
         meetingPhotoFramePreset: meeting.photoFramePreset || "none",
         triggerDownload: true,
@@ -3671,27 +3996,36 @@ export default function PresentationsPage() {
                         onClick={() => {
                           const base =
                             activeSlide.fontSize && activeSlide.fontSize !== "auto"
-                              ? Number(activeSlide.fontSize)
-                              : 12;
-                          updateCurrentSlide({ fontSize: Math.max(7, base - 0.5) });
+                              ? Math.min(Number(activeSlide.fontSize), editorMaxSafePt)
+                              : Math.min(13.5, editorMaxSafePt);
+                          updateCurrentSlide({
+                            fontSize: Math.max(5.5, Math.round((base - 0.5) * 10) / 10),
+                          });
                         }}
                         className="w-7 h-7 rounded-lg bg-white border border-slate-200 text-slate-700 font-bold hover:bg-slate-100"
                       >
                         -
                       </button>
-                      <span className="text-xs font-semibold w-12 text-center text-slate-700">
+                      <span className="text-xs font-semibold min-w-12 px-1 text-center text-slate-700 tabular-nums">
                         {!activeSlide.fontSize || activeSlide.fontSize === "auto"
                           ? "Oto"
-                          : `${activeSlide.fontSize} pt`}
+                          : `${Math.min(Number(activeSlide.fontSize), editorMaxSafePt)} pt`}
                       </span>
                       <button
                         type="button"
                         onClick={() => {
                           const base =
                             activeSlide.fontSize && activeSlide.fontSize !== "auto"
-                              ? Number(activeSlide.fontSize)
-                              : 12;
-                          const nextDesc = Math.min(24, base + 0.5);
+                              ? Math.min(Number(activeSlide.fontSize), editorMaxSafePt)
+                              : Math.min(13.5, editorMaxSafePt);
+                          if (base >= editorMaxSafePt) {
+                            toast(
+                              `Metnin kutudan taşmaması için bu slaytta maksimum güvenli punto ${editorMaxSafePt} pt'dir.`,
+                              { icon: "📏" }
+                            );
+                            return;
+                          }
+                          const nextDesc = Math.min(editorMaxSafePt, Math.round((base + 0.5) * 10) / 10);
                           const currentTitle = Number(activeSlide.titleFontSize ?? 20);
                           updateCurrentSlide({
                             fontSize: nextDesc,
@@ -3779,6 +4113,7 @@ export default function PresentationsPage() {
                 meetingBackgroundPreset={editorBgPreset}
                 meetingPhotoFramePreset={editorFramePreset}
                 onReorderPhotos={(newPhotos) => updateCurrentSlide({ photos: newPhotos })}
+                onMaxSafeFontSizeChange={setEditorMaxSafePt}
               />
             </div>
 
@@ -3857,13 +4192,27 @@ export default function PresentationsPage() {
 
         <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
           {isSuperAdmin && (
-            <button
-              onClick={() => setIsTemplateModalOpen(true)}
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs sm:text-sm font-bold backdrop-blur-xs transition-all active:scale-95"
-            >
-              <Upload className="w-4 h-4 text-blue-200" />
-              Şablonları Yönet ({templates.length})
-            </button>
+            <>
+              <button
+                type="button"
+                onClick={() => setIsCoverModalOpen(true)}
+                title="Süper Admin: Tüm toplantı slaytlarının en başında (1. sayfa) görünecek Kapak Şablonunu yükle ve yönet"
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-amber-400/15 hover:bg-amber-400/25 border border-amber-300/35 text-amber-100 text-xs sm:text-sm font-extrabold backdrop-blur-xs transition-all active:scale-95"
+              >
+                <Sparkles aria-hidden="true" className="w-4 h-4 text-amber-300" />
+                <span>
+                  Kapak Şablonu {activeCoverTemplate ? "• Aktif" : "(Yok)"}
+                </span>
+              </button>
+              <button
+                type="button"
+                onClick={() => setIsTemplateModalOpen(true)}
+                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs sm:text-sm font-bold backdrop-blur-xs transition-all active:scale-95"
+              >
+                <Upload aria-hidden="true" className="w-4 h-4 text-blue-200" />
+                Şablonları Yönet ({templates.length})
+              </button>
+            </>
           )}
           {isManager && (
             <button
@@ -4106,6 +4455,24 @@ export default function PresentationsPage() {
                   <Play aria-hidden="true" className="w-4 h-4 fill-current" />
                   <span>Tam Ekran Sunum</span>
                 </button>
+
+                {isSuperAdmin && (
+                  <select
+                    aria-label="Tam ekran sunum slayt geçiş efekti (Süper Admin)"
+                    title="Süper Admin: Tam ekran slayt sunumunda slaytlar arası geçiş efektini seç"
+                    value={selectedMeeting.transitionPreset || "kurumsal_kaydir"}
+                    onChange={(e) =>
+                      handleSetMeetingTransition(selectedMeeting._id, e.target.value)
+                    }
+                    className="px-3.5 py-2.5 rounded-xl border border-amber-200 text-xs font-extrabold bg-amber-50/80 hover:bg-amber-100/80 text-amber-950 outline-none focus:ring-2 focus:ring-amber-500 transition-colors"
+                  >
+                    {SLIDESHOW_TRANSITION_PRESETS.map((tp) => (
+                      <option key={tp.id} value={tp.id}>
+                        Geçiş Efekti: {tp.label}
+                      </option>
+                    ))}
+                  </select>
+                )}
 
                 {isSuperAdmin && selectedMeeting.status === "open" && (
                   <select
@@ -5027,6 +5394,128 @@ export default function PresentationsPage() {
         </div>
       )}
 
+      {/* Kapak Şablonu Yükleme & Yönetim Modalı (Yalnızca Süper Admin — Slaytların En Başında Sayfa 1 Olarak Görünür) */}
+      {isSuperAdmin && isCoverModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/65 backdrop-blur-sm">
+          <div className="bg-white rounded-3xl shadow-2xl max-w-2xl w-full p-6 space-y-4 max-h-[90vh] flex flex-col">
+            <div className="flex items-start justify-between gap-3">
+              <div>
+                <h3 className="text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                  <Sparkles className="w-5 h-5 text-amber-500" />
+                  Sunum Kapak Şablonu (Sadece Süper Admin)
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Yüklediğiniz ve aktif ettiğiniz kapak şablonu; toplu önizlemede, tam ekran projeksiyon sunumunda ve indirilen birleştirilmiş PowerPoint (.pptx) dosyasında slaytların en başında (1. sayfa) görünür.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsCoverModalOpen(false)}
+                className="p-1.5 rounded-xl hover:bg-slate-100"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="flex flex-col sm:flex-row gap-2">
+              <input
+                type="text"
+                value={newCoverName}
+                onChange={(e) => setNewCoverName(e.target.value)}
+                placeholder="Kapak adı (Örn: Mütevelli Heyeti Açılış Kapağı)"
+                className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
+              />
+              <label className="cursor-pointer py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white text-sm font-extrabold flex items-center justify-center gap-2 transition-colors shrink-0 shadow-md shadow-amber-600/20">
+                <Upload className="w-4 h-4" />
+                {uploadingCover ? "Yükleniyor..." : "Kapak Şablonu Yükle (.pptx / Görsel)"}
+                <input
+                  type="file"
+                  accept=".pptx,.png,.jpg,.jpeg,.webp"
+                  disabled={uploadingCover}
+                  onChange={handleUploadCoverTemplate}
+                  className="hidden"
+                />
+              </label>
+            </div>
+
+            {activeCoverTemplate && (
+              <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs">
+                <span className="font-bold text-emerald-900">
+                  Aktif Kapak (1. Slayt): <strong>{activeCoverTemplate.name}</strong>
+                </span>
+                <button
+                  type="button"
+                  onClick={() => handleSelectActiveCover(null)}
+                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 font-bold transition-colors"
+                >
+                  Kapağı Devre Dışı Bırak
+                </button>
+              </div>
+            )}
+
+            <div className="flex-1 overflow-y-auto space-y-3 pr-1">
+              {coverTemplates.length === 0 ? (
+                <div className="text-center py-10 text-sm text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-200">
+                  Henüz yüklenmiş kapak şablonu bulunmuyor. Bir PowerPoint (.pptx) kapağı veya görsel (.jpg/.png) yükleyebilirsiniz.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  {coverTemplates.map((cov) => {
+                    const isSelected = Boolean(cov.isActiveCover);
+                    return (
+                      <div
+                        key={cov._id}
+                        className={`p-3 rounded-2xl border space-y-2.5 transition-all ${
+                          isSelected
+                            ? "bg-amber-50/70 border-amber-400 ring-2 ring-amber-400/30 shadow-sm"
+                            : "bg-slate-50 border-slate-200"
+                        }`}
+                      >
+                        <div className="flex items-center justify-between gap-2">
+                          <div className="min-w-0">
+                            <div className="text-xs font-extrabold text-slate-900 truncate flex items-center gap-1.5">
+                              <span>{cov.name}</span>
+                              {isSelected && (
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-black uppercase">
+                                  Aktif 1. Slayt
+                                </span>
+                              )}
+                            </div>
+                            <div className="text-[11px] text-slate-500 truncate">
+                              {cov.fileName}
+                            </div>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteTemplate(cov._id)}
+                            className="p-1.5 rounded-lg text-red-600 hover:bg-red-100 shrink-0"
+                            title="Kapak Şablonunu Sil"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+
+                        <CoverSlidePreviewCard cover={cov} />
+
+                        {!isSelected && (
+                          <button
+                            type="button"
+                            onClick={() => handleSelectActiveCover(cov._id)}
+                            className="w-full py-2 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-extrabold transition-colors"
+                          >
+                            Bu Kapağı Aktif Et (En Başta Göster)
+                          </button>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Toplantı Açma Modalı */}
       {isNewMeetingOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-sm">
@@ -5544,6 +6033,27 @@ export default function PresentationsPage() {
 
                 {/* Sağ: Süper Admin Toplu Çerçeve Seçici + Sıralama Kaydet + Geçiş Kontrolleri & Kapat */}
                 <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  {isSuperAdmin && (
+                    <select
+                      aria-label="Tam ekran sunum slayt geçiş efekti"
+                      title="Süper Admin: Tam ekran slayt sunumunda slaytlar arası geçiş efektini seç"
+                      value={bulkPreviewModal.meeting.transitionPreset || "kurumsal_kaydir"}
+                      onChange={(e) =>
+                        handleSetMeetingTransition(
+                          bulkPreviewModal.meeting._id,
+                          e.target.value
+                        )
+                      }
+                      className="px-2.5 py-1.5 rounded-xl bg-amber-400/18 hover:bg-amber-400/28 border border-amber-300/35 text-amber-100 text-xs font-bold outline-none cursor-pointer [&>option]:text-slate-900"
+                    >
+                      {SLIDESHOW_TRANSITION_PRESETS.map((tp) => (
+                        <option key={tp.id} value={tp.id}>
+                          Geçiş: {tp.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
                   {isSuperAdmin && bulkPreviewModal.meeting.status === "open" && (
                     <select
                       aria-label="Aktif toplantı toplu fotoğraf çerçevesi"
@@ -5728,15 +6238,18 @@ export default function PresentationsPage() {
                   >
                     {bulkPreviewModal.flatSlides.map((item, idx) => {
                       const gIdx = item.groupIndex;
-                      const isDraggingGroup = filmstripDrag?.fromGroupIdx === gIdx;
+                      const isCover = Boolean(item.isCoverSlide);
+                      const isDraggingGroup = !isCover && filmstripDrag?.fromGroupIdx === gIdx;
                       const isFirstInGrp = item.slideIndex === 0;
                       const isLastInGrp = item.slideIndex === item.groupSlideCount - 1;
                       const showDropBefore =
+                        !isCover &&
                         Boolean(filmstripDrag) &&
                         filmstripDrag!.fromGroupIdx !== gIdx &&
                         filmstripDrag!.dropInsertIdx === gIdx &&
                         isFirstInGrp;
                       const showDropAfter =
+                        !isCover &&
                         Boolean(filmstripDrag) &&
                         filmstripDrag!.fromGroupIdx !== gIdx &&
                         filmstripDrag!.dropInsertIdx === bulkPreviewModal.groups.length &&
@@ -5751,6 +6264,8 @@ export default function PresentationsPage() {
                           slide={item.slide}
                           authorName={item.authorName}
                           templates={templates}
+                          isCoverSlide={isCover}
+                          coverTemplate={item.coverTemplate}
                           meetingBackgroundPreset={
                             bulkPreviewModal.meeting.backgroundPreset || "template"
                           }
@@ -5759,16 +6274,13 @@ export default function PresentationsPage() {
                           }
                           onClick={() => {
                             setBulkIdx(idx);
-                            if (mobileBulkTab === "edit") {
-                              // Düzenleme sekmesinde slayt seçildiğinde seçili slayt anında değişir
-                            }
                           }}
-                          groupIndex={gIdx}
+                          groupIndex={isCover ? undefined : gIdx}
                           groupSlideIndex={item.slideIndex}
                           groupSlideCount={item.groupSlideCount}
-                          canReorder={canReorderInBulk}
-                          canMovePrev={gIdx > 0}
-                          canMoveNext={gIdx < bulkPreviewModal.groups.length - 1}
+                          canReorder={canReorderInBulk && !isCover}
+                          canMovePrev={!isCover && gIdx > 0}
+                          canMoveNext={!isCover && gIdx < bulkPreviewModal.groups.length - 1}
                           isBeingDragged={isDraggingGroup}
                           dragTranslateX={isDraggingGroup ? filmstripDrag?.dx : 0}
                           dragTranslateY={isDraggingGroup ? filmstripDrag?.dy : 0}
@@ -5815,18 +6327,25 @@ export default function PresentationsPage() {
                 >
                   <div className="flex-1 w-full flex items-center justify-center min-h-0">
                     <div className="w-full max-w-4xl relative">
-                      <SlidePreviewCard
-                        slide={
-                          bulkPreviewModal.flatSlides[bulkIdx]?.slide || emptySlide()
-                        }
-                        templates={templates}
-                        meetingBackgroundPreset={
-                          bulkPreviewModal.meeting.backgroundPreset || "template"
-                        }
-                        meetingPhotoFramePreset={
-                          bulkPreviewModal.meeting.photoFramePreset || "none"
-                        }
-                      />
+                      {bulkPreviewModal.flatSlides[bulkIdx]?.isCoverSlide &&
+                      bulkPreviewModal.flatSlides[bulkIdx]?.coverTemplate ? (
+                        <CoverSlidePreviewCard
+                          cover={bulkPreviewModal.flatSlides[bulkIdx].coverTemplate!}
+                        />
+                      ) : (
+                        <SlidePreviewCard
+                          slide={
+                            bulkPreviewModal.flatSlides[bulkIdx]?.slide || emptySlide()
+                          }
+                          templates={templates}
+                          meetingBackgroundPreset={
+                            bulkPreviewModal.meeting.backgroundPreset || "template"
+                          }
+                          meetingPhotoFramePreset={
+                            bulkPreviewModal.meeting.photoFramePreset || "none"
+                          }
+                        />
+                      )}
 
                       {/* Sahne Üzeri Yüzen Hızlı Geçiş Okları */}
                       <button
@@ -5900,7 +6419,7 @@ export default function PresentationsPage() {
                 </div>
 
                 {/* SAĞ SÜTUN: Yönetici / Yetkili Kullanıcı İçin Kompakt Anında Açıklama Düzenleme Paneli */}
-                {canEditInBulk && (
+                {canEditInBulk && !bulkPreviewModal.flatSlides[bulkIdx]?.isCoverSlide && (
                   <aside
                     className={`${
                       mobileBulkTab === "edit" ? "flex flex-1" : "hidden lg:flex"
@@ -5958,7 +6477,12 @@ export default function PresentationsPage() {
                               ...prev,
                               allGroups: nextAllGroups,
                               groups: nextGroups,
-                              flatSlides: buildBulkFlatSlides(nextGroups),
+                              flatSlides: buildBulkFlatSlides(
+                                nextGroups,
+                                prev.flatSlides[0]?.isCoverSlide
+                                  ? activeCoverRef.current
+                                  : null
+                              ),
                             };
                           });
                         }}
@@ -6044,17 +6568,24 @@ export default function PresentationsPage() {
               }}
               className="relative flex items-center justify-center"
             >
-              <SlidePreviewCard
-                slide={activeSlideEntry?.slide || emptySlide()}
-                templates={templates}
-                meetingBackgroundPreset={
-                  bulkPreviewModal.meeting.backgroundPreset || "template"
-                }
-                meetingPhotoFramePreset={
-                  bulkPreviewModal.meeting.photoFramePreset || "none"
-                }
-                projectorMode={true}
-              />
+              {activeSlideEntry?.isCoverSlide && activeSlideEntry.coverTemplate ? (
+                <CoverSlidePreviewCard
+                  cover={activeSlideEntry.coverTemplate}
+                  projectorMode={true}
+                />
+              ) : (
+                <SlidePreviewCard
+                  slide={activeSlideEntry?.slide || emptySlide()}
+                  templates={templates}
+                  meetingBackgroundPreset={
+                    bulkPreviewModal.meeting.backgroundPreset || "template"
+                  }
+                  meetingPhotoFramePreset={
+                    bulkPreviewModal.meeting.photoFramePreset || "none"
+                  }
+                  projectorMode={true}
+                />
+              )}
             </div>
 
             {/* Kırmızı Lazer İşaretçi Noktası (L Tuşu veya HUD Butonu ile Aktifleşir) */}
@@ -6134,6 +6665,27 @@ export default function PresentationsPage() {
               </button>
 
               <div className="h-5 w-px bg-white/15 mx-0.5 hidden sm:block" />
+
+              {isSuperAdmin && (
+                <select
+                  aria-label="Slayt geçiş efekti (Süper Admin)"
+                  title="Süper Admin: Slayt geçiş efektini canlı değiştir"
+                  value={bulkPreviewModal.meeting.transitionPreset || "kurumsal_kaydir"}
+                  onChange={(e) =>
+                    handleSetMeetingTransition(
+                      bulkPreviewModal.meeting._id,
+                      e.target.value
+                    )
+                  }
+                  className="hidden md:inline-block px-2.5 py-1.5 rounded-xl bg-amber-400/20 hover:bg-amber-400/30 border border-amber-300/35 text-amber-100 text-xs font-bold outline-none cursor-pointer [&>option]:text-slate-900"
+                >
+                  {SLIDESHOW_TRANSITION_PRESETS.map((tp) => (
+                    <option key={tp.id} value={tp.id}>
+                      {tp.label}
+                    </option>
+                  ))}
+                </select>
+              )}
 
               <button
                 type="button"

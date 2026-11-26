@@ -175,19 +175,23 @@ export async function PUT(
         fontSize:
           s.fontSize === "auto" || !s.fontSize
             ? "auto"
-            : Math.min(24, Math.max(7, Number(s.fontSize))),
+            : Math.min(24, Math.max(5.5, Number(s.fontSize))),
         titleFontSize: Math.min(
           26,
           Math.max(
             s.fontSize && s.fontSize !== "auto"
-              ? Math.min(24, Math.max(7, Number(s.fontSize))) + 1
+              ? Math.min(24, Math.max(5.5, Number(s.fontSize))) + 1
               : 14,
             Number(s.titleFontSize ?? 20)
           )
         ),
         titleBold: s.titleBold !== false,
-        descTopPct: Math.min(65, Math.max(44.5, Number(s.descTopPct ?? 46))),
-        descBottomPct: Math.min(97.5, Math.max(72, Number(s.descBottomPct ?? 96.5))),
+        ...(s.descTopPct !== undefined && s.descTopPct !== null
+          ? { descTopPct: Math.min(68, Math.max(20, Number(s.descTopPct))) }
+          : {}),
+        ...(s.descBottomPct !== undefined && s.descBottomPct !== null
+          ? { descBottomPct: Math.min(98, Math.max(65, Number(s.descBottomPct))) }
+          : {}),
         photoWidthPct: Math.min(52, Math.max(20, Number(s.photoWidthPct ?? 41))),
         photoHeightPct: Math.min(44, Math.max(22, Number(s.photoHeightPct ?? 41.6))),
         photoLeftPct: Math.min(30, Math.max(0, Number(s.photoLeftPct ?? 3.2))),

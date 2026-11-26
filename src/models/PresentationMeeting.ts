@@ -13,6 +13,7 @@ export interface IPresentationMeeting extends Document {
   presentationOrder: string[];
   backgroundPreset?: string;
   photoFramePreset?: string;
+  transitionPreset?: string;
   downloadedAt?: Date;
   photosExpireAt?: Date;
   photosPurged: boolean;
@@ -57,6 +58,10 @@ const PresentationMeetingSchema = new Schema<IPresentationMeeting>(
     photoFramePreset: {
       type: String,
       default: "none",
+    },
+    transitionPreset: {
+      type: String,
+      default: "kurumsal_kaydir",
     },
     downloadedAt: { type: Date },
     photosExpireAt: { type: Date, index: true },

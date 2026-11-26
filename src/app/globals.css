@@ -145,61 +145,208 @@
   }
 }
 
-/* Kurumsal Tam Ekran Sunum Gösterisi (Projector Mode) Yönlü Slayt Geçiş Animasyonları */
+/* Kurumsal Tam Ekran Sunum Gösterisi (Projector Mode) Süper Admin Seçimli Yönlü Slayt Geçiş Efektleri */
 @keyframes slideshow-to-left {
   to {
-    transform: translateX(-6%) scale(0.985);
+    transform: translateX(-7%) scale(0.985);
     opacity: 0;
   }
 }
 
 @keyframes slideshow-from-right {
   from {
-    transform: translateX(6%) scale(0.985);
+    transform: translateX(7%) scale(0.985);
     opacity: 0;
   }
 }
 
 @keyframes slideshow-to-right {
   to {
-    transform: translateX(6%) scale(0.985);
+    transform: translateX(7%) scale(0.985);
     opacity: 0;
   }
 }
 
 @keyframes slideshow-from-left {
   from {
-    transform: translateX(-6%) scale(0.985);
+    transform: translateX(-7%) scale(0.985);
     opacity: 0;
   }
 }
 
-html:active-view-transition-type(slideshow-forward)::view-transition-group(root),
-html:active-view-transition-type(slideshow-backward)::view-transition-group(root) {
-  animation: 0.28s cubic-bezier(0.22, 1, 0.36, 1) both;
+@keyframes slideshow-fade-out {
+  to {
+    opacity: 0;
+  }
 }
 
-html:active-view-transition-type(slideshow-forward)::view-transition-old(root) {
-  animation: 0.24s ease-in-out both slideshow-to-left;
+@keyframes slideshow-fade-in {
+  from {
+    opacity: 0;
+  }
 }
 
-html:active-view-transition-type(slideshow-forward)::view-transition-new(root) {
-  animation: 0.28s cubic-bezier(0.22, 1, 0.36, 1) both slideshow-from-right;
+@keyframes slideshow-depth-out-fwd {
+  to {
+    transform: scale(0.86) translateX(-14%);
+    opacity: 0;
+  }
 }
 
-html:active-view-transition-type(slideshow-backward)::view-transition-old(root) {
-  animation: 0.24s ease-in-out both slideshow-to-right;
+@keyframes slideshow-depth-in-fwd {
+  from {
+    transform: scale(1.08) translateX(14%);
+    opacity: 0;
+  }
 }
 
-html:active-view-transition-type(slideshow-backward)::view-transition-new(root) {
-  animation: 0.28s cubic-bezier(0.22, 1, 0.36, 1) both slideshow-from-left;
+@keyframes slideshow-depth-out-bwd {
+  to {
+    transform: scale(0.86) translateX(14%);
+    opacity: 0;
+  }
 }
 
-@media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(root),
-  ::view-transition-old(root),
-  ::view-transition-new(root) {
-    animation: none !important;
+@keyframes slideshow-depth-in-bwd {
+  from {
+    transform: scale(1.08) translateX(-14%);
+    opacity: 0;
+  }
+}
+
+@keyframes slideshow-zoom-out {
+  to {
+    transform: scale(1.09);
+    opacity: 0;
+  }
+}
+
+@keyframes slideshow-zoom-in {
+  from {
+    transform: scale(0.91);
+    opacity: 0;
+  }
+}
+
+@keyframes slideshow-wipe-in-fwd {
+  from {
+    clip-path: inset(0 100% 0 0);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes slideshow-wipe-in-bwd {
+  from {
+    clip-path: inset(0 0 0 100%);
+  }
+  to {
+    clip-path: inset(0 0 0 0);
+  }
+}
+
+@keyframes slideshow-vert-out-fwd {
+  to {
+    transform: translateY(-8%) scale(0.985);
+    opacity: 0;
+  }
+}
+
+@keyframes slideshow-vert-in-fwd {
+  from {
+    transform: translateY(8%) scale(0.985);
+    opacity: 0;
+  }
+}
+
+@keyframes slideshow-vert-out-bwd {
+  to {
+    transform: translateY(8%) scale(0.985);
+    opacity: 0;
+  }
+}
+
+@keyframes slideshow-vert-in-bwd {
+  from {
+    transform: translateY(-8%) scale(0.985);
+    opacity: 0;
+  }
+}
+
+@media (prefers-reduced-motion: no-preference) {
+  /* 1. Kurumsal Kaydırma */
+  html:active-view-transition-type(kurumsal_kaydir-fwd)::view-transition-old(root) {
+    animation: 0.25s ease-in-out both slideshow-to-left;
+  }
+  html:active-view-transition-type(kurumsal_kaydir-fwd)::view-transition-new(root) {
+    animation: 0.3s cubic-bezier(0.22, 1, 0.36, 1) both slideshow-from-right;
+  }
+  html:active-view-transition-type(kurumsal_kaydir-bwd)::view-transition-old(root) {
+    animation: 0.25s ease-in-out both slideshow-to-right;
+  }
+  html:active-view-transition-type(kurumsal_kaydir-bwd)::view-transition-new(root) {
+    animation: 0.3s cubic-bezier(0.22, 1, 0.36, 1) both slideshow-from-left;
+  }
+
+  /* 2. Sinematik Yumuşak Geçiş (Crossfade) */
+  html:active-view-transition-type(yumusak_gecis-fwd)::view-transition-old(root),
+  html:active-view-transition-type(yumusak_gecis-bwd)::view-transition-old(root) {
+    animation: 0.36s ease-in-out both slideshow-fade-out;
+  }
+  html:active-view-transition-type(yumusak_gecis-fwd)::view-transition-new(root),
+  html:active-view-transition-type(yumusak_gecis-bwd)::view-transition-new(root) {
+    animation: 0.38s ease-in-out both slideshow-fade-in;
+  }
+
+  /* 3. 3B Sahne Derinliği */
+  html:active-view-transition-type(derinlik_3b-fwd)::view-transition-old(root) {
+    animation: 0.34s cubic-bezier(0.4, 0, 0.2, 1) both slideshow-depth-out-fwd;
+  }
+  html:active-view-transition-type(derinlik_3b-fwd)::view-transition-new(root) {
+    animation: 0.38s cubic-bezier(0.22, 1, 0.36, 1) both slideshow-depth-in-fwd;
+  }
+  html:active-view-transition-type(derinlik_3b-bwd)::view-transition-old(root) {
+    animation: 0.34s cubic-bezier(0.4, 0, 0.2, 1) both slideshow-depth-out-bwd;
+  }
+  html:active-view-transition-type(derinlik_3b-bwd)::view-transition-new(root) {
+    animation: 0.38s cubic-bezier(0.22, 1, 0.36, 1) both slideshow-depth-in-bwd;
+  }
+
+  /* 4. Odak Yakınlaştırma (Zoom) */
+  html:active-view-transition-type(yakinlastir_zoom-fwd)::view-transition-old(root),
+  html:active-view-transition-type(yakinlastir_zoom-bwd)::view-transition-old(root) {
+    animation: 0.28s ease-in both slideshow-zoom-out;
+  }
+  html:active-view-transition-type(yakinlastir_zoom-fwd)::view-transition-new(root),
+  html:active-view-transition-type(yakinlastir_zoom-bwd)::view-transition-new(root) {
+    animation: 0.34s cubic-bezier(0.22, 1, 0.36, 1) both slideshow-zoom-in;
+  }
+
+  /* 5. Kurumsal Perde Açılışı (Wipe) */
+  html:active-view-transition-type(perde_acilisi-fwd)::view-transition-old(root),
+  html:active-view-transition-type(perde_acilisi-bwd)::view-transition-old(root) {
+    animation: 0.38s ease-in-out both;
+  }
+  html:active-view-transition-type(perde_acilisi-fwd)::view-transition-new(root) {
+    animation: 0.38s cubic-bezier(0.22, 1, 0.36, 1) both slideshow-wipe-in-fwd;
+  }
+  html:active-view-transition-type(perde_acilisi-bwd)::view-transition-new(root) {
+    animation: 0.38s cubic-bezier(0.22, 1, 0.36, 1) both slideshow-wipe-in-bwd;
+  }
+
+  /* 6. Dikey Sahne Akışı */
+  html:active-view-transition-type(dikey_akis-fwd)::view-transition-old(root) {
+    animation: 0.26s ease-in-out both slideshow-vert-out-fwd;
+  }
+  html:active-view-transition-type(dikey_akis-fwd)::view-transition-new(root) {
+    animation: 0.32s cubic-bezier(0.22, 1, 0.36, 1) both slideshow-vert-in-fwd;
+  }
+  html:active-view-transition-type(dikey_akis-bwd)::view-transition-old(root) {
+    animation: 0.26s ease-in-out both slideshow-vert-out-bwd;
+  }
+  html:active-view-transition-type(dikey_akis-bwd)::view-transition-new(root) {
+    animation: 0.32s cubic-bezier(0.22, 1, 0.36, 1) both slideshow-vert-in-bwd;
   }
 }
 

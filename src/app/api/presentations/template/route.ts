@@ -8,7 +8,10 @@ import PresentationTemplate, {
   ITemplateLayoutConfig,
 } from "@/models/PresentationTemplate";
 import Log from "@/models/Log";
-import { extractPptxTemplateInfo } from "@/lib/presentationUtils";
+import {
+  extractPptxTemplateInfo,
+  extractCoverPptxInfo,
+} from "@/lib/presentationUtils";
 import {
   getCachedPresentationTemplates,
   setCachedPresentationTemplates,
@@ -40,9 +43,15 @@ export async function GET(req: NextRequest) {
       if (isWarmOnly) {
         return NextResponse.json({ ok: true });
       }
+      const slideTemplates = cached.filter((t: any) => t.templateKind !== "cover");
+      const coverTemplates = cached.filter((t: any) => t.templateKind === "cover");
+      const activeCoverTemplate =
+        coverTemplates.find((t: any) => t.isActiveCover) || null;
       return respondShieldedJson(req, userId, {
-        templates: cached,
-        template: cached[0] || null,
+        templates: slideTemplates,
+        template: slideTemplates[0] || null,
+        coverTemplates,
+        activeCoverTemplate,
       });
     }
 
@@ -53,11 +62,13 @@ export async function GET(req: NextRequest) {
       .sort({ createdAt: 1 })
       .lean();
 
-    const templates = (
+    const allMapped = (
       await Promise.all(
         lightDocs.map(async (tpl: any) => {
+          const kind: "slide" | "cover" =
+            tpl.templateKind === "cover" ? "cover" : "slide";
           let layoutConfig = tpl.layoutConfig;
-          if (!layoutConfig || layoutConfig.version !== 3) {
+          if (kind === "slide" && (!layoutConfig || layoutConfig.version !== 3)) {
             const fullDoc = await PresentationTemplate.findById(tpl._id);
             if (fullDoc?.pptxCompressed) {
               try {
@@ -77,10 +88,13 @@ export async function GET(req: NextRequest) {
             name: tpl.name || tpl.fileName,
             fileName: tpl.fileName,
             fileSize: tpl.fileSize,
+            templateKind: kind,
+            isActiveCover: Boolean(tpl.isActiveCover),
             backgroundImageBase64: tpl.backgroundImageBase64 || "",
             slideWidthIn: tpl.slideWidthIn || 10,
             slideHeightIn: tpl.slideHeightIn || 7.5,
             layoutConfig: layoutConfig || DEFAULT_LAYOUT,
+            coverSpec: tpl.coverSpec || { images: [], texts: [] },
             uploadedBy: tpl.uploadedBy,
             updatedAt: tpl.updatedAt,
           };
@@ -93,15 +107,22 @@ export async function GET(req: NextRequest) {
       })
     );
 
-    setCachedPresentationTemplates(templates);
+    setCachedPresentationTemplates(allMapped);
 
     if (isWarmOnly) {
       return NextResponse.json({ ok: true });
     }
 
+    const slideTemplates = allMapped.filter((t) => t.templateKind !== "cover");
+    const coverTemplates = allMapped.filter((t) => t.templateKind === "cover");
+    const activeCoverTemplate =
+      coverTemplates.find((t) => t.isActiveCover) || null;
+
     return respondShieldedJson(req, userId, {
-      templates,
-      template: templates[0] || null,
+      templates: slideTemplates,
+      template: slideTemplates[0] || null,
+      coverTemplates,
+      activeCoverTemplate,
     });
   } catch (error: any) {
     console.error("GET /api/presentations/template error:", error);
@@ -128,6 +149,8 @@ export async function POST(req: NextRequest) {
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
     const customName = ((formData.get("name") as string) || "").trim();
+    const templateKind: "slide" | "cover" =
+      formData.get("kind") === "cover" ? "cover" : "slide";
 
     if (!file) {
       return NextResponse.json({ error: "Dosya seçilmedi." }, { status: 400 });
@@ -151,14 +174,23 @@ export async function POST(req: NextRequest) {
     let slideWidthIn = 10;
     let slideHeightIn = 7.5;
     let layoutConfig: ITemplateLayoutConfig = DEFAULT_LAYOUT;
+    let coverSpec: { images: any[]; texts: any[] } = { images: [], texts: [] };
     let pptxCompressed: Buffer | undefined;
 
     if (isPptx) {
-      const info = await extractPptxTemplateInfo(buffer);
-      backgroundImageBase64 = info.backgroundImageBase64;
-      slideWidthIn = info.slideWidthIn;
-      slideHeightIn = info.slideHeightIn;
-      layoutConfig = info.layoutConfig;
+      if (templateKind === "cover") {
+        const coverInfo = await extractCoverPptxInfo(buffer);
+        backgroundImageBase64 = coverInfo.backgroundImageBase64;
+        slideWidthIn = coverInfo.slideWidthIn;
+        slideHeightIn = coverInfo.slideHeightIn;
+        coverSpec = coverInfo.coverSpec;
+      } else {
+        const info = await extractPptxTemplateInfo(buffer);
+        backgroundImageBase64 = info.backgroundImageBase64;
+        slideWidthIn = info.slideWidthIn;
+        slideHeightIn = info.slideHeightIn;
+        layoutConfig = info.layoutConfig;
+      }
       pptxCompressed = await gzip(buffer, { level: 9 });
     } else {
       const ext = lower.split(".").pop() || "png";
@@ -179,14 +211,24 @@ export async function POST(req: NextRequest) {
     // Eski tekli şablon döneminden kalan key_1 unique indeksini otomatik temizle
     await PresentationTemplate.collection.dropIndex("key_1").catch(() => { });
 
+    if (templateKind === "cover") {
+      await PresentationTemplate.updateMany(
+        { templateKind: "cover" },
+        { $set: { isActiveCover: false } }
+      );
+    }
+
     const tpl = await PresentationTemplate.create({
       name: templateName,
       fileName: file.name,
       fileSize: file.size,
+      templateKind,
+      isActiveCover: templateKind === "cover",
       backgroundImageBase64,
       slideWidthIn,
       slideHeightIn,
       layoutConfig,
+      coverSpec,
       ...(pptxCompressed ? { pptxCompressed } : {}),
       uploadedBy: userId,
     });
@@ -194,8 +236,8 @@ export async function POST(req: NextRequest) {
 
     void Log.create({
       userId,
-      action: "SUNU_SABLON_YUKLENDI",
-      details: `Sunu şablonu eklendi: ${templateName} (${file.name})`,
+      action: templateKind === "cover" ? "KAPAK_SABLONU_YUKLENDI" : "SUNU_SABLON_YUKLENDI",
+      details: `${templateKind === "cover" ? "Kapak şablonu" : "Sunu şablonu"} eklendi: ${templateName} (${file.name})`,
     }).catch(() => {});
 
     return NextResponse.json({
@@ -205,10 +247,13 @@ export async function POST(req: NextRequest) {
         name: tpl.name,
         fileName: tpl.fileName,
         fileSize: tpl.fileSize,
+        templateKind: tpl.templateKind,
+        isActiveCover: Boolean(tpl.isActiveCover),
         backgroundImageBase64: tpl.backgroundImageBase64 || "",
         slideWidthIn: tpl.slideWidthIn,
         slideHeightIn: tpl.slideHeightIn,
         layoutConfig: tpl.layoutConfig || DEFAULT_LAYOUT,
+        coverSpec: tpl.coverSpec || { images: [], texts: [] },
         updatedAt: tpl.updatedAt,
       },
     });
@@ -216,6 +261,55 @@ export async function POST(req: NextRequest) {
     console.error("POST /api/presentations/template error:", error);
     return NextResponse.json(
       { error: error.message || "Şablon yüklenirken hata oluştu." },
+      { status: 500 }
+    );
+  }
+}
+
+export async function PATCH(req: NextRequest) {
+  try {
+    const session = await getServerSession(authOptions);
+    const role = (session?.user as any)?.role;
+    const userId = (session?.user as any)?.id;
+
+    if (!session?.user || role !== "superadmin") {
+      return NextResponse.json(
+        { error: "Kapak şablonu yönetimi yalnızca Süper Admin'e aittir." },
+        { status: 403 }
+      );
+    }
+
+    const body = await req.json();
+    const { activeCoverId } = body as { activeCoverId?: string | null };
+
+    await dbConnect();
+    await PresentationTemplate.updateMany(
+      { templateKind: "cover" },
+      { $set: { isActiveCover: false } }
+    );
+
+    if (activeCoverId) {
+      await PresentationTemplate.findOneAndUpdate(
+        { _id: activeCoverId, templateKind: "cover" },
+        { $set: { isActiveCover: true } }
+      );
+    }
+
+    invalidatePresentationTemplatesCache();
+
+    void Log.create({
+      userId,
+      action: "KAPAK_SABLONU_SECILDI",
+      details: activeCoverId
+        ? `Aktif sunum kapak şablonu güncellendi (${activeCoverId})`
+        : "Aktif sunum kapak şablonu devre dışı bırakıldı",
+    }).catch(() => {});
+
+    return NextResponse.json({ success: true, activeCoverId: activeCoverId || null });
+  } catch (error: any) {
+    console.error("PATCH /api/presentations/template error:", error);
+    return NextResponse.json(
+      { error: error.message || "Kapak şablonu güncellenemedi." },
       { status: 500 }
     );
   }
