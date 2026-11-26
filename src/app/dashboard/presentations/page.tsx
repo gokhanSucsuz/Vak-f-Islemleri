@@ -60,6 +60,7 @@ import {
   cleanTemplateWatermark,
   compressImageToJpeg,
   exportSlidesToPptx,
+  computeCoverTitleFontSizePt,
   extractCleanPlainLines,
   sanitizeSlideDescriptionHtml,
   shieldedFetchJson,
@@ -1108,24 +1109,47 @@ function CoverSlidePreviewCard({
           </div>
         ))}
 
-        {(cover.coverSpec?.texts || []).map((txtBox, idx) => (
+        {/* Kapak Adı: Slaytın En Üstünden Başlayarak Yatayda Tam Ortalı, Kalın & Gölgeli Kurumsal Başlık */}
+        {Boolean((cover.name || "").trim()) && (
           <div
-            key={idx}
             style={{
-              left: `${txtBox.xPct}%`,
-              top: `${txtBox.yPct}%`,
-              width: `${txtBox.wPct}%`,
-              height: `${txtBox.hPct}%`,
-              fontSize: `${txtBox.fontSizePt}px`,
-              fontWeight: txtBox.bold ? 800 : 600,
-              color: `#${txtBox.colorHex || "0F172A"}`,
-              textAlign: txtBox.align || "center",
+              left: "1.8%",
+              top: "2.8%",
+              width: "96.4%",
+              maxHeight: "36.5%",
+              fontSize: `${computeCoverTitleFontSizePt(cover.name)}px`,
+              fontWeight: 800,
+              lineHeight: 1.54,
+              color: "#0A0F1A",
+              textShadow:
+                "0 2px 4px rgba(15, 23, 42, 0.42), 0 0 1.5px rgba(15, 23, 42, 0.28)",
             }}
-            className="absolute flex items-center justify-center px-2 leading-snug whitespace-pre-line pointer-events-none"
+            className="absolute flex items-start justify-center text-center whitespace-pre-line overflow-hidden pointer-events-none z-10 px-1"
           >
-            <span className="w-full">{txtBox.text}</span>
+            <span className="w-full">{cover.name.trim()}</span>
           </div>
-        ))}
+        )}
+
+        {(cover.coverSpec?.texts || [])
+          .filter((txtBox) => txtBox.yPct >= 38)
+          .map((txtBox, idx) => (
+            <div
+              key={idx}
+              style={{
+                left: `${txtBox.xPct}%`,
+                top: `${txtBox.yPct}%`,
+                width: `${txtBox.wPct}%`,
+                height: `${txtBox.hPct}%`,
+                fontSize: `${txtBox.fontSizePt}px`,
+                fontWeight: txtBox.bold ? 800 : 600,
+                color: `#${txtBox.colorHex || "0F172A"}`,
+                textAlign: txtBox.align || "center",
+              }}
+              className="absolute flex items-center justify-center px-2 leading-snug whitespace-pre-line pointer-events-none"
+            >
+              <span className="w-full">{txtBox.text}</span>
+            </div>
+          ))}
       </div>
     </div>
   );
@@ -1158,7 +1182,10 @@ function buildBulkFlatSlides(
       coverTemplate: activeCover,
       slide: {
         ...emptySlide(),
-        fullName: activeCover.name || "Toplantı Kapak Slaytı",
+        fullName:
+          (activeCover.name || "Toplantı Kapak Slaytı")
+            .replace(/\s*\n+\s*/g, " — ")
+            .trim() || "Toplantı Kapak Slaytı",
         neighborhood: "",
         description: "",
         descriptionHtml: "",
@@ -1379,7 +1406,35 @@ function SlideMiniThumbnail({
                 className="absolute inset-0 w-full h-full pointer-events-none"
               />
             )}
-            <span className="absolute left-1 top-1 z-10 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[7px] font-black uppercase tracking-wider shadow-xs">
+            {(coverTemplate.coverSpec?.images || []).map((imgBox, idx) => (
+              <div
+                key={idx}
+                style={{
+                  left: `${imgBox.xPct}%`,
+                  top: `${imgBox.yPct}%`,
+                  width: `${imgBox.wPct}%`,
+                  height: `${imgBox.hPct}%`,
+                }}
+                className="absolute flex items-center justify-center pointer-events-none"
+              >
+                <ProtectedCanvasImage
+                  src={imgBox.dataUrl}
+                  fit="contain"
+                  className="w-full h-full"
+                />
+              </div>
+            ))}
+            {Boolean((coverTemplate.name || "").trim()) && (
+              <div
+                style={{
+                  textShadow: "0 1px 2px rgba(15, 23, 42, 0.35)",
+                }}
+                className="absolute inset-x-1 top-[3.5%] z-10 text-center text-[5px] sm:text-[5.5px] font-black leading-[1.3] text-slate-950 whitespace-pre-line line-clamp-3 pointer-events-none"
+              >
+                {coverTemplate.name.trim()}
+              </div>
+            )}
+            <span className="absolute right-1 bottom-1 z-10 px-1.5 py-0.5 rounded bg-amber-500 text-slate-950 text-[6.5px] font-black uppercase tracking-wider shadow-xs">
               KAPAK
             </span>
           </div>
@@ -1535,6 +1590,8 @@ export default function PresentationsPage() {
   const [isCoverModalOpen, setIsCoverModalOpen] = useState(false);
   const [newCoverName, setNewCoverName] = useState("");
   const [uploadingCover, setUploadingCover] = useState(false);
+  const [editingCoverTitles, setEditingCoverTitles] = useState<Record<string, string>>({});
+  const [savingCoverTitleId, setSavingCoverTitleId] = useState<string | null>(null);
   const [editorMaxSafePt, setEditorMaxSafePt] = useState<number>(22);
 
   // Yeni Toplantı Modalı
@@ -2160,6 +2217,45 @@ export default function PresentationsPage() {
       await fetchTemplates();
     } catch (err: any) {
       toast.error(err.message);
+    }
+  };
+
+  // Süper Admin: Mevcut Kapak Şablonunun Üst Başlık Yazısını (Kapak Adını) Güncelle
+  const handleRenameCoverTemplate = async (coverId: string, rawDraft: string) => {
+    const cleaned = (rawDraft || "")
+      .replace(/\r\n/g, "\n")
+      .split("\n")
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .join("\n");
+    if (!cleaned) {
+      toast.error("Kapak adı boş bırakılamaz.");
+      return;
+    }
+    setSavingCoverTitleId(coverId);
+    try {
+      const res = await fetch("/api/presentations/template", {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          renameCoverId: coverId,
+          newName: cleaned,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Kapak adı güncellenemedi");
+
+      setEditingCoverTitles((prev) => {
+        const next = { ...prev };
+        delete next[coverId];
+        return next;
+      });
+      toast.success("Kapak üst başlık yazısı güncellendi.");
+      await fetchTemplates();
+    } catch (err: any) {
+      toast.error(err.message);
+    } finally {
+      setSavingCoverTitleId(null);
     }
   };
 
@@ -5413,36 +5509,61 @@ export default function PresentationsPage() {
               </button>
             </div>
 
-            <div className="flex flex-col sm:flex-row gap-2">
-              <input
-                type="text"
-                value={newCoverName}
-                onChange={(e) => setNewCoverName(e.target.value)}
-                placeholder="Kapak adı (Örn: Mütevelli Heyeti Açılış Kapağı)"
-                className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-200 text-sm focus:ring-2 focus:ring-amber-500 outline-none"
-              />
-              <label className="cursor-pointer py-2.5 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white text-sm font-extrabold flex items-center justify-center gap-2 transition-colors shrink-0 shadow-md shadow-amber-600/20">
-                <Upload className="w-4 h-4" />
-                {uploadingCover ? "Yükleniyor..." : "Kapak Şablonu Yükle (.pptx / Görsel)"}
-                <input
-                  type="file"
-                  accept=".pptx,.png,.jpg,.jpeg,.webp"
-                  disabled={uploadingCover}
-                  onChange={handleUploadCoverTemplate}
-                  className="hidden"
-                />
+            <div className="space-y-2 rounded-2xl bg-slate-50 p-3.5 border border-slate-200">
+              <label
+                htmlFor="new-cover-title-input"
+                className="block text-xs font-extrabold text-slate-800"
+              >
+                Kapak Adı / Slayt Üst Başlık Yazısı (Slaytın üstünden başlayarak ortalı yazılır — alt satır için Enter kullanın)
               </label>
+              <div className="flex flex-col sm:flex-row items-stretch sm:items-start gap-2.5">
+                <textarea
+                  id="new-cover-title-input"
+                  name="coverTitle"
+                  rows={3}
+                  maxLength={360}
+                  value={newCoverName}
+                  onChange={(e) => setNewCoverName(e.target.value)}
+                  placeholder={
+                    "EDİRNE VALİLİĞİ\nSOSYAL YARDIMLAŞMA VE DAYANIŞMA VAKFI\nMÜTEVELLİ HEYET TOPLANTI GÜNDEMİ"
+                  }
+                  style={
+                    {
+                      fieldSizing: "content",
+                      width: "100%",
+                      height: "auto",
+                      minBlockSize: "4.2lh",
+                      maxBlockSize: "8lh",
+                    } as React.CSSProperties
+                  }
+                  className="flex-1 px-3.5 py-2.5 rounded-xl border border-slate-300 bg-white text-xs sm:text-sm font-bold text-center text-slate-900 leading-relaxed focus:ring-2 focus:ring-amber-500 outline-none"
+                />
+                <label className="cursor-pointer py-3 px-4 rounded-xl bg-gradient-to-r from-amber-500 to-orange-600 hover:from-amber-400 hover:to-orange-500 text-white text-xs sm:text-sm font-extrabold flex items-center justify-center gap-2 transition-colors shrink-0 shadow-md shadow-amber-600/20">
+                  <Upload className="w-4 h-4" />
+                  {uploadingCover
+                    ? "Yükleniyor..."
+                    : "Kapak Şablonu Yükle (.pptx / Görsel)"}
+                  <input
+                    type="file"
+                    accept=".pptx,.png,.jpg,.jpeg,.webp"
+                    disabled={uploadingCover}
+                    onChange={handleUploadCoverTemplate}
+                    className="hidden"
+                  />
+                </label>
+              </div>
             </div>
 
             {activeCoverTemplate && (
               <div className="flex items-center justify-between gap-2 px-3.5 py-2.5 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs">
-                <span className="font-bold text-emerald-900">
-                  Aktif Kapak (1. Slayt): <strong>{activeCoverTemplate.name}</strong>
+                <span className="font-bold text-emerald-900 truncate">
+                  Aktif Kapak (1. Slayt):{" "}
+                  <strong>{activeCoverTemplate.name.replace(/\s*\n+\s*/g, " / ")}</strong>
                 </span>
                 <button
                   type="button"
                   onClick={() => handleSelectActiveCover(null)}
-                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 font-bold transition-colors"
+                  className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 font-bold transition-colors shrink-0"
                 >
                   Kapağı Devre Dışı Bırak
                 </button>
@@ -5458,6 +5579,17 @@ export default function PresentationsPage() {
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {coverTemplates.map((cov) => {
                     const isSelected = Boolean(cov.isActiveCover);
+                    const draftTitle =
+                      editingCoverTitles[cov._id] !== undefined
+                        ? editingCoverTitles[cov._id]
+                        : cov.name;
+                    const isDirtyTitle =
+                      editingCoverTitles[cov._id] !== undefined &&
+                      editingCoverTitles[cov._id].trim() !== cov.name.trim();
+                    const previewCov: PresentationTemplateClient = {
+                      ...cov,
+                      name: draftTitle,
+                    };
                     return (
                       <div
                         key={cov._id}
@@ -5470,9 +5602,11 @@ export default function PresentationsPage() {
                         <div className="flex items-center justify-between gap-2">
                           <div className="min-w-0">
                             <div className="text-xs font-extrabold text-slate-900 truncate flex items-center gap-1.5">
-                              <span>{cov.name}</span>
+                              <span className="truncate">
+                                {cov.name.replace(/\s*\n+\s*/g, " / ")}
+                              </span>
                               {isSelected && (
-                                <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-black uppercase">
+                                <span className="px-1.5 py-0.5 rounded bg-emerald-600 text-white text-[9px] font-black uppercase shrink-0">
                                   Aktif 1. Slayt
                                 </span>
                               )}
@@ -5491,7 +5625,54 @@ export default function PresentationsPage() {
                           </button>
                         </div>
 
-                        <CoverSlidePreviewCard cover={cov} />
+                        <div className="space-y-1.5">
+                          <label
+                            htmlFor={`cover-title-${cov._id}`}
+                            className="block text-[11px] font-bold text-slate-700"
+                          >
+                            Kapak Üst Başlık Yazısı (Ortalı):
+                          </label>
+                          <textarea
+                            id={`cover-title-${cov._id}`}
+                            name={`coverTitle_${cov._id}`}
+                            rows={2}
+                            maxLength={360}
+                            value={draftTitle}
+                            onChange={(e) =>
+                              setEditingCoverTitles((prev) => ({
+                                ...prev,
+                                [cov._id]: e.target.value,
+                              }))
+                            }
+                            style={
+                              {
+                                fieldSizing: "content",
+                                width: "100%",
+                                height: "auto",
+                                minBlockSize: "3lh",
+                                maxBlockSize: "7lh",
+                              } as React.CSSProperties
+                            }
+                            className="w-full px-2.5 py-1.5 rounded-xl border border-slate-300 bg-white text-xs font-bold text-center text-slate-900 leading-snug focus:ring-2 focus:ring-amber-500 outline-none"
+                          />
+                          {isDirtyTitle && (
+                            <button
+                              type="button"
+                              disabled={savingCoverTitleId === cov._id}
+                              onClick={() =>
+                                handleRenameCoverTemplate(cov._id, draftTitle)
+                              }
+                              className="w-full py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-700 disabled:opacity-60 text-white text-xs font-extrabold flex items-center justify-center gap-1.5 transition-colors"
+                            >
+                              <Save className="w-3.5 h-3.5" />
+                              {savingCoverTitleId === cov._id
+                                ? "Kaydediliyor..."
+                                : "Kapak Yazısını Kaydet"}
+                            </button>
+                          )}
+                        </div>
+
+                        <CoverSlidePreviewCard cover={previewCov} />
 
                         {!isSelected && (
                           <button

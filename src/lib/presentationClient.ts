@@ -1520,6 +1520,87 @@ async function renderFramedPhotoForPptx(
   }
 }
 
+/**
+ * Kapak Şablonu üst başlık yazısı (Kapak Adı) için 720x540 (4:3) sahnede
+ * yatayda taşmayacak ve alt logolara (y >= %40) çarpmayacak ideal puntoyu hesaplar.
+ */
+let sharedCoverMeasureCtx: CanvasRenderingContext2D | null = null;
+export function computeCoverTitleFontSizePt(rawTitle: string): number {
+  const cleanLines = (rawTitle || "")
+    .replace(/\r\n/g, "\n")
+    .split("\n")
+    .map((l) => l.trim())
+    .filter(Boolean);
+  if (cleanLines.length === 0) return 24;
+
+  const boxWidthPx = 694; // 720 * 0.964
+  const maxBoxHeightPx = 196; // 540 * 0.363 (üst %2.8'den başlayıp %39.1'i geçmez)
+  const lineHeightRatio = 1.54;
+
+  if (typeof document !== "undefined" && !sharedCoverMeasureCtx) {
+    const c = document.createElement("canvas");
+    sharedCoverMeasureCtx = c.getContext("2d");
+  }
+  const ctx = sharedCoverMeasureCtx;
+
+  const measureWidth = (text: string, pt: number): number => {
+    if (ctx) {
+      ctx.font = `800 ${pt}px Verdana, Geneva, sans-serif`;
+      return ctx.measureText(text).width * 1.02;
+    }
+    return text.length * pt * 0.74;
+  };
+
+  // Kullanıcının tek satır olarak yazdığı kasıtlı satırların kırılmadan sığmasını önceliklendir,
+  // çok uzun paragraf girildiyse kontrollü kelime sarmalamasına izin ver.
+  for (let pt = 25; pt >= 12; pt -= 0.5) {
+    let totalVisualLines = 0;
+    let singleLineBroken = false;
+
+    for (const line of cleanLines) {
+      const w = measureWidth(line, pt);
+      if (w <= boxWidthPx) {
+        totalVisualLines += 1;
+      } else {
+        if (line.length <= 44 && pt > 16) {
+          singleLineBroken = true;
+          break;
+        }
+        const words = line.split(/\s+/).filter(Boolean);
+        let cur = "";
+        let wrappedCount = 0;
+        let wordTooWide = false;
+        for (const word of words) {
+          if (measureWidth(word, pt) > boxWidthPx) {
+            wordTooWide = true;
+            break;
+          }
+          const cand = cur ? `${cur} ${word}` : word;
+          if (measureWidth(cand, pt) <= boxWidthPx) {
+            cur = cand;
+          } else {
+            wrappedCount += 1;
+            cur = word;
+          }
+        }
+        if (wordTooWide) {
+          singleLineBroken = true;
+          break;
+        }
+        if (cur) wrappedCount += 1;
+        totalVisualLines += Math.max(1, wrappedCount);
+      }
+    }
+
+    if (singleLineBroken) continue;
+    if (totalVisualLines * pt * lineHeightRatio <= maxBoxHeightPx) {
+      return pt;
+    }
+  }
+
+  return 12;
+}
+
 export async function exportSlidesToPptx(params: {
   slides: SlideItem[];
   fileName: string;
@@ -1627,8 +1708,38 @@ export async function exportSlidesToPptx(params: {
       });
     }
 
+    // Kapak Adını slaytın en üstünden başlayarak yatayda tam ortalı, kalın ve gölgeli olarak yazdır
+    const coverHeaderTitle = (coverTemplate.name || "").trim();
+    if (coverHeaderTitle) {
+      const baseTitlePt = computeCoverTitleFontSizePt(coverHeaderTitle);
+      const scaledHeaderPt =
+        Math.round(baseTitlePt * Math.min(sx, sy) * 10) / 10;
+      coverSlide.addText(coverHeaderTitle, {
+        x: 0.018 * slideW,
+        y: 0.028 * slideH,
+        w: 0.964 * slideW,
+        h: 0.365 * slideH,
+        fontSize: scaledHeaderPt,
+        bold: true,
+        color: "0A0F1A",
+        align: "center",
+        valign: "top",
+        fontFace: "Verdana",
+        lineSpacingMultiple: 1.3,
+        margin: 0,
+        shadow: {
+          type: "outer",
+          blur: 4,
+          offset: 2,
+          angle: 45,
+          color: "334155",
+          opacity: 0.42,
+        },
+      });
+    }
+
     for (const txtBox of coverTemplate.coverSpec?.texts || []) {
-      if (!txtBox.text?.trim()) continue;
+      if (!txtBox.text?.trim() || txtBox.yPct < 38) continue;
       const scaledPt = Math.round(txtBox.fontSizePt * Math.min(sx, sy) * 10) / 10;
       coverSlide.addText(txtBox.text, {
         x: (txtBox.xPct / 100) * slideW,

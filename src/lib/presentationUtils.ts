@@ -442,6 +442,7 @@ export async function extractCoverPptxInfo(buffer: Buffer): Promise<{
   backgroundImageBase64: string;
   slideWidthIn: number;
   slideHeightIn: number;
+  extractedTitle: string;
   coverSpec: ICoverRenderSpec;
 }> {
   const zip = await JSZip.loadAsync(buffer);
@@ -525,6 +526,7 @@ export async function extractCoverPptxInfo(buffer: Buffer): Promise<{
 
   const images: ICoverImageItem[] = [];
   const texts: ICoverTextItem[] = [];
+  const headerTextParts: string[] = [];
 
   if (slide1Xml) {
     const shapes = [...slide1Xml.matchAll(/<p:(sp|pic)\b[\s\S]*?<\/p:\1>/g)];
@@ -534,20 +536,20 @@ export async function extractCoverPptxInfo(buffer: Buffer): Promise<{
       const spPr = s.match(/<p:spPr>[\s\S]*?<\/p:spPr>/)?.[0] || "";
       const off = spPr.match(/<a:off x="(-?\d+)" y="(-?\d+)"/);
       const ext = spPr.match(/<a:ext cx="(\d+)" cy="(\d+)"/);
-      if (!off || !ext) continue;
-
-      const xIn = Number(off[1]) / 914400;
-      const yIn = Number(off[2]) / 914400;
-      const wIn = Number(ext[1]) / 914400;
-      const hIn = Number(ext[2]) / 914400;
-      if (wIn <= 0.05 || hIn <= 0.05) continue;
-
-      const xPct = Math.max(0, Math.min(99, Math.round((xIn / slideWidthIn) * 1000) / 10));
-      const yPct = Math.max(0, Math.min(99, Math.round((yIn / slideHeightIn) * 1000) / 10));
-      const wPct = Math.max(1, Math.min(100, Math.round((wIn / slideWidthIn) * 1000) / 10));
-      const hPct = Math.max(1, Math.min(100, Math.round((hIn / slideHeightIn) * 1000) / 10));
 
       if (isPic) {
+        if (!off || !ext) continue;
+        const xIn = Number(off[1]) / 914400;
+        const yIn = Number(off[2]) / 914400;
+        const wIn = Number(ext[1]) / 914400;
+        const hIn = Number(ext[2]) / 914400;
+        if (wIn <= 0.05 || hIn <= 0.05) continue;
+
+        const xPct = Math.max(0, Math.min(99, Math.round((xIn / slideWidthIn) * 1000) / 10));
+        const yPct = Math.max(0, Math.min(99, Math.round((yIn / slideHeightIn) * 1000) / 10));
+        const wPct = Math.max(1, Math.min(100, Math.round((wIn / slideWidthIn) * 1000) / 10));
+        const hPct = Math.max(1, Math.min(100, Math.round((hIn / slideHeightIn) * 1000) / 10));
+
         const rId = s.match(/<a:blip[^>]*r:embed=["']([^"']+)["']/i)?.[1];
         if (rId && slideRelsMap.has(rId)) {
           const dataUrl = await mediaAsDataUri(slideRelsMap.get(rId)!);
@@ -596,7 +598,29 @@ export async function extractCoverPptxInfo(buffer: Buffer): Promise<{
         }
 
         const fullText = paraLines.join("\n").trim();
-        if (fullText) {
+        if (!fullText) continue;
+
+        if (!off || !ext) {
+          // Placeholder başlık metin kutuları (koordinatı slideLayout/slideMaster içinde olan üst başlıklar)
+          headerTextParts.push(fullText);
+          continue;
+        }
+
+        const xIn = Number(off[1]) / 914400;
+        const yIn = Number(off[2]) / 914400;
+        const wIn = Number(ext[1]) / 914400;
+        const hIn = Number(ext[2]) / 914400;
+        if (wIn <= 0.05 || hIn <= 0.05) continue;
+
+        const xPct = Math.max(0, Math.min(99, Math.round((xIn / slideWidthIn) * 1000) / 10));
+        const yPct = Math.max(0, Math.min(99, Math.round((yIn / slideHeightIn) * 1000) / 10));
+        const wPct = Math.max(1, Math.min(100, Math.round((wIn / slideWidthIn) * 1000) / 10));
+        const hPct = Math.max(1, Math.min(100, Math.round((hIn / slideHeightIn) * 1000) / 10));
+
+        // Üst bölgedeki (yPct < 38) başlık metinlerini kapak adına aktar (kapak adı üstte ortalı çizileceği için çift binmeyi önler)
+        if (yPct < 38) {
+          headerTextParts.push(fullText);
+        } else {
           texts.push({
             text: fullText,
             xPct,
@@ -613,10 +637,13 @@ export async function extractCoverPptxInfo(buffer: Buffer): Promise<{
     }
   }
 
+  const extractedTitle = headerTextParts.join("\n").trim();
+
   return {
     backgroundImageBase64,
     slideWidthIn,
     slideHeightIn,
+    extractedTitle,
     coverSpec: {
       images,
       texts,

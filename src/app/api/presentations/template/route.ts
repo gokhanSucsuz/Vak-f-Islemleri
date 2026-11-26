@@ -148,9 +148,19 @@ export async function POST(req: NextRequest) {
 
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
-    const customName = ((formData.get("name") as string) || "").trim();
+    const rawName = (formData.get("name") as string) || "";
     const templateKind: "slide" | "cover" =
       formData.get("kind") === "cover" ? "cover" : "slide";
+    const customName =
+      templateKind === "cover"
+        ? rawName
+            .replace(/\r\n/g, "\n")
+            .split("\n")
+            .map((l) => l.trim())
+            .filter(Boolean)
+            .join("\n")
+            .slice(0, 360)
+        : rawName.trim();
 
     if (!file) {
       return NextResponse.json({ error: "Dosya seçilmedi." }, { status: 400 });
@@ -175,6 +185,7 @@ export async function POST(req: NextRequest) {
     let slideHeightIn = 7.5;
     let layoutConfig: ITemplateLayoutConfig = DEFAULT_LAYOUT;
     let coverSpec: { images: any[]; texts: any[] } = { images: [], texts: [] };
+    let extractedCoverTitle = "";
     let pptxCompressed: Buffer | undefined;
 
     if (isPptx) {
@@ -184,6 +195,7 @@ export async function POST(req: NextRequest) {
         slideWidthIn = coverInfo.slideWidthIn;
         slideHeightIn = coverInfo.slideHeightIn;
         coverSpec = coverInfo.coverSpec;
+        extractedCoverTitle = coverInfo.extractedTitle || "";
       } else {
         const info = await extractPptxTemplateInfo(buffer);
         backgroundImageBase64 = info.backgroundImageBase64;
@@ -204,7 +216,9 @@ export async function POST(req: NextRequest) {
     }
 
     const templateName =
-      customName || file.name.replace(/\.(pptx|png|jpe?g|webp)$/i, "");
+      customName ||
+      extractedCoverTitle ||
+      file.name.replace(/\.(pptx|png|jpe?g|webp)$/i, "");
 
     await dbConnect();
 
@@ -280,9 +294,57 @@ export async function PATCH(req: NextRequest) {
     }
 
     const body = await req.json();
-    const { activeCoverId } = body as { activeCoverId?: string | null };
+    const { activeCoverId, renameCoverId, newName } = body as {
+      activeCoverId?: string | null;
+      renameCoverId?: string;
+      newName?: string;
+    };
 
     await dbConnect();
+
+    if (renameCoverId) {
+      const cleanedName = String(newName || "")
+        .replace(/\r\n/g, "\n")
+        .split("\n")
+        .map((l) => l.trim())
+        .filter(Boolean)
+        .join("\n")
+        .slice(0, 360);
+
+      if (!cleanedName) {
+        return NextResponse.json(
+          { error: "Kapak adı boş bırakılamaz." },
+          { status: 400 }
+        );
+      }
+
+      const updated = await PresentationTemplate.findOneAndUpdate(
+        { _id: renameCoverId, templateKind: "cover" },
+        { $set: { name: cleanedName } },
+        { new: true }
+      );
+      if (!updated) {
+        return NextResponse.json(
+          { error: "Kapak şablonu bulunamadı." },
+          { status: 404 }
+        );
+      }
+
+      invalidatePresentationTemplatesCache();
+
+      void Log.create({
+        userId,
+        action: "KAPAK_SABLONU_ADI_GUNCELLENDI",
+        details: `Kapak şablonu üst başlık yazısı güncellendi: ${cleanedName.replace(/\n/g, " / ")}`,
+      }).catch(() => {});
+
+      return NextResponse.json({
+        success: true,
+        renamedId: renameCoverId,
+        name: cleanedName,
+      });
+    }
+
     await PresentationTemplate.updateMany(
       { templateKind: "cover" },
       { $set: { isActiveCover: false } }
