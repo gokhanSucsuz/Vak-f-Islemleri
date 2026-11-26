@@ -98,6 +98,7 @@ export async function GET(
         isLocked: Boolean(meeting.isLocked),
         authorizedUserId: meeting.authorizedUserId || null,
         backgroundPreset: meeting.backgroundPreset || "template",
+        photoFramePreset: meeting.photoFramePreset || "none",
         openedBy: meeting.openedBy,
         closedBy: meeting.closedBy,
         closedAt: meeting.closedAt,
@@ -132,7 +133,13 @@ export async function PATCH(
 
     const { id } = await context.params;
     const body = await req.json();
-    const { action, presentationOrder, authorizedUserId, backgroundPreset } = body;
+    const {
+      action,
+      presentationOrder,
+      authorizedUserId,
+      backgroundPreset,
+      photoFramePreset,
+    } = body;
 
     await dbConnect();
     const meeting = await PresentationMeeting.findById(id);
@@ -300,6 +307,35 @@ export async function PATCH(
         meeting: {
           _id: meeting._id,
           backgroundPreset: meeting.backgroundPreset,
+        },
+      });
+    }
+
+    // Toplantı fotoğraflarına toplu kurumsal çerçeve ekleme / değiştirme yalnızca Süper Admin'e aittir
+    if (action === "setPhotoFramePreset") {
+      if (role !== "superadmin") {
+        return NextResponse.json(
+          {
+            error:
+              "Fotoğraflara toplu çerçeve ekleme ve değiştirme yetkisi yalnızca Süper Admin'e aittir.",
+          },
+          { status: 403 }
+        );
+      }
+      meeting.photoFramePreset = photoFramePreset
+        ? String(photoFramePreset).slice(0, 40)
+        : "none";
+      await meeting.save();
+      await Log.create({
+        userId,
+        action: "TOPLANTI_CERCEVE_GUNCELLENDI",
+        details: `Aktif toplantı (${meeting.title}) içindeki tüm sunular için fotoğraf çerçevesi güncellendi: ${meeting.photoFramePreset}`,
+      });
+      return NextResponse.json({
+        success: true,
+        meeting: {
+          _id: meeting._id,
+          photoFramePreset: meeting.photoFramePreset,
         },
       });
     }

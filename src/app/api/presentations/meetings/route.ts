@@ -53,6 +53,7 @@ export async function GET() {
         isLocked: Boolean(m.isLocked),
         authorizedUserId: m.authorizedUserId || null,
         backgroundPreset: m.backgroundPreset || "template",
+        photoFramePreset: (m as any).photoFramePreset || "none",
         openedBy: m.openedBy,
         closedBy: m.closedBy,
         closedAt: m.closedAt,

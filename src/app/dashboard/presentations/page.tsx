@@ -39,6 +39,7 @@ import {
   Crop,
   Scissors,
   Sun,
+  Frame,
 } from "lucide-react";
 import ModernConfirmDialog from "@/components/ModernConfirmDialog";
 import PaginationControls from "@/components/PaginationControls";
@@ -49,6 +50,8 @@ import {
   DEFAULT_TEMPLATE_LAYOUT,
   SLIDE_FONT_OPTIONS,
   BACKGROUND_PRESETS,
+  PHOTO_FRAME_PRESETS,
+  getPhotoFrameWebStyle,
   getPresetBackgroundDataUrl,
   cleanTemplateWatermark,
   compressImageToJpeg,
@@ -63,6 +66,7 @@ interface MeetingItem {
   isLocked: boolean;
   authorizedUserId?: { _id: string; name: string; email?: string } | null;
   backgroundPreset?: string;
+  photoFramePreset?: string;
   openedBy?: { name: string };
   closedBy?: { name: string };
   closedAt?: string;
@@ -135,7 +139,7 @@ function emptySlide(defaultTemplateId?: string): SlideItem {
 }
 
 /**
- * Zengin Metin Editörü (Kalın, İtalik, Altı Çizili, Renk)
+ * Modern Zengin Metin Editörü (Kalın, İtalik, Altı Çizili, Kurumsal Renkler + Her Satırda Canlı ➢ Simgesi)
  */
 function RichDescriptionEditor({
   slideKey,
@@ -149,94 +153,362 @@ function RichDescriptionEditor({
   onChange: (html: string, plain: string) => void;
 }) {
   const ref = useRef<HTMLDivElement>(null);
+  const toolbarRef = useRef<HTMLDivElement>(null);
+  const [formatState, setFormatState] = useState({
+    bold: false,
+    italic: false,
+    underline: false,
+  });
+  const [isEmpty, setIsEmpty] = useState(true);
+  const [lineCount, setLineCount] = useState(0);
+  const [statusAnnouncement, setStatusAnnouncement] = useState("");
+
+  const normalizeRootParagraphs = (el: HTMLDivElement) => {
+    const rawText = (el.innerText || "").replace(/\u00A0/g, " ").trim();
+    if (!rawText) {
+      if (el.innerHTML !== "<p><br></p>") {
+        el.innerHTML = "<p><br></p>";
+      }
+      return;
+    }
+    // İlk satır çıplak text node olarak yazıldıysa <p> içine sar ki ➢ simgesi 1. satırda da anında görünsün
+    const first = el.firstChild;
+    if (first && first.nodeType === Node.TEXT_NODE) {
+      const p = document.createElement("p");
+      while (el.firstChild && el.firstChild.nodeType !== Node.ELEMENT_NODE) {
+        p.appendChild(el.firstChild);
+      }
+      el.insertBefore(p, el.firstChild);
+      const sel = window.getSelection();
+      if (sel && document.activeElement === el) {
+        const range = document.createRange();
+        range.selectNodeContents(p);
+        range.collapse(false);
+        sel.removeAllRanges();
+        sel.addRange(range);
+      }
+    }
+  };
+
+  const syncMetrics = (el: HTMLDivElement) => {
+    const plain = (el.innerText || "").replace(/\u00A0/g, " ");
+    const lines = plain
+      .split(/\r?\n/)
+      .map((l) => l.trim())
+      .filter(Boolean);
+    setIsEmpty(lines.length === 0);
+    setLineCount(lines.length);
+  };
 
   useEffect(() => {
     const el = ref.current;
     if (!el) return;
-    if (initialHtml) {
-      el.innerHTML = initialHtml;
-    } else if (initialPlain) {
-      el.innerHTML = initialPlain
+    if (initialHtml && initialHtml.trim()) {
+      const temp = document.createElement("div");
+      temp.innerHTML = initialHtml;
+      const hasBlocks = Array.from(temp.children).some((c) =>
+        ["P", "DIV", "LI"].includes(c.tagName.toUpperCase())
+      );
+      if (hasBlocks) {
+        el.innerHTML = initialHtml;
+      } else {
+        const lines = (temp.innerText || initialPlain || "")
+          .split(/\r?\n/)
+          .map((l) => l.replace(/^\s*➢\s*/, "").trim())
+          .filter(Boolean);
+        el.innerHTML =
+          lines.length > 0
+            ? lines
+                .map(
+                  (l) =>
+                    `<p>${l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`
+                )
+                .join("")
+            : "<p><br></p>";
+      }
+    } else if (initialPlain && initialPlain.trim()) {
+      const lines = initialPlain
         .split(/\r?\n/)
-        .map((l) => `<p>${l.replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`)
-        .join("");
+        .map((l) => l.replace(/^\s*➢\s*/, "").trim())
+        .filter(Boolean);
+      el.innerHTML =
+        lines.length > 0
+          ? lines
+              .map(
+                (l) =>
+                  `<p>${l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`
+              )
+              .join("")
+          : "<p><br></p>";
     } else {
-      el.innerHTML = "";
+      el.innerHTML = "<p><br></p>";
     }
+    syncMetrics(el);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slideKey]);
+
+  // Toolbar klavye erişilebilirliği: focusgroup desteklemeyen tarayıcılarda roving tabindex yedeği
+  useEffect(() => {
+    const bar = toolbarRef.current;
+    if (!bar || typeof HTMLElement === "undefined") return;
+    if ("focusGroup" in HTMLElement.prototype) return;
+
+    const getItems = () =>
+      Array.from(bar.querySelectorAll<HTMLButtonElement>("button"));
+    const initItems = getItems();
+    initItems.forEach((b, i) => {
+      b.tabIndex = i === 0 ? 0 : -1;
+    });
+
+    const onFocusIn = (e: FocusEvent) => {
+      const items = getItems();
+      const target = e.target as HTMLButtonElement;
+      if (items.includes(target)) {
+        items.forEach((b) => {
+          b.tabIndex = b === target ? 0 : -1;
+        });
+      }
+    };
+
+    const onKeyDown = (e: KeyboardEvent) => {
+      const items = getItems();
+      const idx = items.indexOf(document.activeElement as HTMLButtonElement);
+      if (idx < 0 || items.length === 0) return;
+      const rtl = getComputedStyle(bar).direction === "rtl";
+      let nextIdx = -1;
+      if (e.key === "ArrowRight") {
+        nextIdx = (idx + (rtl ? -1 : 1) + items.length) % items.length;
+      } else if (e.key === "ArrowLeft") {
+        nextIdx = (idx + (rtl ? 1 : -1) + items.length) % items.length;
+      } else if (e.key === "Home") {
+        nextIdx = 0;
+      } else if (e.key === "End") {
+        nextIdx = items.length - 1;
+      }
+      if (nextIdx >= 0) {
+        e.preventDefault();
+        items[nextIdx]?.focus();
+      }
+    };
+
+    bar.addEventListener("focusin", onFocusIn);
+    bar.addEventListener("keydown", onKeyDown);
+    return () => {
+      bar.removeEventListener("focusin", onFocusIn);
+      bar.removeEventListener("keydown", onKeyDown);
+    };
+  }, []);
+
+  const refreshSelectionState = useCallback(() => {
+    const el = ref.current;
+    const sel = typeof document !== "undefined" ? document.getSelection() : null;
+    if (!el || !sel || !sel.anchorNode || !el.contains(sel.anchorNode)) return;
+    try {
+      setFormatState({
+        bold: document.queryCommandState("bold"),
+        italic: document.queryCommandState("italic"),
+        underline: document.queryCommandState("underline"),
+      });
+    } catch {
+      // ignore
+    }
+  }, []);
+
+  useEffect(() => {
+    document.addEventListener("selectionchange", refreshSelectionState);
+    return () => document.removeEventListener("selectionchange", refreshSelectionState);
+  }, [refreshSelectionState]);
 
   const emit = () => {
     const el = ref.current;
     if (!el) return;
-    onChange(el.innerHTML, el.innerText || "");
+    normalizeRootParagraphs(el);
+    syncMetrics(el);
+    const cleanedPlain = (el.innerText || "")
+      .replace(/\u00A0/g, " ")
+      .split(/\r?\n/)
+      .map((l) => l.replace(/^\s*➢\s*/, "").trim())
+      .filter(Boolean)
+      .join("\n");
+    if (!cleanedPlain) {
+      onChange("", "");
+    } else {
+      onChange(el.innerHTML, cleanedPlain);
+    }
   };
 
-  const exec = (cmd: string, val?: string) => {
-    document.execCommand(cmd, false, val);
+  const exec = (cmd: string, val?: string, announceMsg?: string) => {
     ref.current?.focus();
+    try {
+      document.execCommand("defaultParagraphSeparator", false, "p");
+      document.execCommand(cmd, false, val);
+    } catch {
+      // ignore
+    }
+    refreshSelectionState();
     emit();
+    if (announceMsg) {
+      setStatusAnnouncement(announceMsg);
+    }
   };
 
   return (
-    <div className="rounded-2xl border border-slate-200 overflow-hidden bg-white">
-      <div className="flex flex-wrap items-center gap-1 px-2.5 py-2 bg-slate-50 border-b border-slate-200">
-        <button
-          type="button"
-          onClick={() => exec("bold")}
-          className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-700"
-          title="Kalın"
-        >
-          <Bold className="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => exec("italic")}
-          className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-700"
-          title="İtalik"
-        >
-          <Italic className="w-3.5 h-3.5" />
-        </button>
-        <button
-          type="button"
-          onClick={() => exec("underline")}
-          className="p-1.5 rounded-lg hover:bg-slate-200 text-slate-700"
-          title="Altı Çizili"
-        >
-          <Underline className="w-3.5 h-3.5" />
-        </button>
-        <span className="h-4 w-px bg-slate-300 mx-1" />
-        {[
-          { color: "#111827", label: "Siyah" },
-          { color: "#dc2626", label: "Kırmızı" },
-          { color: "#1d4ed8", label: "Mavi" },
-          { color: "#15803d", label: "Yeşil" },
-        ].map((c) => (
+    <div className="rounded-2xl border border-slate-200/95 overflow-hidden bg-white shadow-sm focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-500/12 transition-all">
+      <p role="status" className="visually-hidden">
+        {statusAnnouncement}
+      </p>
+
+      {/* Modern Kurumsal Biçimlendirme Araç Çubuğu */}
+      <div
+        ref={toolbarRef}
+        role="toolbar"
+        aria-label="Açıklama metni biçimlendirme araçları"
+        {...({ focusgroup: "toolbar wrap" } as any)}
+        className="pres-editor-toolbar flex flex-wrap items-center gap-1.5 px-3 py-2 bg-gradient-to-r from-slate-50 via-white to-slate-50 border-b border-slate-200/90"
+      >
+        <div role="group" aria-label="Yazı stili" className="flex items-center gap-1">
           <button
-            key={c.color}
             type="button"
-            onClick={() => exec("foreColor", c.color)}
-            className="w-5 h-5 rounded-full border border-slate-300"
-            style={{ backgroundColor: c.color }}
-            title={c.label}
-          />
-        ))}
+            aria-pressed={formatState.bold}
+            aria-label="Kalın"
+            title="Kalın (Ctrl+B)"
+            onClick={() => exec("bold")}
+            className="p-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 flex items-center justify-center transition-colors"
+          >
+            <Bold className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-pressed={formatState.italic}
+            aria-label="İtalik"
+            title="İtalik (Ctrl+I)"
+            onClick={() => exec("italic")}
+            className="p-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 flex items-center justify-center transition-colors"
+          >
+            <Italic className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            aria-pressed={formatState.underline}
+            aria-label="Altı çizili"
+            title="Altı Çizili (Ctrl+U)"
+            onClick={() => exec("underline")}
+            className="p-1.5 rounded-lg bg-white hover:bg-slate-100 text-slate-700 border border-slate-200/80 flex items-center justify-center transition-colors"
+          >
+            <Underline className="w-3.5 h-3.5" aria-hidden="true" />
+          </button>
+        </div>
+
+        <span
+          role="separator"
+          aria-orientation="vertical"
+          className="h-5 border-l border-slate-300/90 mx-0.5"
+        />
+
+        <div role="group" aria-label="Metin rengi" className="flex items-center gap-1.5">
+          {[
+            { color: "#0f172a", label: "Kurum Siyahı" },
+            { color: "#dc2626", label: "Vurgu Kırmızısı" },
+            { color: "#1d4ed8", label: "Kurumsal Mavi" },
+            { color: "#15803d", label: "Zümrüt Yeşili" },
+            { color: "#881337", label: "Resmi Bordo" },
+          ].map((c) => (
+            <button
+              key={c.color}
+              type="button"
+              aria-label={`Renk: ${c.label}`}
+              title={`Yazı Rengi: ${c.label}`}
+              onClick={() => exec("foreColor", c.color, `Yazı rengi ${c.label} yapıldı`)}
+              className="w-6 h-6 rounded-lg border border-slate-200 bg-white hover:scale-105 flex items-center justify-center transition-transform"
+            >
+              <span
+                aria-hidden="true"
+                className="w-3.5 h-3.5 rounded-full shadow-2xs ring-1 ring-black/10"
+                style={{ backgroundColor: c.color }}
+              />
+            </button>
+          ))}
+        </div>
+
+        <span
+          role="separator"
+          aria-orientation="vertical"
+          className="h-5 border-l border-slate-300/90 mx-0.5 ml-auto"
+        />
+
         <button
           type="button"
-          onClick={() => exec("removeFormat")}
-          className="ml-auto p-1.5 rounded-lg hover:bg-slate-200 text-slate-600 text-xs flex items-center gap-1"
+          aria-label="Biçimi temizle"
           title="Biçimi Temizle"
+          onClick={() => exec("removeFormat", undefined, "Metin biçimlendirmesi temizlendi")}
+          className="px-2.5 py-1 rounded-lg bg-white hover:bg-rose-50 text-slate-600 hover:text-rose-700 border border-slate-200/80 hover:border-rose-200 text-[11px] font-bold flex items-center gap-1 transition-colors"
         >
-          <Eraser className="w-3.5 h-3.5" />
+          <Eraser className="w-3.5 h-3.5" aria-hidden="true" />
+          <span className="hidden sm:inline">Temizle</span>
         </button>
       </div>
+
+      {/* Canlı ➢ Madde İmli Modern Metin Yazım Alanı */}
       <div
         ref={ref}
         contentEditable
         suppressContentEditableWarning
+        data-empty={isEmpty ? "true" : "false"}
+        data-placeholder="Açıklama maddesini yazın (Enter ile yeni ➢ satırı eklenir)..."
+        onFocus={() => {
+          const el = ref.current;
+          if (!el) return;
+          try {
+            document.execCommand("defaultParagraphSeparator", false, "p");
+          } catch {
+            // ignore
+          }
+          normalizeRootParagraphs(el);
+        }}
+        onKeyDown={(e) => {
+          if (e.key === "Enter" && e.shiftKey) {
+            // Shift+Enter da yeni ➢ satırı oluştursun ki slayttaki madde yapısıyla %100 aynı kalsın
+            e.preventDefault();
+            document.execCommand("insertParagraph", false);
+            emit();
+          }
+        }}
+        onPaste={(e) => {
+          const plain = e.clipboardData?.getData("text/plain");
+          if (plain) {
+            e.preventDefault();
+            const lines = plain
+              .split(/\r?\n/)
+              .map((l) => l.replace(/^\s*➢\s*/, "").trim())
+              .filter(Boolean);
+            if (lines.length > 0) {
+              const html = lines
+                .map(
+                  (l) =>
+                    `<p>${l.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")}</p>`
+                )
+                .join("");
+              document.execCommand("insertHTML", false, html);
+              emit();
+            }
+          }
+        }}
         onInput={emit}
-        className="min-h-[140px] max-h-[240px] overflow-y-auto px-3.5 py-2.5 text-sm font-bold text-slate-950 focus:outline-none [&_p]:mb-1"
+        className="pres-rich-editor min-h-[156px] max-h-[260px] overflow-y-auto px-3.5 py-3 text-sm font-bold text-slate-950 bg-gradient-to-b from-white to-slate-50/40 focus:outline-none leading-relaxed"
       />
+
+      {/* Alt Bilgi Çubuğu */}
+      <div className="px-3.5 py-1.5 bg-slate-50/90 border-t border-slate-100 flex items-center justify-between gap-2 text-[11px]">
+        <span className="font-semibold text-slate-500 flex items-center gap-1.5">
+          <span className="inline-flex items-center justify-center w-4 h-4 rounded bg-blue-100 text-blue-800 font-black text-[10px]">
+            ➢
+          </span>
+          Her satır slayt üzerindeki madde simgesiyle birebir görünür
+        </span>
+        <span className="font-extrabold text-blue-700 bg-blue-50 px-2 py-0.5 rounded-full border border-blue-100 tabular-nums shrink-0">
+          {lineCount} Madde
+        </span>
+      </div>
     </div>
   );
 }
@@ -343,11 +615,13 @@ function SlidePreviewCard({
   slide,
   templates,
   meetingBackgroundPreset,
+  meetingPhotoFramePreset,
   onReorderPhotos,
 }: {
   slide: SlideItem;
   templates: PresentationTemplateClient[];
   meetingBackgroundPreset?: string;
+  meetingPhotoFramePreset?: string;
   onReorderPhotos?: (newPhotos: string[]) => void;
 }) {
   const wrapperRef = useRef<HTMLDivElement>(null);
@@ -520,6 +794,9 @@ function SlidePreviewCard({
       ? getPresetBackgroundDataUrl(effectiveBgPreset) ||
         selectedTpl?.backgroundImageBase64
       : selectedTpl?.backgroundImageBase64;
+  const activeFramePreset = meetingPhotoFramePreset || "none";
+  const hasActiveFrame = activeFramePreset !== "none";
+  const frameImgStyle = getPhotoFrameWebStyle(activeFramePreset, false);
 
   return (
     <div
@@ -592,7 +869,9 @@ function SlidePreviewCard({
                     setOverIdx(null);
                   }}
                   title={canDragReorder ? "Sürükleyerek yerini değiştirin" : undefined}
-                  className={`w-full h-full flex items-center justify-center overflow-hidden rounded-lg transition-all ${
+                  className={`w-full h-full flex items-center justify-center ${
+                    hasActiveFrame ? "overflow-visible p-1" : "overflow-hidden rounded-lg"
+                  } transition-all ${
                     canDragReorder ? "cursor-grab active:cursor-grabbing" : ""
                   } ${overIdx === idx && dragIdx !== idx ? "ring-2 ring-blue-500 bg-blue-50/40 scale-[0.98]" : ""} ${
                     dragIdx === idx ? "opacity-50" : ""
@@ -602,7 +881,8 @@ function SlidePreviewCard({
                     src={src}
                     alt={`Slayt fotoğrafı ${idx + 1}`}
                     draggable={false}
-                    className={`drop-shadow-md pointer-events-none rounded-xl ${
+                    style={frameImgStyle}
+                    className={`${hasActiveFrame ? "" : "drop-shadow-md rounded-xl"} pointer-events-none ${
                       fitMode === "fill"
                         ? "w-full h-full object-fill"
                         : fitMode === "cover"
@@ -658,7 +938,9 @@ function SlidePreviewCard({
                 width: `${slot.wPct}%`,
                 height: `${slot.hPct}%`,
               }}
-              className={`absolute flex items-center justify-center overflow-hidden rounded-lg transition-all ${
+              className={`absolute flex items-center justify-center ${
+                hasActiveFrame ? "overflow-visible p-1" : "overflow-hidden rounded-lg"
+              } transition-all ${
                 canDragThis ? "cursor-grab active:cursor-grabbing" : ""
               } ${overIdx === idx && dragIdx !== idx ? "ring-2 ring-blue-500 bg-blue-50/40 scale-[0.98]" : ""} ${
                 dragIdx === idx ? "opacity-50" : ""
@@ -669,7 +951,8 @@ function SlidePreviewCard({
                   src={src}
                   alt={`Slot ${idx + 1}`}
                   draggable={false}
-                  className={`drop-shadow-md pointer-events-none rounded-xl ${
+                  style={frameImgStyle}
+                  className={`${hasActiveFrame ? "" : "drop-shadow-md rounded-xl"} pointer-events-none ${
                     fitMode === "fill"
                       ? "w-full h-full object-fill"
                       : fitMode === "cover"
@@ -826,6 +1109,7 @@ function SlideMiniThumbnail({
   authorName,
   templates,
   meetingBackgroundPreset,
+  meetingPhotoFramePreset,
   onClick,
   groupIndex,
   groupSlideIndex,
@@ -847,6 +1131,7 @@ function SlideMiniThumbnail({
   authorName?: string;
   templates: PresentationTemplateClient[];
   meetingBackgroundPreset?: string;
+  meetingPhotoFramePreset?: string;
   onClick: () => void;
   groupIndex?: number;
   groupSlideIndex?: number;
@@ -1024,7 +1309,14 @@ function SlideMiniThumbnail({
           {/* Üst Kısım: Fotoğraf + Başlık */}
           <div className="absolute inset-x-1.5 top-1.5 h-[42%] flex items-center gap-1.5">
             {firstPhoto ? (
-              <div className="w-[42%] h-full rounded-[4px] overflow-hidden border border-white/80 shadow-2xs bg-slate-200 flex gap-0.5 shrink-0">
+              <div
+                style={
+                  meetingPhotoFramePreset && meetingPhotoFramePreset !== "none"
+                    ? getPhotoFrameWebStyle(meetingPhotoFramePreset, true)
+                    : undefined
+                }
+                className="w-[42%] h-full rounded-[4px] overflow-hidden border border-white/80 shadow-2xs bg-slate-200 flex gap-0.5 shrink-0"
+              >
                 <img
                   src={firstPhoto}
                   alt=""
@@ -1204,6 +1496,7 @@ export default function PresentationsPage() {
   const [loadingMeetingSlides, setLoadingMeetingSlides] = useState(false);
   const [exportingMeeting, setExportingMeeting] = useState(false);
   const [isBgPickerOpen, setIsBgPickerOpen] = useState(false);
+  const [isFramePickerOpen, setIsFramePickerOpen] = useState(false);
 
   // Silme Onayı
   const [deleteTarget, setDeleteTarget] = useState<PresentationListItem | null>(null);
@@ -1558,6 +1851,7 @@ export default function PresentationsPage() {
           fileName: `${item.summaryTitle}.pptx`,
           templates,
           meetingBackgroundPreset: selectedMeeting?.backgroundPreset || "template",
+          meetingPhotoFramePreset: selectedMeeting?.photoFramePreset || "none",
         });
         toast.success("Sunu (.pptx) indirildi.");
       }
@@ -1795,6 +2089,48 @@ export default function PresentationsPage() {
       const label =
         BACKGROUND_PRESETS.find((p) => p.id === presetId)?.label || presetId;
       toast.success(`Tüm toplantı slaytları için arka plan güncellendi: ${label}`);
+    } catch (err: any) {
+      toast.error(err.message);
+    }
+  };
+
+  // Toplantı Fotoğraf Çerçevesini Toplu Değiştir (Yalnızca Süper Admin — Aktif Toplantıdaki Tüm Sunulara Uygulanır)
+  const handleSetMeetingPhotoFrame = async (meetingId: string, framePresetId: string) => {
+    try {
+      const res = await fetch(`/api/presentations/meetings/${meetingId}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "setPhotoFramePreset",
+          photoFramePreset: framePresetId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Fotoğraf çerçevesi güncellenemedi");
+
+      setMeetings((prev) =>
+        prev.map((m) =>
+          m._id === meetingId ? { ...m, photoFramePreset: framePresetId } : m
+        )
+      );
+      setBulkPreviewModal((prev) =>
+        prev && prev.meeting._id === meetingId
+          ? { ...prev, meeting: { ...prev.meeting, photoFramePreset: framePresetId } }
+          : prev
+      );
+      setManageMeetingModal((prev) =>
+        prev && prev.meeting._id === meetingId
+          ? { ...prev, meeting: { ...prev.meeting, photoFramePreset: framePresetId } }
+          : prev
+      );
+
+      const label =
+        PHOTO_FRAME_PRESETS.find((p) => p.id === framePresetId)?.label || framePresetId;
+      toast.success(
+        framePresetId === "none"
+          ? "Aktif toplantıdaki tüm sunu fotoğraflarından çerçeve kaldırıldı."
+          : `Aktif toplantıdaki tüm sunulara fotoğraf çerçevesi uygulandı: ${label}`
+      );
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -2225,6 +2561,7 @@ export default function PresentationsPage() {
           fileName: `${meeting.title}.pptx`,
           templates,
           meetingBackgroundPreset: meeting.backgroundPreset || "template",
+          meetingPhotoFramePreset: meeting.photoFramePreset || "none",
         });
 
         await fetch(`/api/presentations/meetings/${meeting._id}`, {
@@ -2335,6 +2672,7 @@ export default function PresentationsPage() {
     const editorMeeting =
       meetings.find((m) => m._id === editorMeetingId) || selectedMeeting;
     const editorBgPreset = editorMeeting?.backgroundPreset || "template";
+    const editorFramePreset = editorMeeting?.photoFramePreset || "none";
     const currentTop = activeSlide.descTopPct ?? 46;
     const currentBottom = activeSlide.descBottomPct ?? 96.5;
     const currentPhotoW = activeSlide.photoWidthPct ?? 41;
@@ -2371,6 +2709,7 @@ export default function PresentationsPage() {
                   fileName: `${activeSlide.fullName || "sunu"}.pptx`,
                   templates,
                   meetingBackgroundPreset: editorBgPreset,
+                  meetingPhotoFramePreset: editorFramePreset,
                 })
               }
               className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs sm:text-sm font-bold transition-all"
@@ -2780,6 +3119,31 @@ export default function PresentationsPage() {
                       </div>
                     </div>
                   )}
+
+                  {/* Sadece Süper Admin İçin: Aktif Toplantıdaki Tüm Sunulara Toplu Kurumsal Fotoğraf Çerçevesi Seçimi */}
+                  {isSuperAdmin && editorMeeting && editorMeeting.status === "open" && (
+                    <div className="pt-2.5 border-t border-slate-200/80 space-y-2">
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-[11px] font-extrabold text-indigo-900 flex items-center gap-1.5">
+                          <Frame className="w-3.5 h-3.5 text-indigo-600" />
+                          Toplu Fotoğraf Çerçevesi (Süper Admin • Tüm Toplantı Sunularına Uygulanır)
+                        </span>
+                      </div>
+                      <select
+                        value={editorFramePreset}
+                        onChange={(e) =>
+                          handleSetMeetingPhotoFrame(editorMeeting._id, e.target.value)
+                        }
+                        className="w-full px-3 py-2 rounded-xl border border-indigo-200 bg-white text-xs font-bold text-slate-800 focus:ring-2 focus:ring-indigo-500 outline-none"
+                      >
+                        {PHOTO_FRAME_PRESETS.map((fp) => (
+                          <option key={fp.id} value={fp.id}>
+                            {fp.label} — {fp.description}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -2999,15 +3363,22 @@ export default function PresentationsPage() {
                 slide={activeSlide}
                 templates={templates}
                 meetingBackgroundPreset={editorBgPreset}
+                meetingPhotoFramePreset={editorFramePreset}
                 onReorderPhotos={(newPhotos) => updateCurrentSlide({ photos: newPhotos })}
               />
             </div>
 
             {hasDescBox && (
-              <div className="pt-2 border-t border-slate-100">
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  Açıklama Alanı (Metin Editörü — Her satır otomatik ➢ işareti alır)
-                </label>
+              <div className="pt-3 border-t border-slate-100 space-y-2">
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <label className="text-xs font-extrabold uppercase tracking-wider text-slate-800 flex items-center gap-1.5">
+                    <Edit3 className="w-3.5 h-3.5 text-blue-600" />
+                    Slayt Açıklama Maddeleri
+                  </label>
+                  <span className="text-[11px] font-semibold text-blue-700 bg-blue-50 px-2.5 py-0.5 rounded-full border border-blue-100">
+                    Canlı ➢ Madde Görünümü Aktif
+                  </span>
+                </div>
                 <RichDescriptionEditor
                   slideKey={`${editingId || "new"}_${activeSlideIdx}`}
                   initialHtml={activeSlide.descriptionHtml || ""}
@@ -3311,7 +3682,10 @@ export default function PresentationsPage() {
                 {canManageSelectedMeeting && selectedMeeting.status === "open" && (
                   <button
                     type="button"
-                    onClick={() => setIsBgPickerOpen((p) => !p)}
+                    onClick={() => {
+                      setIsBgPickerOpen((p) => !p);
+                      setIsFramePickerOpen(false);
+                    }}
                     className={`px-3.5 py-2.5 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all border ${
                       isBgPickerOpen
                         ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20"
@@ -3323,6 +3697,36 @@ export default function PresentationsPage() {
                     {BACKGROUND_PRESETS.find(
                       (p) => p.id === (selectedMeeting.backgroundPreset || "template")
                     )?.label || "Şablon Varsayılanı"}
+                  </button>
+                )}
+
+                {isSuperAdmin && selectedMeeting.status === "open" && (
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setIsFramePickerOpen((p) => !p);
+                      setIsBgPickerOpen(false);
+                    }}
+                    title="Süper Admin: Aktif toplantıdaki tüm sunu fotoğraflarına toplu kurumsal çerçeve uygula veya değiştir"
+                    className={`px-3.5 py-2.5 rounded-xl text-xs font-extrabold shadow-xs flex items-center gap-1.5 transition-all border ${
+                      isFramePickerOpen
+                        ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white border-indigo-600 shadow-md shadow-indigo-500/25"
+                        : (selectedMeeting.photoFramePreset || "none") !== "none"
+                          ? "bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200"
+                          : "bg-white hover:bg-slate-50 text-slate-800 border-slate-200"
+                    }`}
+                  >
+                    <Frame
+                      className={`w-4 h-4 ${
+                        isFramePickerOpen ? "text-sky-200" : "text-indigo-600"
+                      }`}
+                    />
+                    <span>
+                      Fotoğraf Çerçevesi:{" "}
+                      {PHOTO_FRAME_PRESETS.find(
+                        (p) => p.id === (selectedMeeting.photoFramePreset || "none")
+                      )?.label || "Çerçevesiz"}
+                    </span>
                   </button>
                 )}
 
@@ -3412,6 +3816,81 @@ export default function PresentationsPage() {
                           </div>
                           <div className="text-[10px] font-semibold text-slate-700 truncate">
                             {preset.label}
+                          </div>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+            {isSuperAdmin &&
+              selectedMeeting.status === "open" &&
+              isFramePickerOpen && (
+                <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/70 via-white to-slate-50 border border-indigo-200/80 space-y-3 shadow-xs">
+                  <div className="flex flex-wrap items-center justify-between gap-2">
+                    <div>
+                      <span className="text-xs font-extrabold text-slate-900 flex items-center gap-1.5">
+                        <Frame className="w-4 h-4 text-indigo-600" />
+                        Toplu Kurumsal Fotoğraf Çerçevesi Seçimi (Sadece Süper Admin)
+                      </span>
+                      <p className="text-[11px] text-slate-500 mt-0.5">
+                        Seçtiğiniz veya değiştirdiğiniz çerçeve, aktif toplantı dosyasındaki tüm sunu fotoğraflarına ve indirilecek PowerPoint (.pptx) dosyasına toplu olarak uygulanır.
+                      </p>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setIsFramePickerOpen(false)}
+                      className="px-2.5 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-xs font-bold text-slate-600"
+                    >
+                      Kapat
+                    </button>
+                  </div>
+
+                  <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-2.5">
+                    {PHOTO_FRAME_PRESETS.map((frame) => {
+                      const isActive =
+                        (selectedMeeting.photoFramePreset || "none") === frame.id;
+                      const previewFrameStyle =
+                        frame.id === "none"
+                          ? { borderRadius: "6px" }
+                          : getPhotoFrameWebStyle(frame.id, true);
+
+                      return (
+                        <button
+                          key={frame.id}
+                          type="button"
+                          onClick={() =>
+                            handleSetMeetingPhotoFrame(selectedMeeting._id, frame.id)
+                          }
+                          className={`p-2 rounded-2xl border text-left transition-all flex flex-col justify-between gap-1.5 ${
+                            isActive
+                              ? "border-indigo-600 ring-2 ring-indigo-500/30 bg-white shadow-md"
+                              : "border-slate-200/90 bg-white hover:border-indigo-300 hover:shadow-sm"
+                          }`}
+                        >
+                          {/* Çerçeve Canlı Önizleme Sahnesi */}
+                          <div className="w-full aspect-[4/3] rounded-xl bg-gradient-to-br from-slate-200 via-slate-300 to-slate-400 p-2 flex items-center justify-center overflow-visible relative">
+                            {frame.badge && (
+                              <span className="absolute top-1 right-1 z-10 px-1.5 py-0.5 rounded-full bg-slate-900/75 text-white text-[8px] font-extrabold leading-none">
+                                {frame.badge}
+                              </span>
+                            )}
+                            <div
+                              style={previewFrameStyle}
+                              className="w-[78%] h-[78%] bg-gradient-to-tr from-sky-600 via-blue-500 to-indigo-400 flex items-center justify-center overflow-hidden"
+                            >
+                              <ImageIcon className="w-4 h-4 text-white/90" />
+                            </div>
+                          </div>
+
+                          <div>
+                            <div className="text-[11px] font-extrabold text-slate-800 truncate">
+                              {frame.label}
+                            </div>
+                            <div className="text-[9.5px] text-slate-500 line-clamp-2 leading-tight mt-0.5">
+                              {frame.description}
+                            </div>
                           </div>
                         </button>
                       );
@@ -3605,7 +4084,18 @@ export default function PresentationsPage() {
                               className="p-4 rounded-2xl border border-slate-200/90 hover:border-blue-400 hover:shadow-xl hover:shadow-blue-900/8 hover:-translate-y-0.5 bg-white flex flex-col justify-between gap-3.5 transition-all cursor-pointer group"
                             >
                               <div className="flex items-start gap-3.5">
-                                <div className="relative w-24 h-18 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shrink-0 shadow-xs">
+                                <div
+                                  style={
+                                    selectedMeeting.photoFramePreset &&
+                                    selectedMeeting.photoFramePreset !== "none"
+                                      ? getPhotoFrameWebStyle(
+                                          selectedMeeting.photoFramePreset,
+                                          true
+                                        )
+                                      : undefined
+                                  }
+                                  className="relative w-24 h-18 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shrink-0 shadow-xs"
+                                >
                                   {item.firstPhoto ? (
                                     <img
                                       src={item.firstPhoto}
@@ -4221,6 +4711,9 @@ export default function PresentationsPage() {
                         meetingBackgroundPreset={
                           selectedMeeting?.backgroundPreset || "template"
                         }
+                        meetingPhotoFramePreset={
+                          selectedMeeting?.photoFramePreset || "none"
+                        }
                         onClick={() => setPreviewSlideIdx(idx)}
                       />
                     ))}
@@ -4257,6 +4750,7 @@ export default function PresentationsPage() {
                     slide={previewRecord.slides[previewSlideIdx] || emptySlide()}
                     templates={templates}
                     meetingBackgroundPreset={selectedMeeting?.backgroundPreset || "template"}
+                    meetingPhotoFramePreset={selectedMeeting?.photoFramePreset || "none"}
                   />
 
                   {previewRecord.slides.length > 1 && (
@@ -4521,8 +5015,29 @@ export default function PresentationsPage() {
                   </div>
                 </div>
 
-                {/* Sağ: Sıralama Kaydet + Geçiş Kontrolleri & Kapat */}
-                <div className="flex items-center gap-2 shrink-0">
+                {/* Sağ: Süper Admin Toplu Çerçeve Seçici + Sıralama Kaydet + Geçiş Kontrolleri & Kapat */}
+                <div className="flex items-center gap-2 shrink-0 flex-wrap">
+                  {isSuperAdmin && bulkPreviewModal.meeting.status === "open" && (
+                    <select
+                      aria-label="Aktif toplantı toplu fotoğraf çerçevesi"
+                      title="Süper Admin: Aktif toplantıdaki tüm sunu fotoğraflarına toplu çerçeve uygula"
+                      value={bulkPreviewModal.meeting.photoFramePreset || "none"}
+                      onChange={(e) =>
+                        handleSetMeetingPhotoFrame(
+                          bulkPreviewModal.meeting._id,
+                          e.target.value
+                        )
+                      }
+                      className="px-2.5 py-1.5 rounded-xl bg-white/12 hover:bg-white/20 border border-white/20 text-white text-xs font-bold outline-none cursor-pointer [&>option]:text-slate-900"
+                    >
+                      {PHOTO_FRAME_PRESETS.map((fp) => (
+                        <option key={fp.id} value={fp.id}>
+                          Çerçeve: {fp.label}
+                        </option>
+                      ))}
+                    </select>
+                  )}
+
                   {isBulkOrderDirty && (
                     <button
                       type="button"
@@ -4675,6 +5190,9 @@ export default function PresentationsPage() {
                           meetingBackgroundPreset={
                             bulkPreviewModal.meeting.backgroundPreset || "template"
                           }
+                          meetingPhotoFramePreset={
+                            bulkPreviewModal.meeting.photoFramePreset || "none"
+                          }
                           onClick={() => {
                             setBulkIdx(idx);
                             if (mobileBulkTab === "edit") {
@@ -4740,6 +5258,9 @@ export default function PresentationsPage() {
                         templates={templates}
                         meetingBackgroundPreset={
                           bulkPreviewModal.meeting.backgroundPreset || "template"
+                        }
+                        meetingPhotoFramePreset={
+                          bulkPreviewModal.meeting.photoFramePreset || "none"
                         }
                       />
 

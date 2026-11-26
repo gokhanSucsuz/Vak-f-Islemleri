@@ -172,6 +172,177 @@ export const BACKGROUND_PRESETS: BackgroundPresetOption[] = [
   },
 ];
 
+export interface PhotoFramePresetOption {
+  id: string;
+  label: string;
+  badge?: string;
+  description: string;
+}
+
+export const PHOTO_FRAME_PRESETS: PhotoFramePresetOption[] = [
+  {
+    id: "none",
+    label: "Çerçevesiz (Varsayılan)",
+    description: "Standart yumuşak köşeli fotoğraf görünümü",
+  },
+  {
+    id: "duz_beyaz",
+    label: "Düz Beyaz Kurumsal",
+    badge: "Klasik",
+    description: "Saf düz beyaz net kurumsal fotoğraf çerçevesi",
+  },
+  {
+    id: "beyaz_3d_kabartma",
+    label: "3B Beyaz Galeri",
+    badge: "3B Derinlik",
+    description: "Üç boyutlu eğimli beyaz çerçeve ve derin sahne gölgesi",
+  },
+  {
+    id: "modern_cift_beyaz",
+    label: "Modern Çift Beyaz",
+    badge: "Modern",
+    description: "Çift katmanlı düz beyaz paspartu ve ince gümüş kontur",
+  },
+  {
+    id: "kurumsal_lacivert_3d",
+    label: "3B Kurumsal Lacivert",
+    badge: "3B Kurumsal",
+    description: "3 boyutlu lacivert dış çerçeve ve düz beyaz iç paspartu",
+  },
+  {
+    id: "altin_prestij_3d",
+    label: "3B Prestij Altın & Beyaz",
+    badge: "3B Göz Alıcı",
+    description: "Metalik 3 boyutlu altın dış çerçeve ve düz beyaz iç paspartu",
+  },
+  {
+    id: "bordo_resmi_3d",
+    label: "3B Resmi Bordo & Beyaz",
+    badge: "3B Resmi",
+    description: "3 boyutlu resmi bordo çerçeve ve düz beyaz iç şerit",
+  },
+  {
+    id: "kristal_cam_3d",
+    label: "Modern 3B Kristal",
+    badge: "3B Modern",
+    description: "Yüzen 3 boyutlu parlak kristal beyaz-mavi ışık çerçevesi",
+  },
+];
+
+/**
+ * Canlı web önizlemesi ve küçük kartlar için fotoğraf çerçevesi CSS stillerini döndürür.
+ * Düz renk ve çok katmanlı 3B gölgeler doğrudan <img> etrafını sarar.
+ */
+export function getPhotoFrameWebStyle(
+  framePresetId?: string,
+  compact = false
+): Record<string, string | number> {
+  const id = framePresetId || "none";
+  const scale = compact ? 0.42 : 1;
+  const px = (v: number) => `${Math.max(1, Math.round(v * scale * 10) / 10)}px`;
+
+  switch (id) {
+    case "duz_beyaz":
+      return {
+        boxSizing: "border-box",
+        backgroundColor: "#ffffff",
+        padding: px(6.5),
+        border: `${px(1.5)} solid #dbe3ee`,
+        borderRadius: px(10),
+        boxShadow: compact
+          ? "0 1px 4px rgba(15, 23, 42, 0.18)"
+          : "0 5px 14px rgba(15, 23, 42, 0.18), 0 1px 3px rgba(15, 23, 42, 0.1)",
+      };
+    case "beyaz_3d_kabartma":
+      return {
+        boxSizing: "border-box",
+        background:
+          "linear-gradient(145deg var(--in-oklab, ), #ffffff 0%, #f8fafc 65%, #eef2f6 100%)",
+        padding: px(8),
+        borderTop: `${px(2)} solid #ffffff`,
+        borderLeft: `${px(2)} solid #ffffff`,
+        borderRight: `${px(2.5)} solid #cbd5e1`,
+        borderBottom: `${px(3.5)} solid #94a3b8`,
+        borderRadius: px(12),
+        boxShadow: compact
+          ? "0 3px 7px rgba(15, 23, 42, 0.3)"
+          : "0 16px 28px -6px rgba(15, 23, 42, 0.42), 0 6px 12px -3px rgba(15, 23, 42, 0.24), inset 0 0 0 1px rgba(15, 23, 42, 0.06)",
+      };
+    case "modern_cift_beyaz":
+      return {
+        boxSizing: "border-box",
+        backgroundColor: "#ffffff",
+        padding: px(7.5),
+        border: `${px(2)} solid #cbd5e1`,
+        outline: `${px(3)} solid #ffffff`,
+        outlineOffset: `-${px(4.5)}`,
+        borderRadius: px(12),
+        boxShadow: compact
+          ? "0 2px 6px rgba(15, 23, 42, 0.22)"
+          : "0 12px 24px -5px rgba(15, 23, 42, 0.3), 0 3px 7px rgba(15, 23, 42, 0.14)",
+      };
+    case "kurumsal_lacivert_3d":
+      return {
+        boxSizing: "border-box",
+        backgroundColor: "#ffffff",
+        padding: px(5),
+        borderTop: `${px(5)} solid #2b5282`,
+        borderLeft: `${px(5)} solid #234670`,
+        borderRight: `${px(5.5)} solid #162d4c`,
+        borderBottom: `${px(6)} solid #0f213a`,
+        borderRadius: px(11),
+        boxShadow: compact
+          ? "0 3px 7px rgba(15, 23, 42, 0.32)"
+          : "0 15px 26px -5px rgba(15, 23, 42, 0.44), 0 5px 10px rgba(15, 23, 42, 0.24)",
+      };
+    case "altin_prestij_3d":
+      return {
+        boxSizing: "border-box",
+        backgroundColor: "#ffffff",
+        padding: px(5),
+        borderTop: `${px(5)} solid #e5c87e`,
+        borderLeft: `${px(5)} solid #d4b15f`,
+        borderRight: `${px(5.5)} solid #9a732a`,
+        borderBottom: `${px(6)} solid #785619`,
+        borderRadius: px(11),
+        boxShadow: compact
+          ? "0 3px 7px rgba(120, 86, 25, 0.32)"
+          : "0 16px 28px -5px rgba(15, 23, 42, 0.42), 0 5px 12px rgba(120, 86, 25, 0.3)",
+      };
+    case "bordo_resmi_3d":
+      return {
+        boxSizing: "border-box",
+        backgroundColor: "#ffffff",
+        padding: px(5),
+        borderTop: `${px(5)} solid #be123c`,
+        borderLeft: `${px(5)} solid #9f1239`,
+        borderRight: `${px(5.5)} solid #6b0f2b`,
+        borderBottom: `${px(6)} solid #4c0519`,
+        borderRadius: px(11),
+        boxShadow: compact
+          ? "0 3px 7px rgba(76, 5, 25, 0.3)"
+          : "0 15px 26px -5px rgba(15, 23, 42, 0.42), 0 5px 11px rgba(136, 19, 55, 0.28)",
+      };
+    case "kristal_cam_3d":
+      return {
+        boxSizing: "border-box",
+        background:
+          "linear-gradient(135deg var(--in-oklab, ), #ffffff 0%, #eff6ff 52%, #ffffff 100%)",
+        padding: px(7),
+        borderTop: `${px(2.5)} solid #ffffff`,
+        borderLeft: `${px(2.5)} solid #ffffff`,
+        borderRight: `${px(2.5)} solid #bfdbfe`,
+        borderBottom: `${px(3.5)} solid #93c5fd`,
+        borderRadius: px(14),
+        boxShadow: compact
+          ? "0 3px 8px rgba(30, 58, 138, 0.26)"
+          : "0 16px 30px -6px rgba(30, 58, 138, 0.36), 0 6px 12px -2px rgba(15, 23, 42, 0.2), 0 0 0 1px rgba(147, 197, 253, 0.6)",
+      };
+    default:
+      return {};
+  }
+}
+
 const presetBgCache = new Map<string, string>();
 
 /**
@@ -542,14 +713,267 @@ function htmlToLinesOfRuns(html: string): RichRun[][] {
   return lines;
 }
 
+const framedPptxCache = new Map<
+  string,
+  {
+    dataUrl: string;
+    shadow: {
+      type: "outer";
+      blur: number;
+      offset: number;
+      angle: number;
+      color: string;
+      opacity: number;
+    };
+  }
+>();
+
+async function renderFramedPhotoForPptx(
+  dataUrl: string,
+  framePresetId?: string
+): Promise<{
+  dataUrl: string;
+  shadow: {
+    type: "outer";
+    blur: number;
+    offset: number;
+    angle: number;
+    color: string;
+    opacity: number;
+  };
+}> {
+  const defaultShadow = {
+    type: "outer" as const,
+    blur: 4,
+    offset: 2,
+    angle: 45,
+    color: "475569",
+    opacity: 0.3,
+  };
+  const preset = framePresetId || "none";
+  if (!dataUrl || typeof window === "undefined") {
+    return { dataUrl, shadow: defaultShadow };
+  }
+  if (preset === "none") {
+    const rounded = await roundImageCorners(dataUrl);
+    return { dataUrl: rounded, shadow: defaultShadow };
+  }
+
+  const cacheKey = `${preset}::${dataUrl.length}::${dataUrl.slice(0, 64)}::${dataUrl.slice(-48)}`;
+  const cached = framedPptxCache.get(cacheKey);
+  if (cached) return cached;
+
+  try {
+    const img = await new Promise<HTMLImageElement>((resolve, reject) => {
+      const el = new Image();
+      el.onload = () => resolve(el);
+      el.onerror = () => reject(new Error("Görsel yüklenemedi"));
+      el.src = dataUrl;
+    });
+    const iw = img.naturalWidth || img.width;
+    const ih = img.naturalHeight || img.height;
+    if (!iw || !ih) return { dataUrl, shadow: defaultShadow };
+
+    const minDim = Math.min(iw, ih);
+    const outerBand =
+      preset === "kurumsal_lacivert_3d" ||
+      preset === "altin_prestij_3d" ||
+      preset === "bordo_resmi_3d"
+        ? Math.max(10, Math.round(minDim * 0.022))
+        : preset === "beyaz_3d_kabartma"
+          ? Math.max(6, Math.round(minDim * 0.01))
+          : Math.max(4, Math.round(minDim * 0.006));
+
+    const whiteMat =
+      preset === "duz_beyaz"
+        ? Math.max(14, Math.round(minDim * 0.028))
+        : preset === "beyaz_3d_kabartma"
+          ? Math.max(16, Math.round(minDim * 0.032))
+          : preset === "modern_cift_beyaz"
+            ? Math.max(16, Math.round(minDim * 0.03))
+            : Math.max(11, Math.round(minDim * 0.02));
+
+    const totalPad = outerBand + whiteMat;
+    const cw = iw + totalPad * 2;
+    const ch = ih + totalPad * 2;
+    const outerRadius = Math.max(14, Math.round(minDim * 0.042));
+    const innerRadius = Math.max(8, Math.round(minDim * 0.024));
+
+    const canvas = document.createElement("canvas");
+    canvas.width = cw;
+    canvas.height = ch;
+    const ctx = canvas.getContext("2d");
+    if (!ctx) return { dataUrl, shadow: defaultShadow };
+
+    // 1. Dış çerçeve dolgusu ve 3B eğim (bevel) efekti
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(0, 0, cw, ch, outerRadius);
+    ctx.closePath();
+    ctx.clip();
+
+    if (preset === "duz_beyaz") {
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.strokeStyle = "#DBE3EE";
+      ctx.lineWidth = Math.max(3, Math.round(minDim * 0.005));
+      ctx.strokeRect(1.5, 1.5, cw - 3, ch - 3);
+    } else if (preset === "beyaz_3d_kabartma") {
+      const g = ctx.createLinearGradient(0, 0, cw, ch);
+      g.addColorStop(0, "#FFFFFF");
+      g.addColorStop(0.7, "#F8FAFC");
+      g.addColorStop(1, "#E2E8F0");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, cw, ch);
+
+      // Alt ve sağ 3B pah gölgesi
+      ctx.strokeStyle = "#94A3B8";
+      ctx.lineWidth = Math.max(6, Math.round(minDim * 0.012));
+      ctx.strokeRect(0, 0, cw, ch);
+      ctx.strokeStyle = "#FFFFFF";
+      ctx.lineWidth = Math.max(5, Math.round(minDim * 0.01));
+      ctx.beginPath();
+      ctx.moveTo(0, ch);
+      ctx.lineTo(0, 0);
+      ctx.lineTo(cw, 0);
+      ctx.stroke();
+    } else if (preset === "modern_cift_beyaz") {
+      ctx.fillStyle = "#FFFFFF";
+      ctx.fillRect(0, 0, cw, ch);
+      const midInset = Math.round(totalPad * 0.45);
+      ctx.strokeStyle = "#CBD5E1";
+      ctx.lineWidth = Math.max(3, Math.round(minDim * 0.005));
+      ctx.beginPath();
+      ctx.roundRect(
+        midInset,
+        midInset,
+        cw - midInset * 2,
+        ch - midInset * 2,
+        Math.max(10, outerRadius - 4)
+      );
+      ctx.stroke();
+      ctx.strokeStyle = "#E2E8F0";
+      ctx.lineWidth = 2;
+      ctx.strokeRect(1, 1, cw - 2, ch - 2);
+    } else if (preset === "kurumsal_lacivert_3d") {
+      const g = ctx.createLinearGradient(0, 0, cw, ch);
+      g.addColorStop(0, "#2B5282");
+      g.addColorStop(0.5, "#1E3A5F");
+      g.addColorStop(1, "#0F213A");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (preset === "altin_prestij_3d") {
+      const g = ctx.createLinearGradient(0, 0, cw, ch);
+      g.addColorStop(0, "#ECCF86");
+      g.addColorStop(0.45, "#C29845");
+      g.addColorStop(1, "#785619");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (preset === "bordo_resmi_3d") {
+      const g = ctx.createLinearGradient(0, 0, cw, ch);
+      g.addColorStop(0, "#BE123C");
+      g.addColorStop(0.5, "#881337");
+      g.addColorStop(1, "#4C0519");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, cw, ch);
+    } else if (preset === "kristal_cam_3d") {
+      const g = ctx.createLinearGradient(0, 0, cw, ch);
+      g.addColorStop(0, "#FFFFFF");
+      g.addColorStop(0.55, "#EFF6FF");
+      g.addColorStop(1, "#DBEAFE");
+      ctx.fillStyle = g;
+      ctx.fillRect(0, 0, cw, ch);
+      ctx.strokeStyle = "#93C5FD";
+      ctx.lineWidth = Math.max(4, Math.round(minDim * 0.008));
+      ctx.strokeRect(2, 2, cw - 4, ch - 4);
+    }
+
+    // 2. İç düz beyaz paspartu katmanı (renkli 3B çerçevelerde saf beyaz iç çerçeve)
+    if (
+      preset === "kurumsal_lacivert_3d" ||
+      preset === "altin_prestij_3d" ||
+      preset === "bordo_resmi_3d"
+    ) {
+      ctx.fillStyle = "#FFFFFF";
+      ctx.beginPath();
+      ctx.roundRect(
+        outerBand,
+        outerBand,
+        cw - outerBand * 2,
+        ch - outerBand * 2,
+        Math.max(10, outerRadius - 5)
+      );
+      ctx.fill();
+    }
+
+    // 3. Fotoğrafın kendisini iç yuvarlatılmış alana çiz
+    ctx.save();
+    ctx.beginPath();
+    ctx.roundRect(totalPad, totalPad, iw, ih, innerRadius);
+    ctx.closePath();
+    ctx.clip();
+    ctx.drawImage(img, totalPad, totalPad, iw, ih);
+    ctx.restore();
+
+    // Hafif iç kontur
+    ctx.strokeStyle = "rgba(15, 23, 42, 0.08)";
+    ctx.lineWidth = Math.max(1.5, Math.round(minDim * 0.0025));
+    ctx.beginPath();
+    ctx.roundRect(totalPad, totalPad, iw, ih, innerRadius);
+    ctx.stroke();
+
+    ctx.restore();
+
+    const shadow =
+      preset === "duz_beyaz"
+        ? {
+            type: "outer" as const,
+            blur: 6,
+            offset: 2.5,
+            angle: 45,
+            color: "334155",
+            opacity: 0.25,
+          }
+        : {
+            type: "outer" as const,
+            blur: 10,
+            offset: 4,
+            angle: 45,
+            color: preset === "kristal_cam_3d" ? "1E3A8A" : "0F172A",
+            opacity: 0.4,
+          };
+
+    const result = {
+      dataUrl: canvas.toDataURL("image/png"),
+      shadow,
+    };
+    if (framedPptxCache.size > 60) {
+      const firstKey = framedPptxCache.keys().next().value;
+      if (firstKey) framedPptxCache.delete(firstKey);
+    }
+    framedPptxCache.set(cacheKey, result);
+    return result;
+  } catch {
+    return { dataUrl, shadow: defaultShadow };
+  }
+}
+
 export async function exportSlidesToPptx(params: {
   slides: SlideItem[];
   fileName: string;
   templates?: PresentationTemplateClient[];
   template?: PresentationTemplateClient | null;
   meetingBackgroundPreset?: string;
+  meetingPhotoFramePreset?: string;
 }) {
-  const { slides, fileName, templates = [], template = null, meetingBackgroundPreset } = params;
+  const {
+    slides,
+    fileName,
+    templates = [],
+    template = null,
+    meetingBackgroundPreset,
+    meetingPhotoFramePreset = "none",
+  } = params;
   const { default: PptxGenJS } = await import("pptxgenjs");
   const pptx = new PptxGenJS();
 
@@ -651,21 +1075,17 @@ export async function exportSlidesToPptx(params: {
             drawX = box.x + (box.w - drawW) / 2;
             drawY = box.y + (box.h - drawH) / 2;
           }
-          const roundedPhoto = await roundImageCorners(photoData);
+          const framed = await renderFramedPhotoForPptx(
+            photoData,
+            meetingPhotoFramePreset
+          );
           slide.addImage({
-            data: roundedPhoto,
+            data: framed.dataUrl,
             x: drawX,
             y: drawY,
             w: drawW,
             h: drawH,
-            shadow: {
-              type: "outer",
-              blur: 4,
-              offset: 2,
-              angle: 45,
-              color: "475569",
-              opacity: 0.3,
-            },
+            shadow: framed.shadow,
           });
         }
       }
@@ -692,21 +1112,17 @@ export async function exportSlidesToPptx(params: {
           drawX = bx + (bw - drawW) / 2;
           drawY = by + (bh - drawH) / 2;
         }
-        const roundedPhoto = await roundImageCorners(photoData);
+        const framed = await renderFramedPhotoForPptx(
+          photoData,
+          meetingPhotoFramePreset
+        );
         slide.addImage({
-          data: roundedPhoto,
+          data: framed.dataUrl,
           x: drawX,
           y: drawY,
           w: drawW,
           h: drawH,
-          shadow: {
-            type: "outer",
-            blur: 4,
-            offset: 2,
-            angle: 45,
-            color: "475569",
-            opacity: 0.3,
-          },
+          shadow: framed.shadow,
         });
       }
     }

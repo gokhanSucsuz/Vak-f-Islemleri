@@ -12,6 +12,7 @@ export interface IPresentationMeeting extends Document {
   closedAt?: Date;
   presentationOrder: string[];
   backgroundPreset?: string;
+  photoFramePreset?: string;
   downloadedAt?: Date;
   photosExpireAt?: Date;
   photosPurged: boolean;
@@ -48,6 +49,10 @@ const PresentationMeetingSchema = new Schema<IPresentationMeeting>(
     backgroundPreset: {
       type: String,
       default: "template",
+    },
+    photoFramePreset: {
+      type: String,
+      default: "none",
     },
     downloadedAt: { type: Date },
     photosExpireAt: { type: Date, index: true },

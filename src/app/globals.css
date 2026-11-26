@@ -16,6 +16,15 @@
   :root {
     --background: 220 33% 97%;
     --foreground: 222.2 84% 4.9%;
+    --in-oklab: ;
+    --in-oklch: ;
+  }
+
+  @supports (background: linear-gradient(in oklab, white, black)) {
+    :root {
+      --in-oklab: in oklab;
+      --in-oklch: in oklch;
+    }
   }
 
   * {
@@ -189,6 +198,78 @@
     .pres-filmstrip-scroller::-webkit-scrollbar-track {
       background: var(--scrollbar-track);
       border-radius: 9999px;
+    }
+  }
+
+  /* Sunu Açıklama Editörü: Her satırda slayt üzerindeki ➢ simgesi canlı görünür */
+  .pres-rich-editor {
+    counter-reset: pres-bullet;
+  }
+
+  .pres-rich-editor > p,
+  .pres-rich-editor > div {
+    position: relative;
+    padding-inline-start: 1.55rem;
+    padding-block: 0.22rem;
+    margin-block-end: 0.25rem;
+    border-radius: 0.5rem;
+    min-height: 1.65em;
+    transition: background-color 0.15s ease;
+  }
+
+  @media (hover: hover) {
+    .pres-rich-editor > p:hover,
+    .pres-rich-editor > div:hover {
+      background-color: rgb(241 245 249 / 0.75);
+    }
+  }
+
+  .pres-rich-editor > p::before,
+  .pres-rich-editor > div::before {
+    content: "➢";
+    position: absolute;
+    inset-inline-start: 0.3rem;
+    top: 0.22rem;
+    color: #1e3a8a;
+    font-weight: 900;
+    line-height: inherit;
+    pointer-events: none;
+    user-select: none;
+    -webkit-user-select: none;
+  }
+
+  .pres-rich-editor[data-empty="true"] > p:first-child::after,
+  .pres-rich-editor[data-empty="true"] > div:first-child::after {
+    content: attr(data-placeholder);
+    color: #94a3b8;
+    font-weight: 500;
+    pointer-events: none;
+    user-select: none;
+  }
+
+  /* Modern Toolbar: ARIA durumuna bağlı görünüm ve yüksek kontrast uyumu */
+  .pres-editor-toolbar button {
+    min-inline-size: 2rem;
+    min-block-size: 2rem;
+  }
+
+  @media (pointer: coarse) {
+    .pres-editor-toolbar button {
+      min-inline-size: 2.5rem;
+      min-block-size: 2.5rem;
+    }
+  }
+
+  .pres-editor-toolbar button[aria-pressed="true"] {
+    background-color: #1d4ed8;
+    color: #ffffff;
+    box-shadow: inset 0 0 0 1px #1e40af;
+  }
+
+  @media (forced-colors: active) {
+    .pres-editor-toolbar button[aria-pressed="true"] {
+      background-color: Highlight;
+      color: HighlightText;
     }
   }
 
