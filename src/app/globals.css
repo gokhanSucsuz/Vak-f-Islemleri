@@ -90,6 +90,36 @@
     text-wrap: pretty;
   }
 
+  /* Sistem genelindeki tüm aktif buton ve tıklanabilir öğelerde el işareti (pointer) göster */
+  button:not(:disabled):not([aria-disabled="true"]),
+  [type="button"]:not(:disabled):not([aria-disabled="true"]),
+  [type="submit"]:not(:disabled):not([aria-disabled="true"]),
+  [type="reset"]:not(:disabled):not([aria-disabled="true"]),
+  [role="button"]:not([aria-disabled="true"]),
+  a[href],
+  select:not(:disabled),
+  summary,
+  label[for],
+  input[type="checkbox"]:not(:disabled),
+  input[type="radio"]:not(:disabled),
+  input[type="range"]:not(:disabled) {
+    cursor: pointer;
+  }
+
+  button:disabled,
+  button[aria-disabled="true"],
+  select:disabled {
+    cursor: not-allowed;
+  }
+
+  button[data-drag-handle="true"]:not(:disabled) {
+    cursor: grab;
+  }
+
+  button[data-drag-handle="true"]:not(:disabled):active {
+    cursor: grabbing;
+  }
+
   html.is-reordering-slides,
   html.is-reordering-slides * {
     cursor: grabbing !important;

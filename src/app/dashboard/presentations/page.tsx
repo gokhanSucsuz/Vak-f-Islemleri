@@ -4134,8 +4134,8 @@ export default function PresentationsPage() {
                       </select>
                     )}
 
-                    <div className="relative w-full sm:w-72">
-                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+                    <div className="relative w-full sm:w-80">
+                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
                       <input
                         type="text"
                         value={search}
@@ -4143,8 +4143,8 @@ export default function PresentationsPage() {
                           setSearch(e.target.value);
                           setPresPage(1);
                         }}
-                        placeholder="Adı Soyadı, mahalle veya personel ara..."
-                        className="w-full pl-10 pr-8 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
+                        placeholder="Ad soyad, mahalle veya personel..."
+                        className="w-full pl-10 pr-8 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
                       />
                       {search && (
                         <button
@@ -4374,149 +4374,199 @@ export default function PresentationsPage() {
                           })}
                         </div>
 
-                        <div className="hidden md:block overflow-x-auto">
-                          <table className="w-full text-left border-collapse">
-                          <thead>
-                            <tr className="bg-slate-50/95 border-b border-slate-200/80 text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
-                              <th scope="col" className="py-3 px-4 w-12">
-                                #
-                              </th>
-                              <th scope="col" className="py-3 px-4">
-                                Sunu / Hane Bilgisi
-                              </th>
-                              <th scope="col" className="py-3 px-4">
-                                Hazırlayan
-                              </th>
-                              <th scope="col" className="py-3 px-4">
-                                İçerik & Boyut
-                              </th>
-                              <th scope="col" className="py-3 px-4">
-                                Tarih
-                              </th>
-                              <th scope="col" className="py-3 px-4 text-right">
-                                İşlemler
-                              </th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-slate-100">
-                            {paginatedPresentations.map((item, rowIdx) => {
-                              const globalIdx = (safePresPage - 1) * presPageSize + rowIdx + 1;
-                              const isOwnRecord = String(item.createdBy?._id) === String(userId);
-                              const canModify =
-                                selectedMeeting.status === "open" &&
-                                (canManageSelectedMeeting ||
-                                  (!selectedMeeting.isLocked && isOwnRecord));
-
-                              return (
-                                <tr
-                                  key={item._id}
-                                  onMouseEnter={() => prefetchRecordSlides(item)}
-                                  onClick={() => handleOpenRecord(item, "preview")}
-                                  className="even:bg-slate-50/40 odd:bg-white hover:bg-blue-50/40 transition-colors cursor-pointer group"
+                        <div
+                          tabIndex={0}
+                          role="region"
+                          aria-label="Toplantıdaki sunular listesi"
+                          className="hidden md:block overflow-x-auto max-w-full"
+                          style={{ containerType: "inline-size" }}
+                        >
+                          <table className="w-full table-fixed text-left border-separate border-spacing-0">
+                            <thead className="sticky top-0 z-10">
+                              <tr className="bg-slate-50 text-[11px] font-extrabold uppercase tracking-wider text-slate-600">
+                                <th
+                                  scope="col"
+                                  className="py-3 pl-4 pr-2 w-11 border-b border-slate-200/80"
                                 >
-                                  <td className="py-3 px-4 text-xs font-bold text-slate-400 tabular-nums">
-                                    {globalIdx}
-                                  </td>
-                                  <td className="py-3 px-4">
-                                    <div className="flex items-center gap-3 min-w-[220px]">
-                                      <div className="w-14 h-10 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shrink-0">
-                                        {item.firstPhoto ? (
-                                          <img
-                                            src={item.firstPhoto}
-                                            alt=""
-                                            className="w-full h-full object-cover"
-                                          />
-                                        ) : (
-                                          <div className="w-full h-full flex items-center justify-center text-slate-400">
-                                            <PresentationIcon className="w-4 h-4" />
+                                  #
+                                </th>
+                                <th
+                                  scope="col"
+                                  className="py-3 px-3 border-b border-slate-200/80"
+                                >
+                                  Sunu / Hane Bilgisi
+                                </th>
+                                <th
+                                  scope="col"
+                                  className="py-3 px-2.5 w-40 xl:w-44 border-b border-slate-200/80"
+                                >
+                                  Hazırlayan
+                                </th>
+                                <th
+                                  scope="col"
+                                  className="py-3 px-2.5 w-44 xl:w-52 border-b border-slate-200/80"
+                                >
+                                  İçerik & Boyut
+                                </th>
+                                <th
+                                  scope="col"
+                                  className="hidden xl:table-cell py-3 px-2.5 w-26 border-b border-slate-200/80"
+                                >
+                                  Tarih
+                                </th>
+                                <th
+                                  scope="col"
+                                  className="py-3 pl-2.5 pr-4 w-[242px] text-right border-b border-slate-200/80 sticky right-0 bg-slate-50 z-10"
+                                >
+                                  İşlemler
+                                </th>
+                              </tr>
+                            </thead>
+                            <tbody className="divide-y divide-slate-100">
+                              {paginatedPresentations.map((item, rowIdx) => {
+                                const globalIdx = (safePresPage - 1) * presPageSize + rowIdx + 1;
+                                const isOwnRecord = String(item.createdBy?._id) === String(userId);
+                                const canModify =
+                                  selectedMeeting.status === "open" &&
+                                  (canManageSelectedMeeting ||
+                                    (!selectedMeeting.isLocked && isOwnRecord));
+
+                                return (
+                                  <tr
+                                    key={item._id}
+                                    onMouseEnter={() => prefetchRecordSlides(item)}
+                                    onClick={() => handleOpenRecord(item, "preview")}
+                                    className="even:bg-slate-50/50 odd:bg-white hover:bg-blue-50/50 transition-colors cursor-pointer group"
+                                  >
+                                    <td className="py-3 pl-4 pr-2 text-xs font-bold text-slate-400 tabular-nums border-b border-slate-100">
+                                      {globalIdx}
+                                    </td>
+                                    <td className="py-3 px-3 min-w-0 border-b border-slate-100">
+                                      <div className="flex items-center gap-2.5 min-w-0">
+                                        <div
+                                          style={
+                                            selectedMeeting.photoFramePreset &&
+                                            selectedMeeting.photoFramePreset !== "none"
+                                              ? getPhotoFrameWebStyle(
+                                                  selectedMeeting.photoFramePreset,
+                                                  true
+                                                )
+                                              : undefined
+                                          }
+                                          className="w-12 h-9 rounded-lg overflow-hidden border border-slate-200 bg-slate-100 shrink-0"
+                                        >
+                                          {item.firstPhoto ? (
+                                            <img
+                                              src={item.firstPhoto}
+                                              alt=""
+                                              className="w-full h-full object-cover"
+                                            />
+                                          ) : (
+                                            <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                              <PresentationIcon className="w-4 h-4" />
+                                            </div>
+                                          )}
+                                        </div>
+                                        <div className="min-w-0 flex-1">
+                                          <div
+                                            title={item.summaryTitle}
+                                            className="text-sm font-extrabold text-slate-900 group-hover:text-blue-700 truncate transition-colors"
+                                          >
+                                            {item.summaryTitle}
                                           </div>
+                                          <div className="xl:hidden text-[11px] text-slate-400 tabular-nums mt-0.5">
+                                            {new Date(item.createdAt).toLocaleDateString("tr-TR")}
+                                          </div>
+                                          {item.lockedBy &&
+                                            String(item.lockedBy._id) !== String(userId) && (
+                                              <span className="inline-block mt-0.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200 truncate max-w-full">
+                                                Düzenleniyor: {item.lockedBy.name}
+                                              </span>
+                                            )}
+                                        </div>
+                                      </div>
+                                    </td>
+                                    <td className="py-3 px-2.5 min-w-0 border-b border-slate-100">
+                                      <span
+                                        title={item.createdBy?.name || "Personel"}
+                                        className="inline-block max-w-full truncate px-2.5 py-1 rounded-lg bg-blue-50/80 text-xs font-bold text-blue-700 align-middle"
+                                      >
+                                        {item.createdBy?.name || "Personel"}
+                                      </span>
+                                    </td>
+                                    <td className="py-3 px-2.5 whitespace-nowrap border-b border-slate-100">
+                                      <div className="flex items-center gap-1 flex-wrap">
+                                        <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-indigo-50 text-indigo-700">
+                                          {item.slideCount} Sayfa
+                                        </span>
+                                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-600">
+                                          {item.totalPhotos} Foto
+                                        </span>
+                                        {typeof item.presentationBytes === "number" && (
+                                          <span className="px-1.5 py-0.5 rounded-md text-[10.5px] font-semibold bg-sky-50 text-sky-700">
+                                            {formatBytesLabel(item.presentationBytes)}
+                                          </span>
                                         )}
                                       </div>
-                                      <div className="min-w-0">
-                                        <div className="text-sm font-extrabold text-slate-900 group-hover:text-blue-700 truncate max-w-md transition-colors">
-                                          {item.summaryTitle}
-                                        </div>
-                                        {item.lockedBy &&
-                                          String(item.lockedBy._id) !== String(userId) && (
-                                            <span className="inline-block mt-0.5 px-2 py-0.5 rounded-md text-[10px] font-bold bg-amber-100 text-amber-800 border border-amber-200">
-                                              Düzenleniyor: {item.lockedBy.name}
-                                            </span>
-                                          )}
+                                    </td>
+                                    <td className="hidden xl:table-cell py-3 px-2.5 whitespace-nowrap text-xs font-medium text-slate-500 tabular-nums border-b border-slate-100">
+                                      {new Date(item.createdAt).toLocaleDateString("tr-TR")}
+                                    </td>
+                                    <td
+                                      className="py-3 pl-2.5 pr-4 whitespace-nowrap text-right border-b border-slate-100 sticky right-0 group-odd:bg-white group-even:bg-slate-50 group-hover:bg-blue-50 transition-colors"
+                                      onClick={(e) => e.stopPropagation()}
+                                    >
+                                      <div className="inline-flex items-center justify-end gap-1.5">
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenRecord(item, "preview")}
+                                          title="Sunuyu Görüntüle"
+                                          className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1 transition-colors"
+                                        >
+                                          <Eye className="w-3.5 h-3.5 text-slate-600 shrink-0" />
+                                          <span>Görüntüle</span>
+                                        </button>
+                                        <button
+                                          type="button"
+                                          onClick={() => handleOpenRecord(item, "download")}
+                                          title=".pptx Olarak İndir"
+                                          aria-label=".pptx olarak indir"
+                                          className="p-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/70 transition-colors shrink-0"
+                                        >
+                                          <Download className="w-4 h-4" />
+                                        </button>
+                                        {canModify ? (
+                                          <>
+                                            <button
+                                              type="button"
+                                              onClick={() => handleOpenRecord(item, "edit")}
+                                              title="Sunuyu Düzenle"
+                                              className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1 shadow-xs transition-colors"
+                                            >
+                                              <Edit3 className="w-3.5 h-3.5 shrink-0" />
+                                              <span>Düzenle</span>
+                                            </button>
+                                            <button
+                                              type="button"
+                                              onClick={() => setDeleteTarget(item)}
+                                              title="Sunuyu Sil"
+                                              aria-label="Sunuyu sil"
+                                              className="p-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/70 transition-colors shrink-0"
+                                            >
+                                              <Trash2 className="w-4 h-4" />
+                                            </button>
+                                          </>
+                                        ) : (
+                                          <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200/80">
+                                            Salt Görüntüleme
+                                          </span>
+                                        )}
                                       </div>
-                                    </div>
-                                  </td>
-                                  <td className="py-3 px-4 whitespace-nowrap">
-                                    <span className="inline-flex items-center px-2.5 py-1 rounded-lg bg-blue-50/80 text-xs font-bold text-blue-700">
-                                      {item.createdBy?.name || "Personel"}
-                                    </span>
-                                  </td>
-                                  <td className="py-3 px-4 whitespace-nowrap">
-                                    <div className="flex items-center gap-1.5">
-                                      <span className="px-2 py-0.5 rounded-md text-[11px] font-bold bg-indigo-50 text-indigo-700">
-                                        {item.slideCount} Sayfa
-                                      </span>
-                                      <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-600">
-                                        {item.totalPhotos} Fotoğraf
-                                      </span>
-                                      {typeof item.presentationBytes === "number" && (
-                                        <span className="px-2 py-0.5 rounded-md text-[11px] font-semibold bg-sky-50 text-sky-700">
-                                          {formatBytesLabel(item.presentationBytes)}
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                  <td className="py-3 px-4 whitespace-nowrap text-xs font-medium text-slate-500 tabular-nums">
-                                    {new Date(item.createdAt).toLocaleDateString("tr-TR")}
-                                  </td>
-                                  <td
-                                    className="py-3 px-4 whitespace-nowrap text-right"
-                                    onClick={(e) => e.stopPropagation()}
-                                  >
-                                    <div className="inline-flex items-center justify-end gap-1.5">
-                                      <button
-                                        onClick={() => handleOpenRecord(item, "preview")}
-                                        title="Sunuyu Görüntüle"
-                                        className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1 transition-colors"
-                                      >
-                                        <Eye className="w-3.5 h-3.5 text-slate-600" />
-                                        Görüntüle
-                                      </button>
-                                      <button
-                                        onClick={() => handleOpenRecord(item, "download")}
-                                        title=".pptx Olarak İndir"
-                                        className="p-1.5 rounded-xl bg-emerald-50 hover:bg-emerald-100 text-emerald-700 border border-emerald-200/70 transition-colors"
-                                      >
-                                        <Download className="w-4 h-4" />
-                                      </button>
-                                      {canModify ? (
-                                        <>
-                                          <button
-                                            onClick={() => handleOpenRecord(item, "edit")}
-                                            title="Sunuyu Düzenle"
-                                            className="px-2.5 py-1.5 rounded-xl bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold inline-flex items-center gap-1 shadow-xs transition-colors"
-                                          >
-                                            <Edit3 className="w-3.5 h-3.5" />
-                                            Düzenle
-                                          </button>
-                                          <button
-                                            onClick={() => setDeleteTarget(item)}
-                                            title="Sunuyu Sil"
-                                            className="p-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/70 transition-colors"
-                                          >
-                                            <Trash2 className="w-4 h-4" />
-                                          </button>
-                                        </>
-                                      ) : (
-                                        <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200/80">
-                                          Salt Görüntüleme
-                                        </span>
-                                      )}
-                                    </div>
-                                  </td>
-                                </tr>
-                              );
-                            })}
-                          </tbody>
+                                    </td>
+                                  </tr>
+                                );
+                              })}
+                            </tbody>
                           </table>
                         </div>
                       </div>
