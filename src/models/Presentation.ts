@@ -25,6 +25,7 @@ export interface ISlideData {
 export interface IPresentation extends Document {
   meetingId: mongoose.Types.ObjectId;
   summaryTitle: string;
+  searchCorpus?: string | null;
   slideCount: number;
   totalPhotos?: number | null;
   photoBytes?: number | null;
@@ -51,6 +52,10 @@ const PresentationSchema = new Schema<IPresentation>(
       type: String,
       required: true,
       trim: true,
+    },
+    searchCorpus: {
+      type: String,
+      default: null,
     },
     slideCount: {
       type: Number,
@@ -104,7 +109,7 @@ PresentationSchema.index({ meetingId: 1, createdAt: -1 });
 PresentationSchema.index({ createdBy: 1, createdAt: -1 });
 
 applyFieldEncryption(PresentationSchema, {
-  stringFields: ["summaryTitle", "firstPhoto"],
+  stringFields: ["summaryTitle", "firstPhoto", "searchCorpus"],
   bufferFields: ["slidesCompressed"],
 });
 

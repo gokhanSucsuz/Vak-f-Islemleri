@@ -43,6 +43,8 @@ import {
   Scissors,
   Sun,
   Frame,
+  Copy,
+  CopyPlus,
 } from "lucide-react";
 import ModernConfirmDialog from "@/components/ModernConfirmDialog";
 import PaginationControls from "@/components/PaginationControls";
@@ -103,6 +105,9 @@ interface PresentationListItem {
   meetingId: string;
   meetingTitle: string;
   meetingStatus: "open" | "closed";
+  meetingDate?: string | null;
+  meetingBackgroundPreset?: string;
+  meetingPhotoFramePreset?: string;
   summaryTitle: string;
   slideCount: number;
   totalPhotos: number;
@@ -1577,6 +1582,16 @@ export default function PresentationsPage() {
   const [presentations, setPresentations] = useState<PresentationListItem[]>([]);
   const [search, setSearch] = useState("");
   const [debouncedSearch, setDebouncedSearch] = useState("");
+  const [globalSearch, setGlobalSearch] = useState("");
+  const [debouncedGlobalSearch, setDebouncedGlobalSearch] = useState("");
+  const [globalResults, setGlobalResults] = useState<PresentationListItem[]>([]);
+  const [globalTotalMatched, setGlobalTotalMatched] = useState(0);
+  const [searchingGlobal, setSearchingGlobal] = useState(false);
+  const [copyingRecordId, setCopyingRecordId] = useState<string | null>(null);
+  const [editorCopySourceInfo, setEditorCopySourceInfo] = useState<{
+    fromMeetingTitle: string;
+    summaryTitle: string;
+  } | null>(null);
   const [selectedPersonnelId, setSelectedPersonnelId] = useState<string>("");
   const [presPage, setPresPage] = useState(1);
   const [presPageSize, setPresPageSize] = useState(12);
@@ -1626,6 +1641,10 @@ export default function PresentationsPage() {
     title: string;
     authorName: string;
     canModify: boolean;
+    meetingTitle?: string;
+    meetingStatus?: "open" | "closed";
+    meetingBackgroundPreset?: string;
+    meetingPhotoFramePreset?: string;
     slides: SlideItem[];
   } | null>(null);
   const [previewSlideIdx, setPreviewSlideIdx] = useState(0);
@@ -2123,12 +2142,65 @@ export default function PresentationsPage() {
     fetchPresentations();
   }, [fetchPresentations]);
 
+  useEffect(() => {
+    const t = setTimeout(() => setDebouncedGlobalSearch(globalSearch), 200);
+    return () => clearTimeout(t);
+  }, [globalSearch]);
+
+  // Tüm Toplantı Klasörleri genelinde şifreli Sunu Ara-Bul
+  useEffect(() => {
+    const q = debouncedGlobalSearch.trim();
+    if (!q) {
+      setGlobalResults([]);
+      setGlobalTotalMatched(0);
+      setSearchingGlobal(false);
+      return;
+    }
+
+    const controller = new AbortController();
+    setSearchingGlobal(true);
+    const params = new URLSearchParams({
+      globalSearch: "1",
+      search: q,
+    });
+
+    shieldedFetchJson(`/api/presentations?${params.toString()}`, {
+      signal: controller.signal,
+    })
+      .then((res) => {
+        if (res.ok) {
+          setGlobalResults(res.data?.presentations || []);
+          setGlobalTotalMatched(
+            typeof res.data?.totalMatched === "number"
+              ? res.data.totalMatched
+              : (res.data?.presentations || []).length
+          );
+        }
+      })
+      .catch(() => {})
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setSearchingGlobal(false);
+        }
+      });
+
+    return () => controller.abort();
+  }, [debouncedGlobalSearch]);
+
   const selectedMeeting = meetings.find((m) => m._id === selectedMeetingId) || null;
-  const hasOpenMeeting = meetings.some((m) => m.status === "open");
+  const activeOpenMeeting = meetings.find((m) => m.status === "open") || null;
+  const hasOpenMeeting = Boolean(activeOpenMeeting);
   const isAuthorizedForSelected =
     Boolean(selectedMeeting?.authorizedUserId?._id) &&
     String(selectedMeeting?.authorizedUserId?._id) === String(userId);
   const canManageSelectedMeeting = isManager || isAuthorizedForSelected;
+  const isAuthorizedForOpenMeeting =
+    Boolean(activeOpenMeeting?.authorizedUserId?._id) &&
+    String(activeOpenMeeting?.authorizedUserId?._id) === String(userId);
+  const canAddToOpenMeeting = Boolean(
+    activeOpenMeeting &&
+      (!activeOpenMeeting.isLocked || isManager || isAuthorizedForOpenMeeting)
+  );
 
   // Yeni Şablon Yükle (Birden fazla şablon destekli)
   const handleUploadTemplate = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -2346,10 +2418,176 @@ export default function PresentationsPage() {
     }
 
     setEditingId(null);
+    setEditorCopySourceInfo(null);
     setEditorMeetingId(openMeeting._id);
     setSlides([emptySlide(templates[0]?._id)]);
     setActiveSlideIdx(0);
     setEditorMode(true);
+  };
+
+  // Eski / Kapatılmış veya Mevcut Bir Sunuyu Doğrudan Açık Toplantıya Aynen Kopyala (Orijinal Sunu Değişmez!)
+  const handleCopyToOpenMeetingDirect = async (
+    item: PresentationListItem,
+    slideIndices?: number[]
+  ) => {
+    if (!activeOpenMeeting) {
+      toast.error(
+        "Şu anda açık bir toplantı bulunmuyor. Kopyalama yapabilmek için önce yeni bir toplantı açılmalıdır."
+      );
+      return;
+    }
+    if (!canAddToOpenMeeting) {
+      toast.error(
+        "Açık toplantı sıralama/kapatma için kilitlenmiştir. Sadece yönetici ve yetkili personel sunu kopyalayabilir."
+      );
+      return;
+    }
+    if (copyingRecordId) return;
+
+    setCopyingRecordId(item._id);
+    const toastId = toast.loading(
+      slideIndices && slideIndices.length === 1
+        ? `${slideIndices[0] + 1}. slayt açık toplantıya kopyalanıyor...`
+        : "Sunu açık toplantı dosyasına kopyalanıyor..."
+    );
+
+    try {
+      const res = await shieldedSendJson("/api/presentations", "POST", {
+        action: "copyToOpenMeeting",
+        sourcePresentationId: item._id,
+        targetMeetingId: activeOpenMeeting._id,
+        ...(Array.isArray(slideIndices) && slideIndices.length > 0
+          ? { slideIndices }
+          : {}),
+      });
+      const data = res.data;
+      toast.dismiss(toastId);
+
+      if (!res.ok) {
+        throw new Error(data?.error || "Sunu kopyalanamadı.");
+      }
+
+      const card = data?.presentationCard as PresentationListItem | undefined;
+      if (card) {
+        if (String(selectedMeetingId) === String(activeOpenMeeting._id)) {
+          setPresentations((prev) => [card, ...prev]);
+        }
+        setMeetings((prev) =>
+          prev.map((m) =>
+            String(m._id) === String(activeOpenMeeting._id)
+              ? {
+                  ...m,
+                  recordCount: m.recordCount + 1,
+                  totalSlides: m.totalSlides + (card.slideCount || 1),
+                }
+              : m
+          )
+        );
+      } else {
+        void fetchAll({ silent: true });
+        if (String(selectedMeetingId) === String(activeOpenMeeting._id)) {
+          void fetchPresentations();
+        }
+      }
+
+      toast.success(
+        slideIndices && slideIndices.length === 1
+          ? `Seçilen slayt "${activeOpenMeeting.title}" toplantısına yeni sunu olarak kopyalandı.`
+          : `"${item.summaryTitle}" sunusu aynen "${activeOpenMeeting.title}" toplantısına kopyalandı.`
+      );
+    } catch (err: any) {
+      toast.dismiss(toastId);
+      toast.error(err.message || "Kopyalama sırasında hata oluştu.");
+    } finally {
+      setCopyingRecordId(null);
+    }
+  };
+
+  // Eski / Kapatılmış veya Mevcut Bir Sununun Kopyasını Düzenleyicide Aç (Yeni Toplantıya Dahil Edilmek Üzere Üzerinde Değişiklik Yapılabilir)
+  const handleCopyToEditorAndModify = async (
+    item: PresentationListItem,
+    slideIndices?: number[],
+    preloadedSlides?: SlideItem[]
+  ) => {
+    if (!activeOpenMeeting) {
+      toast.error(
+        "Şu anda açık bir toplantı bulunmuyor. Kopyalayıp düzenlemek için önce yeni bir toplantı açılmalıdır."
+      );
+      return;
+    }
+    if (!canAddToOpenMeeting) {
+      toast.error(
+        "Açık toplantı sıralama/kapatma için kilitlenmiştir. Sadece yönetici ve yetkili personel sunu ekleyebilir."
+      );
+      return;
+    }
+
+    try {
+      let sourceSlides: SlideItem[] = preloadedSlides || [];
+      if (sourceSlides.length === 0) {
+        const cached = slideCacheRef.current.get(item._id);
+        if (cached?.slides?.length) {
+          sourceSlides = cached.slides;
+        } else {
+          setPreviewLoadingModal({
+            title: "Sunu Kopyası Hazırlanıyor...",
+            subtitle: `${item.summaryTitle} slaytları yeni toplantı için aktarılıyor`,
+          });
+          const res = await shieldedFetchJson(`/api/presentations/${item._id}`);
+          setPreviewLoadingModal(null);
+          if (!res.ok) {
+            throw new Error(res.data?.error || "Kaynak sunu slaytları alınamadı.");
+          }
+          sourceSlides = res.data?.presentation?.slides || [];
+          if (sourceSlides.length > 0) {
+            slideCacheRef.current.set(item._id, {
+              meetingId: String(res.data?.presentation?.meetingId || item.meetingId),
+              slides: sourceSlides,
+            });
+          }
+        }
+      }
+
+      if (sourceSlides.length === 0) {
+        toast.error("Kopyalanacak slayt içeriği bulunamadı.");
+        return;
+      }
+
+      const picked =
+        Array.isArray(slideIndices) && slideIndices.length > 0
+          ? slideIndices
+              .filter((idx) => idx >= 0 && idx < sourceSlides.length)
+              .map((idx) => sourceSlides[idx])
+          : sourceSlides;
+
+      // Derin kopya: orijinal toplantıdaki slayt referanslarına kesinlikle dokunulmaz!
+      const clonedSlides: SlideItem[] = JSON.parse(
+        JSON.stringify(picked.length > 0 ? picked : sourceSlides)
+      );
+
+      const sourceMeetingObj = meetings.find(
+        (m) => String(m._id) === String(item.meetingId)
+      );
+      const fromTitle =
+        item.meetingTitle || sourceMeetingObj?.title || "Önceki Toplantı";
+
+      setPreviewRecord(null);
+      setEditingId(null); // Yeni kayıt olarak kaydedilir; eski kaydı asla değiştirmez!
+      setEditorMeetingId(activeOpenMeeting._id);
+      setEditorCopySourceInfo({
+        fromMeetingTitle: fromTitle,
+        summaryTitle: item.summaryTitle,
+      });
+      setSlides(clonedSlides);
+      setActiveSlideIdx(0);
+      setEditorMode(true);
+      toast.success(
+        `Sununun bir kopyası "${activeOpenMeeting.title}" için düzenleyiciye aktarıldı. Değişiklik yapıp kaydedebilirsiniz.`
+      );
+    } catch (err: any) {
+      setPreviewLoadingModal(null);
+      toast.error(err.message || "Sunu kopyası açılamadı.");
+    }
   };
 
   // Kart üzerine gelindiğinde arka planda slaytları sessizce önbelleğe al (Tıklandığında 0ms açılır!)
@@ -2383,20 +2621,52 @@ export default function PresentationsPage() {
     item: PresentationListItem,
     mode: "preview" | "edit" | "download"
   ) => {
+    const itemMeeting =
+      meetings.find((m) => String(m._id) === String(item.meetingId)) ||
+      (selectedMeeting && String(selectedMeeting._id) === String(item.meetingId)
+        ? selectedMeeting
+        : null);
+    const resolvedStatus: "open" | "closed" =
+      itemMeeting?.status || item.meetingStatus || "closed";
+    const isAuthForItemMeeting =
+      Boolean(itemMeeting?.authorizedUserId?._id) &&
+      String(itemMeeting?.authorizedUserId?._id) === String(userId);
+    const canManageItemMeeting = isManager || isAuthForItemMeeting;
+    const canModifyItem =
+      resolvedStatus === "open" &&
+      Boolean(
+        itemMeeting &&
+          (canManageItemMeeting ||
+            (!itemMeeting.isLocked &&
+              String(item.createdBy?._id) === String(userId)))
+      );
+    const resolvedBgPreset =
+      itemMeeting?.backgroundPreset || item.meetingBackgroundPreset || "template";
+    const resolvedFramePreset =
+      itemMeeting?.photoFramePreset || item.meetingPhotoFramePreset || "none";
+    const resolvedMeetingTitle =
+      itemMeeting?.title || item.meetingTitle || "";
+
+    if (mode === "edit" && resolvedStatus === "closed") {
+      toast.error(
+        "Kapatılmış toplantıdaki sunular değiştirilemez. Yeni toplantıya kopyalayarak üzerinde değişiklik yapabilirsiniz."
+      );
+      return;
+    }
+
     const cached = slideCacheRef.current.get(item._id);
 
     // Önizleme modunda önbellekte varsa 0ms içinde anında aç!
     if (mode === "preview" && cached) {
-      const canModifyItem =
-        selectedMeeting?.status === "open" &&
-        (canManageSelectedMeeting ||
-          (!selectedMeeting.isLocked &&
-            String(item.createdBy?._id) === String(userId)));
       setPreviewRecord({
         item,
         title: item.summaryTitle,
         authorName: item.createdBy?.name || "Personel",
         canModify: Boolean(canModifyItem),
+        meetingTitle: resolvedMeetingTitle,
+        meetingStatus: resolvedStatus,
+        meetingBackgroundPreset: resolvedBgPreset,
+        meetingPhotoFramePreset: resolvedFramePreset,
         slides: cached.slides,
       });
       setPreviewSlideIdx(0);
@@ -2463,6 +2733,7 @@ export default function PresentationsPage() {
         });
 
         setEditingId(item._id);
+        setEditorCopySourceInfo(null);
         setEditorMeetingId(resolvedMeetingId);
         setSlides(loadedSlides.length > 0 ? loadedSlides : [emptySlide(templates[0]?._id)]);
         setActiveSlideIdx(0);
@@ -2471,12 +2742,14 @@ export default function PresentationsPage() {
       }
 
       let loadedSlides: SlideItem[] = cached ? cached.slides : [];
+      let fetchedPresentationMeta: any = null;
       if (!cached) {
         const res = await shieldedFetchJson(`/api/presentations/${item._id}`, {
           signal: controller.signal,
         });
         const data = res.data;
         if (!res.ok) throw new Error(data?.error || "Sunu alınamadı");
+        fetchedPresentationMeta = data.presentation;
         loadedSlides = data.presentation.slides || [];
         slideCacheRef.current.set(item._id, {
           meetingId: String(data.presentation.meetingId || item.meetingId),
@@ -2487,17 +2760,25 @@ export default function PresentationsPage() {
       setPreviewLoadingModal(null);
       if (loadingToast) toast.dismiss(loadingToast);
 
+      const finalBgPreset =
+        fetchedPresentationMeta?.meetingBackgroundPreset || resolvedBgPreset;
+      const finalFramePreset =
+        fetchedPresentationMeta?.meetingPhotoFramePreset || resolvedFramePreset;
+      const finalMeetingTitle =
+        fetchedPresentationMeta?.meetingTitle || resolvedMeetingTitle;
+      const finalMeetingStatus: "open" | "closed" =
+        fetchedPresentationMeta?.meetingStatus || resolvedStatus;
+
       if (mode === "preview") {
-        const canModifyItem =
-          selectedMeeting?.status === "open" &&
-          (canManageSelectedMeeting ||
-            (!selectedMeeting.isLocked &&
-              String(item.createdBy?._id) === String(userId)));
         setPreviewRecord({
           item,
           title: item.summaryTitle,
           authorName: item.createdBy?.name || "Personel",
-          canModify: Boolean(canModifyItem),
+          canModify: finalMeetingStatus === "open" ? Boolean(canModifyItem) : false,
+          meetingTitle: finalMeetingTitle,
+          meetingStatus: finalMeetingStatus,
+          meetingBackgroundPreset: finalBgPreset,
+          meetingPhotoFramePreset: finalFramePreset,
           slides: loadedSlides,
         });
         setPreviewSlideIdx(0);
@@ -2506,8 +2787,8 @@ export default function PresentationsPage() {
           slides: loadedSlides,
           fileName: `${item.summaryTitle}.pptx`,
           templates,
-          meetingBackgroundPreset: selectedMeeting?.backgroundPreset || "template",
-          meetingPhotoFramePreset: selectedMeeting?.photoFramePreset || "none",
+          meetingBackgroundPreset: finalBgPreset,
+          meetingPhotoFramePreset: finalFramePreset,
         });
         toast.success("Sunu (.pptx) indirildi.");
       }
@@ -2539,6 +2820,7 @@ export default function PresentationsPage() {
     }
     setEditorMode(false);
     setEditingId(null);
+    setEditorCopySourceInfo(null);
   };
 
   useEffect(() => {
@@ -2707,6 +2989,7 @@ export default function PresentationsPage() {
 
       toast.success(wasEditingId ? "Sunu anında güncellendi." : "Sunu toplantı klasörüne eklendi.");
       setEditingId(null);
+      setEditorCopySourceInfo(null);
       setEditorMode(false);
     } catch (err: any) {
       toast.error(err.message);
@@ -3529,7 +3812,11 @@ export default function PresentationsPage() {
             </button>
             <div>
               <h1 className="text-lg sm:text-xl font-extrabold text-white tracking-tight">
-                {editingId ? "Sunuyu Düzenle" : "Yeni Sunu Slaytları Hazırla"}
+                {editingId
+                  ? "Sunuyu Düzenle"
+                  : editorCopySourceInfo
+                    ? "Kopyalanan Sunuyu Yeni Toplantı İçin Düzenle"
+                    : "Yeni Sunu Slaytları Hazırla"}
               </h1>
               <p className="text-xs text-blue-200/90">
                 Çok sayfalı slaytlar hazırlayabilir, fotoğraf yerleşimini ve açıklamaları canlı önizleyebilirsiniz
@@ -3563,6 +3850,19 @@ export default function PresentationsPage() {
             </button>
           </div>
         </div>
+
+        {editorCopySourceInfo && (
+          <div className="px-4 py-3 rounded-2xl bg-emerald-50 border border-emerald-200 text-xs text-emerald-950 flex flex-wrap items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <CopyPlus className="w-4 h-4 text-emerald-600 shrink-0" aria-hidden="true" />
+              <span>
+                <strong>{editorCopySourceInfo.fromMeetingTitle}</strong> dosyasındaki{" "}
+                <strong>{editorCopySourceInfo.summaryTitle}</strong> sunusunun bir kopyası üzerinde çalışıyorsunuz. Eski toplantıdaki kayıt <strong>değişmez</strong>; kaydettiğinizde{" "}
+                <strong>{editorMeeting?.title || "Açık Toplantı"}</strong> klasörüne yeni sunu olarak eklenir.
+              </span>
+            </div>
+          </div>
+        )}
 
         {/* Slayt Sayfa Sekmeleri */}
         <div className="bg-white p-3 rounded-2xl border border-slate-200 flex flex-wrap items-center gap-2">
@@ -4350,8 +4650,234 @@ export default function PresentationsPage() {
 
       {/* Toplantı Dosyaları Klasör Görünümü veya Seçili Toplantı Dosyasının İçi */}
       {(!insideFolder || !selectedMeeting) ? (
-        <div className="gov-card p-6 rounded-3xl space-y-5">
-          <div className="flex items-center justify-between">
+        <div className="gov-card p-5 sm:p-6 rounded-3xl space-y-5">
+          {/* TÜM TOPLANTI DOSYALARINDA SUNU ARA-BUL (Resim 2 Tasarımında Genel Arşiv Arama Merkezi) */}
+          <search
+            aria-label="Tüm toplantı dosyaları içindeki sunularda ara"
+            className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-blue-50/90 via-indigo-50/50 to-slate-50 border-2 border-blue-200/90 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-500/15 shadow-sm transition-all space-y-3.5"
+          >
+            <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-2.5">
+              <div className="flex flex-wrap items-center gap-2.5">
+                <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-600 text-white text-[11px] font-extrabold tracking-wide shadow-xs">
+                  <Search className="w-3.5 h-3.5" aria-hidden="true" />
+                  TÜM TOPLANTILARDA SUNU ARA-BUL
+                </span>
+                <h2 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                  <span>Tüm Toplantı Dosyalarında Sunu Ara</span>
+                  <span className="px-2.5 py-0.5 rounded-full bg-white text-blue-700 text-xs font-extrabold border border-blue-200 shadow-2xs tabular-nums">
+                    {meetings.length} Klasör
+                  </span>
+                </h2>
+              </div>
+
+              {activeOpenMeeting ? (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-emerald-50 border border-emerald-200 text-emerald-800 text-xs font-bold self-start lg:self-auto">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                  <span>
+                    Kopyalama Hedefi Açık Toplantı:{" "}
+                    <strong>{activeOpenMeeting.title}</strong>
+                  </span>
+                </span>
+              ) : (
+                <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-800 text-xs font-bold self-start lg:self-auto">
+                  <Lock className="w-3.5 h-3.5 shrink-0" />
+                  <span>Kopyalama için açık toplantı bekleniyor</span>
+                </span>
+              )}
+            </div>
+
+            <div className="relative">
+              <label htmlFor="global-presentations-search-input" className="sr-only">
+                Tüm eski ve açık toplantı dosyalarında vatandaş adı soyadı, mahalle/köy, açıklama veya personel ara
+              </label>
+              {searchingGlobal ? (
+                <div className="absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none">
+                  <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
+                </div>
+              ) : (
+                <Search
+                  aria-hidden="true"
+                  className="w-5 h-5 text-blue-600 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
+                />
+              )}
+              <input
+                id="global-presentations-search-input"
+                name="globalPresentationSearch"
+                type="search"
+                enterKeyHint="search"
+                value={globalSearch}
+                onChange={(e) => setGlobalSearch(e.target.value)}
+                placeholder="Tüm eski ve açık toplantı dosyalarında vatandaş adı soyadı, mahalle/köy, açıklama veya hazırlayan personel ara..."
+                className={`w-full h-12 pl-12 ${
+                  globalSearch ? "pr-28" : "pr-4"
+                } rounded-xl text-sm sm:text-base font-semibold text-slate-900 placeholder:text-slate-400 placeholder:font-normal outline-none transition-all ${
+                  globalSearch.trim()
+                    ? "bg-white border-2 border-blue-600 ring-4 ring-blue-500/15 shadow-md"
+                    : "bg-white border-2 border-blue-200/90 hover:border-blue-400 focus:border-blue-600 shadow-xs"
+                }`}
+              />
+              {globalSearch && (
+                <button
+                  type="button"
+                  onClick={() => setGlobalSearch("")}
+                  className="absolute right-2.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-red-100 text-slate-700 hover:text-red-700 text-xs font-bold inline-flex items-center gap-1 transition-colors"
+                >
+                  <X className="w-3.5 h-3.5" />
+                  <span>Temizle</span>
+                </button>
+              )}
+            </div>
+          </search>
+
+          {/* Tüm Toplantı Dosyaları Genel Arama Sonuçları */}
+          {debouncedGlobalSearch.trim() && (
+            <div className="p-4 sm:p-5 rounded-2xl bg-slate-50/90 border border-blue-200/80 space-y-4">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <div className="flex items-center gap-2">
+                  <h3 className="text-sm sm:text-base font-extrabold text-slate-900">
+                    Tüm Toplantılarda Bulunan Sunular
+                  </h3>
+                  <span className="px-2.5 py-0.5 rounded-full bg-blue-600 text-white text-xs font-extrabold tabular-nums">
+                    {searchingGlobal ? "..." : globalTotalMatched}
+                  </span>
+                </div>
+                <span className="text-xs text-slate-500">
+                  Eski/kapatılmış toplantılardaki sunular salt okunurdur; görüntüleyebilir veya açık toplantıya bir kopyasını aktarabilirsiniz.
+                </span>
+              </div>
+
+              {searchingGlobal && globalResults.length === 0 ? (
+                <div className="py-10 text-center text-sm text-slate-500">
+                  Tüm toplantı klasörleri taranıyor...
+                </div>
+              ) : globalResults.length === 0 ? (
+                <div className="py-10 text-center text-sm text-slate-500 bg-white rounded-2xl border border-dashed border-slate-200">
+                  Aradığınız ifadeyle eşleşen herhangi bir sunu kaydı tüm toplantı dosyalarında bulunamadı.
+                </div>
+              ) : (
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
+                  {globalResults.map((item) => {
+                    const isClosedSource = item.meetingStatus === "closed";
+                    const isCopyingThis = copyingRecordId === item._id;
+                    return (
+                      <div
+                        key={`global-hit-${item._id}`}
+                        onMouseEnter={() => prefetchRecordSlides(item)}
+                        onClick={() => handleOpenRecord(item, "preview")}
+                        className="p-4 rounded-2xl border border-slate-200/90 hover:border-blue-400 hover:shadow-lg bg-white flex flex-col justify-between gap-3 transition-all cursor-pointer group"
+                      >
+                        <div className="space-y-2.5">
+                          {/* Hangi Toplantı Dosyasında Bulunduğu Bilgisi */}
+                          <div className="flex items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                            <span
+                              title={item.meetingTitle}
+                              className="inline-flex items-center gap-1.5 text-[11px] font-extrabold text-slate-700 truncate min-w-0"
+                            >
+                              <FolderOpen className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+                              <span className="truncate">{item.meetingTitle}</span>
+                            </span>
+                            <span
+                              className={`shrink-0 px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                isClosedSource
+                                  ? "bg-slate-100 text-slate-600 border border-slate-200"
+                                  : "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                              }`}
+                            >
+                              {isClosedSource ? "Kapatıldı • Salt Okunur" : "Açık Toplantı"}
+                            </span>
+                          </div>
+
+                          <div className="flex items-start gap-3">
+                            <div
+                              style={
+                                item.meetingPhotoFramePreset &&
+                                item.meetingPhotoFramePreset !== "none"
+                                  ? getPhotoFrameWebStyle(
+                                      item.meetingPhotoFramePreset,
+                                      true
+                                    )
+                                  : undefined
+                              }
+                              className="relative w-22 h-16.5 rounded-xl overflow-hidden border border-slate-200 bg-slate-100 shrink-0 shadow-2xs"
+                            >
+                              {item.firstPhoto ? (
+                                <ProtectedCanvasImage
+                                  src={item.firstPhoto}
+                                  alt="Slayt Önizleme"
+                                  fit="cover"
+                                  className="w-full h-full group-hover:scale-105 transition-transform duration-300"
+                                />
+                              ) : (
+                                <div className="w-full h-full flex items-center justify-center text-slate-400">
+                                  <PresentationIcon className="w-5 h-5" />
+                                </div>
+                              )}
+                              <span className="absolute bottom-1 right-1 px-1.5 py-0.5 rounded-md bg-slate-900/80 text-white text-[9.5px] font-extrabold">
+                                {item.slideCount} Sayfa
+                              </span>
+                            </div>
+
+                            <div className="min-w-0 flex-1">
+                              <div className="font-extrabold text-slate-900 group-hover:text-blue-700 text-sm line-clamp-2 leading-snug">
+                                {item.summaryTitle}
+                              </div>
+                              <div className="inline-flex items-center gap-1.5 mt-1 px-2 py-0.5 rounded-md bg-blue-50/80 text-[11px] font-bold text-blue-700">
+                                <span>{item.createdBy?.name || "Personel"}</span>
+                              </div>
+                              <div className="text-[11px] text-slate-400 mt-1">
+                                {new Date(item.createdAt).toLocaleDateString("tr-TR")}
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div
+                          className="flex flex-wrap items-center justify-between gap-1.5 pt-2.5 border-t border-slate-100"
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          <button
+                            type="button"
+                            onClick={() => handleOpenRecord(item, "preview")}
+                            className="h-8 px-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1 transition-colors"
+                          >
+                            <Eye className="w-3.5 h-3.5 text-slate-600" />
+                            <span>Görüntüle</span>
+                          </button>
+
+                          {canAddToOpenMeeting && (
+                            <div className="flex items-center gap-1.5">
+                              <button
+                                type="button"
+                                disabled={isCopyingThis}
+                                onClick={() => handleCopyToOpenMeetingDirect(item)}
+                                title="Bu sununun tüm slaytlarını olduğu gibi aktif açık toplantıya kopyala"
+                                className="h-8 px-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-extrabold inline-flex items-center gap-1 shadow-2xs transition-colors"
+                              >
+                                <CopyPlus className="w-3.5 h-3.5 shrink-0" />
+                                <span>Aynen Kopyala</span>
+                              </button>
+                              <button
+                                type="button"
+                                disabled={isCopyingThis}
+                                onClick={() => handleCopyToEditorAndModify(item)}
+                                title="Yeni toplantıya bir kopyasını aktar ve üzerinde değişiklik yaparak kaydet"
+                                className="h-8 px-2.5 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200/90 hover:border-blue-600 text-xs font-extrabold inline-flex items-center gap-1 transition-colors"
+                              >
+                                <Copy className="w-3.5 h-3.5 shrink-0" />
+                                <span>Kopyala & Düzenle</span>
+                              </button>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
+          )}
+
+          <div className="flex items-center justify-between pt-1">
             <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-2">
               <FolderOpen className="w-4.5 h-4.5 text-blue-600" />
               Toplantı Klasörleri — İşlem yapmak için bir klasör seçin
@@ -5166,11 +5692,12 @@ export default function PresentationsPage() {
                               </div>
 
                               <div
-                                className="flex items-center justify-between gap-2 pt-2.5 border-t border-slate-100"
+                                className="flex flex-wrap items-center justify-between gap-2 pt-2.5 border-t border-slate-100"
                                 onClick={(e) => e.stopPropagation()}
                               >
                                 <div className="flex items-center gap-1.5">
                                   <button
+                                    type="button"
                                     onClick={() => handleOpenRecord(item, "preview")}
                                     title="Sunuyu Görüntüle"
                                     className="px-2.5 py-1.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1 transition-colors"
@@ -5189,28 +5716,62 @@ export default function PresentationsPage() {
                                   </button>
                                 </div>
 
-                                {canModify && (
-                                  <div className="flex items-center gap-1.5">
-                                    <button
-                                      type="button"
-                                      onClick={() => handleOpenRecord(item, "edit")}
-                                      title="Sunuyu Düzenle"
-                                      aria-label={`${item.summaryTitle} sunusunu düzenle`}
-                                      className="p-1.5 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white border border-blue-200/80 hover:border-blue-600 transition-colors"
-                                    >
-                                      <Edit3 aria-hidden="true" className="w-4 h-4" />
-                                    </button>
-                                    <button
-                                      type="button"
-                                      onClick={() => setDeleteTarget(item)}
-                                      title="Sunuyu Sil"
-                                      aria-label={`${item.summaryTitle} sunusunu sil`}
-                                      className="p-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/70 transition-colors"
-                                    >
-                                      <Trash2 aria-hidden="true" className="w-4 h-4" />
-                                    </button>
-                                  </div>
-                                )}
+                                <div className="flex items-center gap-1.5">
+                                  {canAddToOpenMeeting && (
+                                    <>
+                                      {!canModify && (
+                                        <button
+                                          type="button"
+                                          disabled={copyingRecordId === item._id}
+                                          onClick={() => handleCopyToOpenMeetingDirect(item)}
+                                          title="Bu sunuyu olduğu gibi açık toplantı dosyasına kopyala"
+                                          className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-extrabold inline-flex items-center gap-1 shadow-2xs transition-colors"
+                                        >
+                                          <CopyPlus className="w-3.5 h-3.5 shrink-0" />
+                                          <span>Aynen Kopyala</span>
+                                        </button>
+                                      )}
+                                      <button
+                                        type="button"
+                                        disabled={copyingRecordId === item._id}
+                                        onClick={() => handleCopyToEditorAndModify(item)}
+                                        title="Yeni sunuya bir örnek kopyala ve üzerinde değişiklik yap"
+                                        aria-label={`${item.summaryTitle} sunusunu yeni sunuya kopyala ve düzenle`}
+                                        className={
+                                          canModify
+                                            ? "p-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white border border-indigo-200/80 hover:border-indigo-600 transition-colors"
+                                            : "px-2.5 py-1.5 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-700 hover:text-white border border-blue-200/80 hover:border-blue-600 text-xs font-extrabold inline-flex items-center gap-1 transition-colors"
+                                        }
+                                      >
+                                        <Copy aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
+                                        {!canModify && <span>Kopyala & Düzenle</span>}
+                                      </button>
+                                    </>
+                                  )}
+
+                                  {canModify && (
+                                    <>
+                                      <button
+                                        type="button"
+                                        onClick={() => handleOpenRecord(item, "edit")}
+                                        title="Sunuyu Düzenle"
+                                        aria-label={`${item.summaryTitle} sunusunu düzenle`}
+                                        className="p-1.5 rounded-xl bg-blue-50 hover:bg-blue-600 text-blue-600 hover:text-white border border-blue-200/80 hover:border-blue-600 transition-colors"
+                                      >
+                                        <Edit3 aria-hidden="true" className="w-4 h-4" />
+                                      </button>
+                                      <button
+                                        type="button"
+                                        onClick={() => setDeleteTarget(item)}
+                                        title="Sunuyu Sil"
+                                        aria-label={`${item.summaryTitle} sunusunu sil`}
+                                        className="p-1.5 rounded-xl bg-red-50 hover:bg-red-100 text-red-600 border border-red-200/70 transition-colors"
+                                      >
+                                        <Trash2 aria-hidden="true" className="w-4 h-4" />
+                                      </button>
+                                    </>
+                                  )}
+                                </div>
                               </div>
                             </div>
                           );
@@ -5263,6 +5824,17 @@ export default function PresentationsPage() {
                                   >
                                     <Download className="w-3.5 h-3.5" />
                                   </button>
+                                  {canAddToOpenMeeting && (
+                                    <button
+                                      type="button"
+                                      onClick={() => handleCopyToEditorAndModify(item)}
+                                      aria-label="Yeni sunuya kopyala ve düzenle"
+                                      title="Yeni sunuya kopyala ve düzenle"
+                                      className="p-2 rounded-xl bg-indigo-50 text-indigo-700"
+                                    >
+                                      <Copy className="w-3.5 h-3.5" />
+                                    </button>
+                                  )}
                                   {canModify && (
                                     <>
                                       <button
@@ -5331,7 +5903,7 @@ export default function PresentationsPage() {
                                 </th>
                                 <th
                                   scope="col"
-                                  className="py-3 pl-2.5 pr-4 w-[196px] text-right border-b border-slate-200/80 sticky right-0 bg-slate-50 z-10"
+                                  className="py-3 pl-2.5 pr-4 w-[248px] text-right border-b border-slate-200/80 sticky right-0 bg-slate-50 z-10"
                                 >
                                   İşlemler
                                 </th>
@@ -5451,6 +6023,18 @@ export default function PresentationsPage() {
                                         >
                                           <Download aria-hidden="true" className="w-4 h-4" />
                                         </button>
+                                        {canAddToOpenMeeting && (
+                                          <button
+                                            type="button"
+                                            disabled={copyingRecordId === item._id}
+                                            onClick={() => handleCopyToEditorAndModify(item)}
+                                            title="Yeni sunuya bir örnek kopyala ve üzerinde değişiklik yap"
+                                            aria-label={`${item.summaryTitle} sunusunu yeni sunuya kopyala ve düzenle`}
+                                            className="p-1.5 rounded-xl bg-indigo-50 hover:bg-indigo-600 text-indigo-700 hover:text-white border border-indigo-200/80 hover:border-indigo-600 transition-colors shrink-0"
+                                          >
+                                            <Copy aria-hidden="true" className="w-4 h-4" />
+                                          </button>
+                                        )}
                                         {canModify ? (
                                           <>
                                             <button
@@ -5472,6 +6056,18 @@ export default function PresentationsPage() {
                                               <Trash2 aria-hidden="true" className="w-4 h-4" />
                                             </button>
                                           </>
+                                        ) : canAddToOpenMeeting ? (
+                                          <button
+                                            type="button"
+                                            disabled={copyingRecordId === item._id}
+                                            onClick={() => handleCopyToOpenMeetingDirect(item)}
+                                            title="Bu sunuyu olduğu gibi aktif açık toplantıya kopyala"
+                                            aria-label={`${item.summaryTitle} sunusunu aynen açık toplantıya kopyala`}
+                                            className="px-2.5 py-1.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-60 text-white text-xs font-extrabold inline-flex items-center gap-1 transition-colors shrink-0"
+                                          >
+                                            <CopyPlus aria-hidden="true" className="w-3.5 h-3.5 shrink-0" />
+                                            <span>Kopyala</span>
+                                          </button>
                                         ) : (
                                           <span className="px-2 py-1 rounded-lg text-[10px] font-bold bg-slate-100 text-slate-500 border border-slate-200/80">
                                             Salt Görüntüleme
@@ -5884,11 +6480,12 @@ export default function PresentationsPage() {
                   </h3>
                   <p className="text-[11px] text-blue-200/90 truncate">
                     Hazırlayan: <strong className="text-white">{previewRecord.authorName}</strong>
+                    {previewRecord.meetingTitle ? ` • Klasör: ${previewRecord.meetingTitle}` : ""}
                   </p>
                 </div>
               </div>
 
-              <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
                 {previewRecord.slides.length > 1 && (
                   <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-xl p-0.5">
                     <button
@@ -5923,9 +6520,57 @@ export default function PresentationsPage() {
                   </div>
                 )}
 
+                {canAddToOpenMeeting && (
+                  <>
+                    {previewRecord.slides.length > 1 && (
+                      <button
+                        type="button"
+                        disabled={copyingRecordId === previewRecord.item._id}
+                        onClick={() =>
+                          handleCopyToOpenMeetingDirect(previewRecord.item, [previewSlideIdx])
+                        }
+                        title={`Sadece ${previewSlideIdx + 1}. slaytı aktif açık toplantıya aynen kopyala`}
+                        className="px-2.5 py-1.5 rounded-xl bg-teal-500/25 hover:bg-teal-500/40 border border-teal-300/35 text-teal-100 text-xs font-extrabold inline-flex items-center gap-1 transition-colors"
+                      >
+                        <CopyPlus className="w-3.5 h-3.5 shrink-0" />
+                        <span>{previewSlideIdx + 1}. Slaytı Kopyala</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      disabled={copyingRecordId === previewRecord.item._id}
+                      onClick={() => handleCopyToOpenMeetingDirect(previewRecord.item)}
+                      title="Bu sununun tüm slaytlarını olduğu gibi aktif açık toplantıya kopyala"
+                      className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-white text-xs font-extrabold inline-flex items-center gap-1 shadow-xs transition-colors"
+                    >
+                      <CopyPlus className="w-3.5 h-3.5 shrink-0" />
+                      <span>
+                        {previewRecord.slides.length > 1 ? "Tümünü Kopyala" : "Aynen Kopyala"}
+                      </span>
+                    </button>
+                    <button
+                      type="button"
+                      disabled={copyingRecordId === previewRecord.item._id}
+                      onClick={() =>
+                        handleCopyToEditorAndModify(
+                          previewRecord.item,
+                          undefined,
+                          previewRecord.slides
+                        )
+                      }
+                      title="Yeni sunuya bir örnek kopyala ve üzerinde değişiklik yaparak kaydet"
+                      className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-xs font-extrabold inline-flex items-center gap-1 shadow-xs transition-colors"
+                    >
+                      <Copy className="w-3.5 h-3.5 shrink-0" />
+                      <span>Kopyala & Düzenle</span>
+                    </button>
+                  </>
+                )}
+
                 {previewRecord.canModify ? (
                   <>
                     <button
+                      type="button"
                       onClick={() => {
                         const target = previewRecord.item;
                         setPreviewRecord(null);
@@ -5937,6 +6582,7 @@ export default function PresentationsPage() {
                       <span className="hidden xs:inline sm:inline">Düzenle</span>
                     </button>
                     <button
+                      type="button"
                       onClick={() => {
                         const target = previewRecord.item;
                         setPreviewRecord(null);
@@ -5989,10 +6635,14 @@ export default function PresentationsPage() {
                         slide={s}
                         templates={templates}
                         meetingBackgroundPreset={
-                          selectedMeeting?.backgroundPreset || "template"
+                          previewRecord.meetingBackgroundPreset ||
+                          selectedMeeting?.backgroundPreset ||
+                          "template"
                         }
                         meetingPhotoFramePreset={
-                          selectedMeeting?.photoFramePreset || "none"
+                          previewRecord.meetingPhotoFramePreset ||
+                          selectedMeeting?.photoFramePreset ||
+                          "none"
                         }
                         onClick={() => setPreviewSlideIdx(idx)}
                       />
@@ -6029,8 +6679,16 @@ export default function PresentationsPage() {
                   <SlidePreviewCard
                     slide={previewRecord.slides[previewSlideIdx] || emptySlide()}
                     templates={templates}
-                    meetingBackgroundPreset={selectedMeeting?.backgroundPreset || "template"}
-                    meetingPhotoFramePreset={selectedMeeting?.photoFramePreset || "none"}
+                    meetingBackgroundPreset={
+                      previewRecord.meetingBackgroundPreset ||
+                      selectedMeeting?.backgroundPreset ||
+                      "template"
+                    }
+                    meetingPhotoFramePreset={
+                      previewRecord.meetingPhotoFramePreset ||
+                      selectedMeeting?.photoFramePreset ||
+                      "none"
+                    }
                   />
 
                   {previewRecord.slides.length > 1 && (

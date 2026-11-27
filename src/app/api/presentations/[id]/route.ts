@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import mongoose from "mongoose";
 import { getServerSession } from "next-auth/next";
 import { authOptions } from "@/lib/authOptions";
 import dbConnect from "@/lib/db";
@@ -26,11 +27,14 @@ export async function GET(
     const userId = String((session.user as any)?.id || "");
 
     const { id } = await context.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json({ error: "Geçersiz sunu kimliği." }, { status: 400 });
+    }
     await dbConnect();
 
     const record = (await Presentation.findById(id)
       .populate("createdBy", "name")
-      .populate("meetingId", "title status")
+      .populate("meetingId", "title status meetingDate backgroundPreset photoFramePreset")
       .lean()) as any;
 
     if (!record) {
@@ -49,6 +53,9 @@ export async function GET(
         meetingId: (record.meetingId as any)?._id || record.meetingId,
         meetingTitle: (record.meetingId as any)?.title || "",
         meetingStatus: (record.meetingId as any)?.status || "open",
+        meetingDate: (record.meetingId as any)?.meetingDate || null,
+        meetingBackgroundPreset: (record.meetingId as any)?.backgroundPreset || "template",
+        meetingPhotoFramePreset: (record.meetingId as any)?.photoFramePreset || "none",
         summaryTitle: record.summaryTitle,
         slideCount: record.slideCount,
         slides,
@@ -78,6 +85,9 @@ export async function PUT(
     }
 
     const { id } = await context.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json({ error: "Geçersiz sunu kimliği." }, { status: 400 });
+    }
     const body = await parseShieldedRequestJson<{ slides: ISlideData[] }>(
       req,
       String(userId)
@@ -231,6 +241,12 @@ export async function PUT(
         )
       )
     ).join(" | ");
+    const searchCorpus = finalSlides
+      .map((s) => `${s.fullName} ${s.neighborhood} ${s.description || ""}`)
+      .join(" ")
+      .replace(/\s+/g, " ")
+      .trim()
+      .slice(0, 2400);
 
     const updated = (await Presentation.findByIdAndUpdate(
       id,
@@ -243,6 +259,7 @@ export async function PUT(
           presentationBytes: stats.presentationBytes,
           firstPhoto: stats.firstPhoto,
           summaryTitle,
+          searchCorpus,
           updatedBy: userId,
           lockedBy: null,
           lockedAt: null,
@@ -302,6 +319,9 @@ export async function PATCH(
     }
 
     const { id } = await context.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json({ error: "Geçersiz sunu kimliği." }, { status: 400 });
+    }
     const body = await req.json();
     const action = body?.action as "lock" | "heartbeat" | "unlock";
     const LOCK_TTL_MS = 3 * 60 * 1000;
@@ -426,6 +446,9 @@ export async function DELETE(
     }
 
     const { id } = await context.params;
+    if (!mongoose.Types.ObjectId.isValid(id)) {
+      return NextResponse.json({ error: "Geçersiz sunu kimliği." }, { status: 400 });
+    }
     await dbConnect();
     const { getEffectivePermissions } = await import("@/lib/permissions");
     const [record, perms] = await Promise.all([
