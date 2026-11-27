@@ -14,6 +14,7 @@ import {
   UserCheck,
 } from "lucide-react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import { PERMISSION_MODULES, type PermissionModuleKey } from "@/lib/permissionModules";
 import { turkishIncludes } from "@/lib/turkish";
 
@@ -28,8 +29,14 @@ interface UserPermission {
 }
 
 export default function SettingsPage() {
-  const { data: session } = useSession();
-  const isSuperAdmin = session?.user?.role === "superadmin";
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const userRole = session?.user?.role;
+  const isSuperAdmin = userRole === "superadmin";
+  const canAccessAdminSection =
+    isSuperAdmin ||
+    userRole === "manager" ||
+    Boolean(session?.user?.isAuthorized);
 
   const [loading, setLoading] = useState(false);
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(false);
@@ -251,6 +258,30 @@ export default function SettingsPage() {
       );
     });
   }, [userList, userSearch, permFilter]);
+
+  useEffect(() => {
+    if (status === "authenticated" && !canAccessAdminSection) {
+      router.replace("/dashboard");
+    }
+  }, [status, canAccessAdminSection, router]);
+
+  if (status === "loading") {
+    return (
+      <div className="flex items-center justify-center h-[60vh] text-sm text-slate-500">
+        Yetki kontrol ediliyor...
+      </div>
+    );
+  }
+
+  if (!canAccessAdminSection) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <div className="text-center text-slate-500 text-sm">
+          Bu bölüme yalnızca Süper Admin veya Yetkili Personel erişebilir.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className={`space-y-6 mx-auto ${isSuperAdmin ? "max-w-5xl" : "max-w-2xl"}`}>

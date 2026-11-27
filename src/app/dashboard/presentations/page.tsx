@@ -4254,13 +4254,13 @@ export default function PresentationsPage() {
 
   return (
     <div className="space-y-6 max-w-[1440px] mx-auto">
-      {/* Başlık ve Dikkat Çekici Kurumsal Aksiyon Barı */}
-      <div className="rounded-3xl p-6 sm:p-7 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white shadow-xl shadow-slate-900/15 border border-slate-800/60 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-5">
-        <div className="flex items-start sm:items-center gap-4">
-          <div className="p-4 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-950/50 ring-2 ring-white/20 shrink-0">
-            <PresentationIcon className="w-7 h-7" />
+      {/* Başlık ve Uyumlu Kurumsal Aksiyon Barı */}
+      <div className="rounded-3xl p-5 sm:p-6 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white shadow-xl shadow-slate-900/15 border border-slate-800/60 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4">
+        <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-950/50 ring-1 ring-white/20 shrink-0">
+            <PresentationIcon className="w-6 h-6 sm:w-7 sm:h-7" />
           </div>
-          <div>
+          <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2 mb-1">
               <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15 text-[11px] font-bold text-blue-200">
                 <Sparkles className="w-3 h-3 text-amber-300" />
@@ -4273,68 +4273,77 @@ export default function PresentationsPage() {
                 </span>
               )}
             </div>
-            <h1 className="text-2xl sm:text-3xl font-extrabold text-white tracking-tight">
+            <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
               Sunular & Toplantı Slaytları
             </h1>
-            <p className="text-xs sm:text-sm text-blue-100/85 mt-1 max-w-2xl">
+            <p className="text-xs sm:text-sm text-blue-100/85 mt-0.5 max-w-2xl">
               Hazırlanan hane sunularını anlık görüntüleyin, tek tıkla önizleyin ve toplantı sonunda tek bir PowerPoint (.pptx) dosyası olarak birleştirin.
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-3 w-full lg:w-auto">
-          {isSuperAdmin && (
-            <>
-              <button
-                type="button"
-                onClick={() => setIsCoverModalOpen(true)}
-                title="Süper Admin: Tüm toplantı slaytlarının en başında (1. sayfa) görünecek Kapak Şablonunu yükle ve yönet"
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-amber-400/15 hover:bg-amber-400/25 border border-amber-300/35 text-amber-100 text-xs sm:text-sm font-extrabold backdrop-blur-xs transition-all active:scale-95"
-              >
-                <Sparkles aria-hidden="true" className="w-4 h-4 text-amber-300" />
-                <span>
-                  Kapak Şablonu {activeCoverTemplate ? "• Aktif" : "(Yok)"}
-                </span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setIsTemplateModalOpen(true)}
-                className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-4 py-3 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs sm:text-sm font-bold backdrop-blur-xs transition-all active:scale-95"
-              >
-                <Upload aria-hidden="true" className="w-4 h-4 text-blue-200" />
-                Şablonları Yönet ({templates.length})
-              </button>
-            </>
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-end gap-2.5 w-full xl:w-auto shrink-0">
+          {(isSuperAdmin || isManager) && (
+            <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 p-1.5 rounded-2xl bg-white/[0.07] border border-white/15 backdrop-blur-xs w-full sm:w-auto">
+              {isSuperAdmin && (
+                <>
+                  <button
+                    type="button"
+                    onClick={() => setIsCoverModalOpen(true)}
+                    title="Süper Admin: Tüm toplantı slaytlarının en başında (1. sayfa) görünecek Kapak Şablonunu yükle ve yönet"
+                    className={`flex-1 sm:flex-none h-9.5 px-3.5 rounded-xl text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all whitespace-nowrap active:scale-95 ${
+                      activeCoverTemplate
+                        ? "bg-amber-400/20 hover:bg-amber-400/30 text-amber-100 border border-amber-300/35"
+                        : "bg-white/5 hover:bg-white/15 text-slate-200 border border-white/10"
+                    }`}
+                  >
+                    <Sparkles aria-hidden="true" className="w-3.5 h-3.5 text-amber-300 shrink-0" />
+                    <span>Kapak {activeCoverTemplate ? "• Aktif" : "(Yok)"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setIsTemplateModalOpen(true)}
+                    className="flex-1 sm:flex-none h-9.5 px-3.5 rounded-xl bg-white/5 hover:bg-white/15 border border-white/10 text-white text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all whitespace-nowrap active:scale-95"
+                  >
+                    <Upload aria-hidden="true" className="w-3.5 h-3.5 text-blue-200 shrink-0" />
+                    <span>Şablonlar ({templates.length})</span>
+                  </button>
+                </>
+              )}
+              {isManager && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    if (hasOpenMeeting) {
+                      toast.error(
+                        "Açık bir toplantı varken yeni toplantı açılamaz. Önce mevcut toplantıyı kapatın."
+                      );
+                      return;
+                    }
+                    setIsNewMeetingOpen(true);
+                  }}
+                  disabled={hasOpenMeeting}
+                  title={
+                    hasOpenMeeting
+                      ? "Açık toplantı kapatılmadan yeni toplantı açılamaz"
+                      : "Yeni Toplantı Aç"
+                  }
+                  className="flex-1 sm:flex-none h-9.5 px-3.5 rounded-xl bg-emerald-500/25 hover:bg-emerald-500/35 disabled:bg-white/5 border border-emerald-400/35 disabled:border-white/10 disabled:text-slate-400 text-emerald-100 text-xs font-bold inline-flex items-center justify-center gap-1.5 transition-all whitespace-nowrap active:scale-95"
+                >
+                  <FolderOpen className="w-3.5 h-3.5 shrink-0" />
+                  <span>Yeni Toplantı Aç</span>
+                </button>
+              )}
+            </div>
           )}
-          {isManager && (
-            <button
-              onClick={() => {
-                if (hasOpenMeeting) {
-                  toast.error(
-                    "Açık bir toplantı varken yeni toplantı açılamaz. Önce mevcut toplantıyı kapatın."
-                  );
-                  return;
-                }
-                setIsNewMeetingOpen(true);
-              }}
-              disabled={hasOpenMeeting}
-              title={
-                hasOpenMeeting
-                  ? "Açık toplantı kapatılmadan yeni toplantı açılamaz"
-                  : "Yeni Toplantı Aç"
-              }
-              className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-5 py-3 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 disabled:from-slate-600 disabled:to-slate-700 disabled:text-slate-300 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-emerald-950/35 ring-1 ring-white/20 disabled:shadow-none transition-all active:scale-95"
-            >
-              <FolderOpen className="w-4 h-4" />
-              Yeni Toplantı Aç
-            </button>
-          )}
+
           <button
+            type="button"
             onClick={handleStartNew}
-            className="flex-1 sm:flex-none flex items-center justify-center gap-2 px-6 py-3 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:via-orange-500 hover:to-rose-400 text-white text-xs sm:text-sm font-extrabold shadow-xl shadow-orange-950/40 ring-2 ring-white/25 transition-all hover:-translate-y-0.5 active:scale-95"
+            className="w-full sm:w-auto h-11 px-5 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:via-orange-500 hover:to-rose-400 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-orange-950/35 ring-1 ring-white/25 inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all hover:-translate-y-0.5 active:scale-95"
           >
-            <Plus className="w-4.5 h-4.5 stroke-[2.6]" />
-            Yeni Sunu Hazırla
+            <Plus className="w-4 h-4 stroke-[2.6]" />
+            <span>Yeni Sunu Hazırla</span>
           </button>
         </div>
       </div>
@@ -4433,24 +4442,26 @@ export default function PresentationsPage() {
         </div>
       ) : (
         <div className="space-y-5">
-          {/* Toplantı Dosyası Üst Bilgi & Dikkat Çekici Kontrol Merkezi */}
+          {/* Toplantı Dosyası Üst Bilgi & Derli Toplu Kontrol Merkezi */}
           <div className="gov-card p-5 sm:p-6 rounded-3xl space-y-4">
-            <div className="flex flex-wrap items-center justify-between gap-4">
-              <div className="flex items-center gap-3.5">
+            {/* 1. Satır: Toplantı Başlığı + Birincil Toplantı Aksiyonları */}
+            <div className="flex flex-col xl:flex-row xl:items-center justify-between gap-4">
+              <div className="flex items-start sm:items-center gap-3.5 min-w-0">
                 <button
+                  type="button"
                   onClick={() => setInsideFolder(false)}
-                  className="px-3.5 py-2.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold flex items-center gap-1.5 border border-slate-200/80 transition-all active:scale-95"
+                  className="h-10 px-3.5 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-bold inline-flex items-center gap-1.5 border border-slate-200/80 shrink-0 transition-all active:scale-95"
                 >
                   <ChevronLeft className="w-4 h-4" />
-                  Tüm Klasörler
+                  <span>Tüm Klasörler</span>
                 </button>
-                <div>
+                <div className="min-w-0">
                   <div className="flex flex-wrap items-center gap-2">
                     <h2 className="text-lg sm:text-xl font-extrabold text-slate-900 tracking-tight">
                       {selectedMeeting.title}
                     </h2>
                     <span
-                      className={`inline-flex items-center gap-1 px-3 py-0.5 rounded-full text-[11px] font-bold ${
+                      className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[11px] font-bold ${
                         selectedMeeting.status === "open"
                           ? selectedMeeting.isLocked
                             ? "bg-amber-100 text-amber-800 border border-amber-200"
@@ -4458,6 +4469,15 @@ export default function PresentationsPage() {
                           : "bg-slate-200 text-slate-700"
                       }`}
                     >
+                      <span
+                        className={`w-1.5 h-1.5 rounded-full ${
+                          selectedMeeting.status === "open"
+                            ? selectedMeeting.isLocked
+                              ? "bg-amber-500"
+                              : "bg-emerald-500"
+                            : "bg-slate-500"
+                        }`}
+                      />
                       {selectedMeeting.status === "open"
                         ? selectedMeeting.isLocked
                           ? "Sıralama Kilidi Aktif"
@@ -4465,8 +4485,11 @@ export default function PresentationsPage() {
                         : "Kapatıldı • Salt Okunur"}
                     </span>
                   </div>
-                  <p className="text-xs font-medium text-slate-500 mt-1">
-                    {new Date(selectedMeeting.meetingDate).toLocaleDateString("tr-TR")} •{" "}
+                  <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs font-medium text-slate-500 mt-1">
+                    <span>
+                      {new Date(selectedMeeting.meetingDate).toLocaleDateString("tr-TR")}
+                    </span>
+                    <span className="text-slate-300">•</span>
                     <strong className="text-slate-700">
                       {selectedPersonnelId
                         ? presentations.filter(
@@ -4474,8 +4497,8 @@ export default function PresentationsPage() {
                           ).length
                         : selectedMeeting.recordCount}{" "}
                       Sunu Kaydı
-                    </strong>{" "}
-                    •{" "}
+                    </strong>
+                    <span className="text-slate-300">•</span>
                     <strong className="text-slate-700">
                       {selectedPersonnelId
                         ? presentations
@@ -4484,14 +4507,20 @@ export default function PresentationsPage() {
                         : selectedMeeting.totalSlides}{" "}
                       Slayt Sayfası
                     </strong>
-                    {isSuperAdmin &&
-                      selectedMeeting.authorizedUserId?.name &&
-                      ` • Yetkili: ${selectedMeeting.authorizedUserId.name}`}
-                  </p>
+                    {isSuperAdmin && selectedMeeting.authorizedUserId?.name && (
+                      <>
+                        <span className="text-slate-300">•</span>
+                        <span className="text-blue-700 font-semibold">
+                          Yetkili: {selectedMeeting.authorizedUserId.name}
+                        </span>
+                      </>
+                    )}
+                  </div>
                 </div>
               </div>
 
-              <div className="flex flex-wrap items-center gap-2.5">
+              {/* Birincil Aksiyon Butonları (Eşit Yükseklik, Kurumsal Renk Uyumu) */}
+              <div className="flex flex-wrap items-center gap-2 shrink-0">
                 <button
                   type="button"
                   onClick={() => {
@@ -4503,7 +4532,7 @@ export default function PresentationsPage() {
                     openBulkPreview(selectedMeeting, selAuthor);
                   }}
                   disabled={loadingMeetingSlides}
-                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-slate-800 to-slate-900 hover:from-slate-700 hover:to-slate-800 disabled:opacity-75 text-white text-xs font-extrabold shadow-md shadow-slate-900/15 flex items-center gap-2 transition-all active:scale-95"
+                  className="h-10 px-4 rounded-xl bg-[#0f223d] hover:bg-[#173259] disabled:opacity-75 text-white text-xs font-extrabold shadow-sm inline-flex items-center gap-2 transition-all active:scale-95"
                 >
                   {loadingMeetingSlides ? (
                     <progress
@@ -4521,7 +4550,7 @@ export default function PresentationsPage() {
                     <Eye className="w-4 h-4 text-sky-300" />
                   )}
                   <span>{loadingMeetingSlides ? "Yükleniyor..." : "Toplu Önizle"}</span>
-                  <span className="px-1.5 py-0.5 rounded-md bg-white/15 text-[11px] font-extrabold">
+                  <span className="px-1.5 py-0.5 rounded-md bg-white/15 text-[11px] font-extrabold tabular-nums">
                     {selectedPersonnelId
                       ? presentations.filter(
                           (p) => String(p.createdBy?._id || "") === selectedPersonnelId
@@ -4542,46 +4571,115 @@ export default function PresentationsPage() {
                   }}
                   disabled={loadingMeetingSlides || selectedMeeting.recordCount === 0}
                   title="Belirlenen sıralamayla projeksiyon için tam ekran sunum gösterisini başlat (ESC ile önizlemeye döner)"
-                  className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white text-xs font-extrabold shadow-md shadow-emerald-600/25 flex items-center gap-2 transition-all active:scale-95"
+                  className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-50 text-white text-xs font-extrabold shadow-sm inline-flex items-center gap-2 transition-all active:scale-95"
                 >
-                  <Play aria-hidden="true" className="w-4 h-4 fill-current" />
+                  <Play aria-hidden="true" className="w-3.5 h-3.5 fill-current" />
                   <span>Tam Ekran Sunum</span>
                 </button>
 
-                {isSuperAdmin && (
-                  <select
-                    aria-label="Tam ekran sunum slayt geçiş efekti (Süper Admin)"
-                    title="Süper Admin: Tam ekran slayt sunumunda slaytlar arası geçiş efektini seç"
-                    value={selectedMeeting.transitionPreset || "kurumsal_kaydir"}
-                    onChange={(e) =>
-                      handleSetMeetingTransition(selectedMeeting._id, e.target.value)
-                    }
-                    className="px-3.5 py-2.5 rounded-xl border border-amber-200 text-xs font-extrabold bg-amber-50/80 hover:bg-amber-100/80 text-amber-950 outline-none focus:ring-2 focus:ring-amber-500 transition-colors"
+                {canManageSelectedMeeting && selectedMeeting.status === "open" && (
+                  <button
+                    type="button"
+                    onClick={() => openManageMeeting(selectedMeeting)}
+                    disabled={loadingMeetingSlides}
+                    className="h-10 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold shadow-sm inline-flex items-center gap-2 transition-all active:scale-95"
                   >
-                    {SLIDESHOW_TRANSITION_PRESETS.map((tp) => (
-                      <option key={tp.id} value={tp.id}>
-                        Geçiş Efekti: {tp.label}
-                      </option>
-                    ))}
-                  </select>
+                    <Layers className="w-4 h-4" />
+                    <span>Sırala / Kilitle & Sonlandır</span>
+                  </button>
+                )}
+
+                {selectedMeeting.status === "closed" && (
+                  <>
+                    <button
+                      type="button"
+                      onClick={() => openManageMeeting(selectedMeeting)}
+                      disabled={loadingMeetingSlides}
+                      className="h-10 px-4 rounded-xl bg-blue-600 hover:bg-blue-500 text-white text-xs font-extrabold shadow-sm inline-flex items-center gap-2 transition-all active:scale-95"
+                    >
+                      <Download className="w-4 h-4" />
+                      <span>Birleştirilmiş Sunuyu İndir (.pptx)</span>
+                    </button>
+                    {canManageSelectedMeeting &&
+                      selectedMeeting.closedAt &&
+                      Date.now() - new Date(selectedMeeting.closedAt).getTime() <=
+                        12 * 60 * 60 * 1000 && (
+                        <button
+                          type="button"
+                          onClick={() => handleReopenMeeting(selectedMeeting)}
+                          className="h-10 px-4 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-extrabold shadow-sm inline-flex items-center gap-1.5 transition-all active:scale-95"
+                          title="Kapatıldıktan sonraki 12 saat içinde tekrar açılabilir"
+                        >
+                          <Unlock className="w-4 h-4" />
+                          <span>Toplantıyı Tekrar Aç</span>
+                        </button>
+                      )}
+                  </>
+                )}
+              </div>
+            </div>
+
+            {/* 2. Satır: Birleşik ve Düzenli Toplantı Görünüm & Yetki Ayarları Şeridi */}
+            {(isSuperAdmin ||
+              (canManageSelectedMeeting && selectedMeeting.status === "open")) && (
+              <div className="p-2.5 rounded-2xl bg-slate-50/90 border border-slate-200/80 grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-2.5">
+                {isSuperAdmin && (
+                  <div className="flex items-center gap-2.5 px-3 h-11 rounded-xl bg-white border border-slate-200/90 hover:border-blue-300 transition-colors min-w-0">
+                    <Sparkles className="w-4 h-4 text-blue-600 shrink-0" aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <label
+                        htmlFor="meeting-transition-select"
+                        className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 leading-none mb-0.5"
+                      >
+                        Slayt Geçiş Efekti
+                      </label>
+                      <select
+                        id="meeting-transition-select"
+                        title="Süper Admin: Tam ekran slayt sunumunda slaytlar arası geçiş efektini seç"
+                        value={selectedMeeting.transitionPreset || "kurumsal_kaydir"}
+                        onChange={(e) =>
+                          handleSetMeetingTransition(selectedMeeting._id, e.target.value)
+                        }
+                        className="w-full bg-transparent text-xs font-bold text-slate-800 outline-none truncate"
+                      >
+                        {SLIDESHOW_TRANSITION_PRESETS.map((tp) => (
+                          <option key={tp.id} value={tp.id}>
+                            {tp.label}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                 )}
 
                 {isSuperAdmin && selectedMeeting.status === "open" && (
-                  <select
-                    value={selectedMeeting.authorizedUserId?._id || ""}
-                    onChange={(e) =>
-                      handleAssignAuthorizedUser(selectedMeeting._id, e.target.value)
-                    }
-                    className="px-3.5 py-2.5 rounded-xl border border-indigo-200 text-xs font-bold bg-indigo-50/70 hover:bg-indigo-50 text-indigo-900 outline-none focus:ring-2 focus:ring-indigo-500 transition-colors"
-                    title="Süper Admin: Toplantı için yetkili kullanıcı ata veya değiştir"
-                  >
-                    <option value="">Yetkili Kullanıcı Ata (Süper Admin)</option>
-                    {staffUsers.map((u) => (
-                      <option key={u._id} value={u._id}>
-                        Yetkili: {u.name}
-                      </option>
-                    ))}
-                  </select>
+                  <div className="flex items-center gap-2.5 px-3 h-11 rounded-xl bg-white border border-slate-200/90 hover:border-blue-300 transition-colors min-w-0">
+                    <Lock className="w-4 h-4 text-indigo-600 shrink-0" aria-hidden="true" />
+                    <div className="min-w-0 flex-1">
+                      <label
+                        htmlFor="meeting-auth-user-select"
+                        className="block text-[10px] font-bold uppercase tracking-wider text-slate-400 leading-none mb-0.5"
+                      >
+                        Toplantı Yetkilisi
+                      </label>
+                      <select
+                        id="meeting-auth-user-select"
+                        value={selectedMeeting.authorizedUserId?._id || ""}
+                        onChange={(e) =>
+                          handleAssignAuthorizedUser(selectedMeeting._id, e.target.value)
+                        }
+                        className="w-full bg-transparent text-xs font-bold text-slate-800 outline-none truncate"
+                        title="Süper Admin: Toplantı için yetkili kullanıcı ata veya değiştir"
+                      >
+                        <option value="">Atanmadı (Seçin)</option>
+                        {staffUsers.map((u) => (
+                          <option key={u._id} value={u._id}>
+                            {u.name}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
                 )}
 
                 {canManageSelectedMeeting && selectedMeeting.status === "open" && (
@@ -4591,17 +4689,31 @@ export default function PresentationsPage() {
                       setIsBgPickerOpen((p) => !p);
                       setIsFramePickerOpen(false);
                     }}
-                    className={`px-3.5 py-2.5 rounded-xl text-xs font-bold shadow-xs flex items-center gap-1.5 transition-all border ${
+                    className={`flex items-center gap-2.5 px-3 h-11 rounded-xl border text-left transition-all min-w-0 ${
                       isBgPickerOpen
-                        ? "bg-blue-600 text-white border-blue-600 shadow-md shadow-blue-500/20"
-                        : "bg-white hover:bg-slate-50 text-slate-700 border-slate-200"
+                        ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                        : "bg-white hover:border-blue-300 text-slate-800 border-slate-200/90"
                     }`}
                   >
-                    <ImageIcon className="w-4 h-4 text-blue-500" />
-                    Arka Plan:{" "}
-                    {BACKGROUND_PRESETS.find(
-                      (p) => p.id === (selectedMeeting.backgroundPreset || "template")
-                    )?.label || "Şablon Varsayılanı"}
+                    <ImageIcon
+                      className={`w-4 h-4 shrink-0 ${
+                        isBgPickerOpen ? "text-blue-100" : "text-blue-600"
+                      }`}
+                    />
+                    <div className="min-w-0 flex-1">
+                      <span
+                        className={`block text-[10px] font-bold uppercase tracking-wider leading-none mb-0.5 ${
+                          isBgPickerOpen ? "text-blue-100" : "text-slate-400"
+                        }`}
+                      >
+                        Slayt Arka Planı
+                      </span>
+                      <span className="block text-xs font-bold truncate">
+                        {BACKGROUND_PRESETS.find(
+                          (p) => p.id === (selectedMeeting.backgroundPreset || "template")
+                        )?.label || "Şablon Varsayılanı"}
+                      </span>
+                    </div>
                   </button>
                 )}
 
@@ -4613,69 +4725,35 @@ export default function PresentationsPage() {
                       setIsBgPickerOpen(false);
                     }}
                     title="Süper Admin: Aktif toplantıdaki tüm sunu fotoğraflarına toplu kurumsal çerçeve uygula veya değiştir"
-                    className={`px-3.5 py-2.5 rounded-xl text-xs font-extrabold shadow-xs flex items-center gap-1.5 transition-all border ${
+                    className={`flex items-center gap-2.5 px-3 h-11 rounded-xl border text-left transition-all min-w-0 ${
                       isFramePickerOpen
-                        ? "bg-gradient-to-r from-indigo-600 to-blue-600 text-white border-indigo-600 shadow-md shadow-indigo-500/25"
-                        : (selectedMeeting.photoFramePreset || "none") !== "none"
-                          ? "bg-indigo-50 hover:bg-indigo-100 text-indigo-900 border-indigo-200"
-                          : "bg-white hover:bg-slate-50 text-slate-800 border-slate-200"
+                        ? "bg-blue-600 text-white border-blue-600 shadow-sm"
+                        : "bg-white hover:border-blue-300 text-slate-800 border-slate-200/90"
                     }`}
                   >
                     <Frame
-                      className={`w-4 h-4 ${
-                        isFramePickerOpen ? "text-sky-200" : "text-indigo-600"
+                      className={`w-4 h-4 shrink-0 ${
+                        isFramePickerOpen ? "text-blue-100" : "text-indigo-600"
                       }`}
                     />
-                    <span>
-                      Fotoğraf Çerçevesi:{" "}
-                      {PHOTO_FRAME_PRESETS.find(
-                        (p) => p.id === (selectedMeeting.photoFramePreset || "none")
-                      )?.label || "Çerçevesiz"}
-                    </span>
+                    <div className="min-w-0 flex-1">
+                      <span
+                        className={`block text-[10px] font-bold uppercase tracking-wider leading-none mb-0.5 ${
+                          isFramePickerOpen ? "text-blue-100" : "text-slate-400"
+                        }`}
+                      >
+                        Fotoğraf Çerçevesi
+                      </span>
+                      <span className="block text-xs font-bold truncate">
+                        {PHOTO_FRAME_PRESETS.find(
+                          (p) => p.id === (selectedMeeting.photoFramePreset || "none")
+                        )?.label || "Çerçevesiz"}
+                      </span>
+                    </div>
                   </button>
-                )}
-
-                {canManageSelectedMeeting && selectedMeeting.status === "open" && (
-                  <button
-                    type="button"
-                    onClick={() => openManageMeeting(selectedMeeting)}
-                    disabled={loadingMeetingSlides}
-                    className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-extrabold shadow-md shadow-indigo-600/25 flex items-center gap-2 transition-all active:scale-95"
-                  >
-                    <Layers className="w-4 h-4" />
-                    Sırala / Kilitle & Toplantıyı Sonlandır
-                  </button>
-                )}
-
-                {selectedMeeting.status === "closed" && (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => openManageMeeting(selectedMeeting)}
-                      disabled={loadingMeetingSlides}
-                      className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white text-xs font-extrabold shadow-md shadow-blue-600/25 flex items-center gap-2 transition-all active:scale-95"
-                    >
-                      <Download className="w-4 h-4" />
-                      Birleştirilmiş Sunuyu İndir (.pptx)
-                    </button>
-                    {canManageSelectedMeeting &&
-                      selectedMeeting.closedAt &&
-                      Date.now() - new Date(selectedMeeting.closedAt).getTime() <=
-                        12 * 60 * 60 * 1000 && (
-                        <button
-                          type="button"
-                          onClick={() => handleReopenMeeting(selectedMeeting)}
-                          className="px-4 py-2.5 rounded-xl bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 text-white text-xs font-extrabold shadow-md shadow-emerald-600/25 flex items-center gap-1.5 transition-all active:scale-95"
-                          title="Kapatıldıktan sonraki 12 saat içinde tekrar açılabilir"
-                        >
-                          <Unlock className="w-4 h-4" />
-                          Toplantıyı Tekrar Aç
-                        </button>
-                      )}
-                  </>
                 )}
               </div>
-            </div>
+            )}
 
             {canManageSelectedMeeting &&
               selectedMeeting.status === "open" &&
@@ -4861,109 +4939,137 @@ export default function PresentationsPage() {
 
             return (
               <div className="gov-card p-5 sm:p-6 rounded-3xl space-y-5">
-                <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3.5 pb-3 border-b border-slate-100">
-                  <div className="flex flex-wrap items-center gap-3">
-                    <h3 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
-                      <span>Toplantıdaki Sunular</span>
-                      <span className="px-2.5 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-extrabold border border-blue-200/80">
-                        {filteredPresentations.length}
+                {/* Dikkat Çekici Sunu Arama & Filtreleme Komuta Alanı */}
+                <search
+                  aria-label="Toplantıdaki sunuları ara ve filtrele"
+                  className="p-4 sm:p-5 rounded-2xl bg-gradient-to-br from-blue-50/90 via-indigo-50/50 to-slate-50 border-2 border-blue-200/90 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-500/15 shadow-sm transition-all space-y-3.5"
+                >
+                  <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+                    <div className="flex flex-wrap items-center gap-2.5">
+                      <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-600 text-white text-[11px] font-extrabold tracking-wide shadow-xs">
+                        <Search className="w-3.5 h-3.5" aria-hidden="true" />
+                        SUNU ARA-BUL
                       </span>
-                    </h3>
-                    {((session?.user as any)?.role === "superadmin" || canManageSelectedMeeting) &&
-                      selectedPersonnelId &&
-                      filteredPresentations.length > 0 && (
-                        <button
-                          type="button"
-                          onClick={() => openBulkPreview(selectedMeeting, selectedAuthorName)}
-                          disabled={loadingMeetingSlides}
-                          className="px-4 py-2 rounded-xl bg-gradient-to-r from-indigo-600 to-violet-600 hover:from-indigo-500 hover:to-violet-500 text-white text-xs font-extrabold shadow-md shadow-indigo-600/20 inline-flex items-center gap-1.5 transition-all active:scale-95"
-                        >
-                          <Eye className="w-3.5 h-3.5" />
-                          {selectedAuthorName} Sunularını Toplu Görüntüle / Düzenle
-                        </button>
-                      )}
-                  </div>
-
-                  <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 w-full lg:w-auto">
-                    {/* Görünüm Seçici: Kart (Varsayılan) / Liste */}
-                    <div
-                      role="group"
-                      aria-label="Görünüm modu"
-                      className="inline-flex items-center bg-slate-100 p-1 rounded-xl border border-slate-200/80 self-start sm:self-auto shrink-0"
-                    >
-                      <button
-                        type="button"
-                        aria-pressed={presViewMode === "card"}
-                        onClick={() => setPresViewMode("card")}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold inline-flex items-center gap-1.5 transition-all ${
-                          presViewMode === "card"
-                            ? "bg-white text-blue-700 shadow-xs ring-1 ring-slate-200"
-                            : "text-slate-600 hover:text-slate-900"
-                        }`}
-                      >
-                        <LayoutGrid className="w-3.5 h-3.5" />
-                        Kart
-                      </button>
-                      <button
-                        type="button"
-                        aria-pressed={presViewMode === "list"}
-                        onClick={() => setPresViewMode("list")}
-                        className={`px-3 py-1.5 rounded-lg text-xs font-extrabold inline-flex items-center gap-1.5 transition-all ${
-                          presViewMode === "list"
-                            ? "bg-white text-blue-700 shadow-xs ring-1 ring-slate-200"
-                            : "text-slate-600 hover:text-slate-900"
-                        }`}
-                      >
-                        <List className="w-3.5 h-3.5" />
-                        Liste
-                      </button>
+                      <h3 className="text-base sm:text-lg font-extrabold text-slate-900 flex items-center gap-2">
+                        <span>Toplantıdaki Sunular</span>
+                        <span className="px-2.5 py-0.5 rounded-full bg-white text-blue-700 text-xs font-extrabold border border-blue-200 shadow-2xs tabular-nums">
+                          {filteredPresentations.length}
+                        </span>
+                      </h3>
+                      {((session?.user as any)?.role === "superadmin" || canManageSelectedMeeting) &&
+                        selectedPersonnelId &&
+                        filteredPresentations.length > 0 && (
+                          <button
+                            type="button"
+                            onClick={() => openBulkPreview(selectedMeeting, selectedAuthorName)}
+                            disabled={loadingMeetingSlides}
+                            className="px-3.5 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold shadow-sm inline-flex items-center gap-1.5 transition-all active:scale-95"
+                          >
+                            <Eye className="w-3.5 h-3.5" />
+                            <span>{selectedAuthorName} Sunularını Toplu Önizle</span>
+                          </button>
+                        )}
                     </div>
 
-                    {authorOptions.length > 0 && (
-                      <select
-                        value={selectedPersonnelId}
-                        onChange={(e) => {
-                          setSelectedPersonnelId(e.target.value);
-                          setPresPage(1);
-                        }}
-                        className="px-3.5 py-2.5 rounded-xl border border-slate-200 bg-slate-50 hover:bg-white text-xs sm:text-sm font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
+                    <div className="flex flex-wrap items-center gap-2">
+                      {/* Görünüm Seçici: Kart / Liste */}
+                      <div
+                        role="group"
+                        aria-label="Görünüm modu"
+                        className="inline-flex items-center bg-white p-1 rounded-xl border border-slate-200/90 shadow-2xs shrink-0"
                       >
-                        <option value="">Tüm Personeller</option>
-                        {authorOptions.map((a) => (
-                          <option key={a.id} value={a.id}>
-                            Personel: {a.name}
-                          </option>
-                        ))}
-                      </select>
-                    )}
-
-                    <div className="relative w-full sm:w-80">
-                      <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2 pointer-events-none" />
-                      <input
-                        type="text"
-                        value={search}
-                        onChange={(e) => {
-                          setSearch(e.target.value);
-                          setPresPage(1);
-                        }}
-                        placeholder="Ad soyad, mahalle veya personel..."
-                        className="w-full pl-10 pr-8 py-2.5 rounded-xl border border-slate-200 bg-slate-50/70 focus:bg-white text-xs sm:text-sm focus:ring-2 focus:ring-blue-500 outline-none transition-colors"
-                      />
-                      {search && (
                         <button
                           type="button"
-                          onClick={() => {
-                            setSearch("");
+                          aria-pressed={presViewMode === "card"}
+                          onClick={() => setPresViewMode("card")}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-extrabold inline-flex items-center gap-1.5 transition-all ${
+                            presViewMode === "card"
+                              ? "bg-blue-600 text-white shadow-xs"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          <LayoutGrid className="w-3.5 h-3.5" />
+                          <span>Kart</span>
+                        </button>
+                        <button
+                          type="button"
+                          aria-pressed={presViewMode === "list"}
+                          onClick={() => setPresViewMode("list")}
+                          className={`px-3 py-1.5 rounded-lg text-xs font-extrabold inline-flex items-center gap-1.5 transition-all ${
+                            presViewMode === "list"
+                              ? "bg-blue-600 text-white shadow-xs"
+                              : "text-slate-600 hover:text-slate-900"
+                          }`}
+                        >
+                          <List className="w-3.5 h-3.5" />
+                          <span>Liste</span>
+                        </button>
+                      </div>
+
+                      {authorOptions.length > 0 && (
+                        <select
+                          aria-label="Personele göre filtrele"
+                          value={selectedPersonnelId}
+                          onChange={(e) => {
+                            setSelectedPersonnelId(e.target.value);
                             setPresPage(1);
                           }}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                          className="h-9.5 px-3.5 rounded-xl border border-slate-200/90 bg-white hover:border-blue-300 text-xs sm:text-sm font-bold text-slate-700 focus:ring-2 focus:ring-blue-500 outline-none shadow-2xs transition-colors"
                         >
-                          <X className="w-4 h-4" />
-                        </button>
+                          <option value="">Tüm Personeller</option>
+                          {authorOptions.map((a) => (
+                            <option key={a.id} value={a.id}>
+                              Personel: {a.name}
+                            </option>
+                          ))}
+                        </select>
                       )}
                     </div>
                   </div>
-                </div>
+
+                  {/* Yüksek Kontrastlı Büyük Arama Girişi */}
+                  <div className="relative">
+                    <label htmlFor="presentations-search-input" className="sr-only">
+                      Toplantıdaki sunularda ad soyad, mahalle veya personel ara
+                    </label>
+                    <Search
+                      aria-hidden="true"
+                      className="w-5 h-5 text-blue-600 absolute left-4 top-1/2 -translate-y-1/2 pointer-events-none"
+                    />
+                    <input
+                      id="presentations-search-input"
+                      name="presentationSearch"
+                      type="search"
+                      enterKeyHint="search"
+                      value={search}
+                      onChange={(e) => {
+                        setSearch(e.target.value);
+                        setPresPage(1);
+                      }}
+                      placeholder="Hızlı bulmak için vatandaş adı soyadı, mahalle/köy veya hazırlayan personel adı yazın..."
+                      className={`w-full h-12 pl-12 ${
+                        search ? "pr-28" : "pr-4"
+                      } rounded-xl text-sm sm:text-base font-semibold text-slate-900 placeholder:text-slate-400 placeholder:font-normal outline-none transition-all ${
+                        search.trim()
+                          ? "bg-white border-2 border-blue-600 ring-4 ring-blue-500/15 shadow-md"
+                          : "bg-white border-2 border-blue-200/90 hover:border-blue-400 focus:border-blue-600 shadow-xs"
+                      }`}
+                    />
+                    {search && (
+                      <button
+                        type="button"
+                        onClick={() => {
+                          setSearch("");
+                          setPresPage(1);
+                        }}
+                        className="absolute right-2.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-lg bg-slate-100 hover:bg-red-100 text-slate-700 hover:text-red-700 text-xs font-bold inline-flex items-center gap-1 transition-colors"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                        <span>Temizle</span>
+                      </button>
+                    )}
+                  </div>
+                </search>
 
                 {filteredPresentations.length === 0 ? (
                   <div className="text-center py-12 text-sm text-slate-500 bg-slate-50 rounded-2xl border border-dashed border-slate-200">

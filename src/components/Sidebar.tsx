@@ -62,18 +62,25 @@ export default function Sidebar() {
     { name: "Bebek Maması", href: "/dashboard/baby-food", icon: Baby, roles: ["superadmin", "manager", "personnel"], group: "aid" },
     { name: "Ayni Yardım", href: "/dashboard/in-kind-aid", icon: Gift, roles: ["superadmin", "manager", "personnel"], group: "aid" },
     { name: "Yardım Türleri", href: "/dashboard/help-types", icon: Layers, roles: ["superadmin", "manager"], allowAuthorized: true, group: "aid" },
-    { name: "Raporlar & İstatistik", href: "/dashboard/reports", icon: BarChart3, roles: ["superadmin", "manager", "personnel"], group: "admin" },
+    { name: "Raporlar & İstatistik", href: "/dashboard/reports", icon: BarChart3, roles: ["superadmin", "manager"], allowAuthorized: true, group: "admin" },
     { name: "Personel Yönetimi", href: "/dashboard/users", icon: Users, roles: ["superadmin"], group: "admin" },
     { name: "Sistem Logları", href: "/dashboard/logs", icon: Activity, roles: ["superadmin"], group: "admin" },
-    { name: "Ayarlar", href: "/dashboard/settings", icon: Settings, roles: ["superadmin", "manager", "personnel"], group: "admin" },
+    { name: "Ayarlar", href: "/dashboard/settings", icon: Settings, roles: ["superadmin", "manager"], allowAuthorized: true, group: "admin" },
   ];
 
   const userRole = session?.user?.role as string;
-  const filteredItems = navItems.filter(
-    (item) =>
-      item.roles.includes(userRole) ||
-      (item.allowAuthorized && Boolean(session?.user?.authorizedModules?.includes("helpTypes")))
-  );
+  const isAuthorizedPersonnel = Boolean(session?.user?.isAuthorized);
+  const filteredItems = navItems.filter((item) => {
+    if (item.roles.includes(userRole)) return true;
+    if (!item.allowAuthorized) return false;
+    if (item.href === "/dashboard/help-types") {
+      return Boolean(session?.user?.authorizedModules?.includes("helpTypes"));
+    }
+    if (item.group === "admin") {
+      return isAuthorizedPersonnel;
+    }
+    return false;
+  });
 
   const groups: Array<{ key: NavItem["group"]; label: string }> = [
     { key: "core", label: "Operasyonel İşlemler" },

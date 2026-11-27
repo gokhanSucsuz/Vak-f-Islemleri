@@ -1420,123 +1420,131 @@ export default function ApplicationsPage() {
         onChange={handleFileSelect}
       />
 
-      {/* Üst Başlık & Butonlar (Mobilde Arama Kutusu En Üstte Olduğu İçin Alt Sıraya Geçer; Arama Odaklanınca Mobilde Gizlenir) */}
+      {/* Kurumsal Koyu Lacivert Üst Başlık & Uyumlu Aksiyon Barı (Sunular Tasarımıyla Birebir Uyumlu) */}
       <div
         className={`order-4 md:order-1 ${
           isMobileSearchActive ? "hidden md:flex" : "flex"
-        } flex-col lg:flex-row justify-between items-start lg:items-center bg-white p-4 sm:p-6 rounded-3xl shadow-sm border border-slate-100 gap-4`}
+        } flex-col xl:flex-row justify-between items-start xl:items-center rounded-3xl p-5 sm:p-6 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white shadow-xl shadow-slate-900/15 border border-slate-800/60 gap-4`}
       >
-        <div>
-          <div className="flex items-center gap-3">
-            <div className="p-3 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white rounded-2xl shadow-lg shadow-blue-500/20">
-              <FolderOpen className="w-7 h-7" />
+        <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-950/50 ring-1 ring-white/20 shrink-0">
+            <FolderOpen className="w-6 h-6 sm:w-7 sm:h-7" />
+          </div>
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15 text-[11px] font-bold text-blue-200">
+                <Sparkles className="w-3 h-3 text-amber-300" />
+                Merkezi Hane & Arşiv Sistemi
+              </span>
+              {isSuperAdminSyncing && (
+                <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-[11px] font-bold text-emerald-200">
+                  <RefreshCw className="w-3 h-3 animate-spin" />
+                  Arşiv arka planda senkronize ediliyor...
+                </span>
+              )}
             </div>
-            <div>
-              <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight flex flex-wrap items-center gap-2.5">
-                <span>Hane ve Başvuru Dosyaları</span>
-                {isSuperAdminSyncing && (
-                  <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-blue-50 border border-blue-200 text-[11px] font-semibold text-blue-700">
-                    <RefreshCw className="w-3 h-3 animate-spin" />
-                    Tüm arşiv arka planda hazırlanıyor...
-                  </span>
-                )}
-              </h1>
-              <p className="text-slate-500 text-sm mt-0.5">
-                Başvuru ve hane kayıtlarını yönetin, gelişmiş arama ve hızlı sayfalama yapın, kurumsal Excel raporu alın.
-              </p>
-            </div>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
+              Hane ve Başvuru Dosyaları
+            </h1>
+            <p className="text-xs sm:text-sm text-blue-100/85 mt-0.5 max-w-2xl">
+              Başvuru ve hane kayıtlarını yönetin, gelişmiş arama ve hızlı sayfalama yapın, kurumsal Excel raporu alın.
+            </p>
           </div>
         </div>
 
-        {/* Aksiyon Butonları (Tüm Kullanıcılar İçin Excel İndirme Açık) */}
-        <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
-          {/* Excel Dosyalarını Yönet / Sil Butonu (Yetkili veya Süper Admin) */}
-          {canManage && (
-            <button
-              onClick={() => {
-                fetchImportBatches();
-                setIsBatchManageModalOpen(true);
-              }}
-              className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-3.5 py-2.5 bg-red-50 hover:bg-red-100 text-red-700 rounded-xl text-xs font-semibold transition-all border border-red-200"
-              title="Yüklenen Excel Dosyalarını veya Paketleri Sil"
-            >
-              <Trash2 className="w-4 h-4 text-red-600" />
-              Excel Dosyası Sil
-            </button>
-          )}
-
-          {/* GÜZEL MODERN EXCEL ÇIKTISI BUTONU (TÜM KULLANICILAR İÇİN) */}
-          <button
-            onClick={() => setIsExportModalOpen(true)}
-            className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-700 hover:to-teal-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-600/25 active:scale-95"
-            title="Güzel ve Modern Standartlarda Excel Raporu İndir"
-          >
-            <FileSpreadsheet className="w-4 h-4" />
-            Excel Çıktısı Al
-          </button>
-
-          {canManage ? (
-            <>
+        {/* Aksiyon Butonları (Tek Hizada, Derli Toplu ve Kurumsal Uyumlu) */}
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-end gap-2.5 w-full xl:w-auto shrink-0">
+          <div className="flex flex-wrap sm:flex-nowrap items-center gap-1.5 p-1.5 rounded-2xl bg-white/[0.07] border border-white/15 backdrop-blur-xs w-full sm:w-auto">
+            {canManage && (
               <button
+                type="button"
+                onClick={() => {
+                  fetchImportBatches();
+                  setIsBatchManageModalOpen(true);
+                }}
+                className="flex-1 sm:flex-none h-9.5 px-3.5 rounded-xl bg-rose-500/20 hover:bg-rose-500/30 text-rose-100 border border-rose-400/30 text-xs font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap transition-all active:scale-95"
+                title="Yüklenen Excel Dosyalarını veya Paketleri Sil"
+              >
+                <Trash2 className="w-3.5 h-3.5 text-rose-300 shrink-0" />
+                <span>Excel Sil</span>
+              </button>
+            )}
+
+            {canManage && (
+              <button
+                type="button"
                 onClick={() => fileInputRef.current?.click()}
-                className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white rounded-xl text-sm font-semibold transition-all shadow-md shadow-indigo-600/20"
+                className="flex-1 sm:flex-none h-9.5 px-3.5 rounded-xl bg-white/10 hover:bg-white/20 text-white border border-white/15 text-xs font-bold inline-flex items-center justify-center gap-1.5 whitespace-nowrap transition-all active:scale-95"
                 title="Excel Dosyası Yükle (.xlsx, .xls)"
               >
-                <UploadCloud className="w-4 h-4" />
-                Excel Yükle
+                <UploadCloud className="w-3.5 h-3.5 text-blue-200 shrink-0" />
+                <span>Excel Yükle</span>
               </button>
+            )}
 
-              <button
-                onClick={handleStartManualCreate}
-                className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-semibold transition-all shadow-lg shadow-blue-600/30"
-              >
-                <Plus className="w-4 h-4" />
-                Manuel Kayıt Ekle
-              </button>
-            </>
+            <button
+              type="button"
+              onClick={() => setIsExportModalOpen(true)}
+              className="flex-1 sm:flex-none h-9.5 px-3.5 rounded-xl bg-emerald-500/25 hover:bg-emerald-500/35 text-emerald-100 border border-emerald-400/35 text-xs font-extrabold inline-flex items-center justify-center gap-1.5 whitespace-nowrap transition-all active:scale-95"
+              title="Güzel ve Modern Standartlarda Excel Raporu İndir"
+            >
+              <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+              <span>Excel Çıktısı Al</span>
+            </button>
+          </div>
+
+          {canManage ? (
+            <button
+              type="button"
+              onClick={handleStartManualCreate}
+              className="w-full sm:w-auto h-11 px-5 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:via-orange-500 hover:to-rose-400 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-orange-950/35 ring-1 ring-white/25 inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all hover:-translate-y-0.5 active:scale-95"
+            >
+              <Plus className="w-4 h-4 stroke-[2.6]" />
+              <span>Manuel Kayıt Ekle</span>
+            </button>
           ) : (
-            <div className="flex items-center gap-2 px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs text-slate-500">
-              <ShieldCheck className="w-4 h-4 text-slate-400" />
-              Görüntüleme Modu (Excel indirme ve arama serbesttir)
+            <div className="inline-flex items-center gap-1.5 h-10 px-3.5 bg-white/10 border border-white/15 rounded-xl text-xs font-semibold text-blue-100">
+              <ShieldCheck className="w-4 h-4 text-emerald-300 shrink-0" />
+              <span>Görüntüleme Modu</span>
             </div>
           )}
         </div>
       </div>
 
-      {/* İstatistik Kartları (Mobilde Kompakt 2x2 Izgara; Arama Odaklanınca Gizlenir) */}
+      {/* İstatistik Kartları */}
       <div
         className={`order-5 md:order-2 ${
           isMobileSearchActive ? "hidden md:grid" : "grid"
         } grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4`}
       >
-        <div className="bg-white p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-100 shadow-sm flex items-center gap-3 sm:gap-4">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-blue-50 text-blue-600 flex items-center justify-center shrink-0">
+        <div className="gov-card p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl flex items-center gap-3 sm:gap-4">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center shrink-0">
             <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div className="min-w-0">
             <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider truncate">Toplam Dosya</p>
-            <h3 className="text-lg sm:text-2xl font-black text-slate-800 tabular-nums">{stats.totalCount}</h3>
+            <h3 className="text-lg sm:text-2xl font-black text-slate-900 tabular-nums">{stats.totalCount}</h3>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-100 shadow-sm flex items-center gap-3 sm:gap-4">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center shrink-0">
+        <div className="gov-card p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl flex items-center gap-3 sm:gap-4">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shrink-0">
             <CheckCircle2 className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div className="min-w-0">
             <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider truncate">Dolu / Aktif</p>
-            <h3 className="text-lg sm:text-2xl font-black text-slate-800 tabular-nums">{stats.activeCount}</h3>
+            <h3 className="text-lg sm:text-2xl font-black text-emerald-700 tabular-nums">{stats.activeCount}</h3>
           </div>
         </div>
 
-        <div className="bg-white p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-100 shadow-sm flex items-center gap-3 sm:gap-4">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-amber-50 text-amber-600 flex items-center justify-center shrink-0">
+        <div className="gov-card p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl flex items-center gap-3 sm:gap-4">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-amber-50 text-amber-600 border border-amber-100 flex items-center justify-center shrink-0">
             <AlertCircle className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div className="min-w-0">
             <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider truncate">Boş Dosyalar</p>
             <div className="flex items-center gap-1.5 flex-wrap">
-              <h3 className="text-lg sm:text-2xl font-black text-slate-800 tabular-nums">{stats.emptyCount}</h3>
+              <h3 className="text-lg sm:text-2xl font-black text-amber-700 tabular-nums">{stats.emptyCount}</h3>
               {stats.emptyCount > 0 && (
                 <span className="hidden sm:inline-block text-[11px] font-bold px-2 py-0.5 rounded-full bg-amber-100 text-amber-800">
                   Doldurulabilir
@@ -1546,9 +1554,9 @@ export default function ApplicationsPage() {
           </div>
         </div>
 
-        <div className="bg-white p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl border border-slate-100 shadow-sm flex items-center gap-3 sm:gap-4">
-          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center shrink-0">
-            <Layers className="w-5 h-5 sm:w-6 sm:h-6" />
+        <div className="gov-card p-3.5 sm:p-5 rounded-2xl sm:rounded-3xl flex items-center gap-3 sm:gap-4">
+          <div className="w-10 h-10 sm:w-12 sm:h-12 rounded-xl sm:rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center shrink-0">
+            <Database className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div className="min-w-0">
             <p className="text-[10px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider truncate">Aktif Sekme</p>
@@ -1558,14 +1566,15 @@ export default function ApplicationsPage() {
       </div>
 
       {/* ========================================================= */}
-      {/* ARŞİV / DOSYA NO ARA-BUL (MOBİLDE EN ÜSTTE & ODAKLANMALI)  */}
+      {/* ARŞİV / DOSYA NO ARA-BUL (DİKKAT ÇEKİCİ ARAMA MERKEZİ)     */}
       {/* ========================================================= */}
-      <div
-        ref={searchSectionRef}
-        className={`order-1 md:order-3 bg-white p-4 sm:p-6 rounded-3xl shadow-md shadow-slate-200/60 border-2 transition-all space-y-3.5 sm:space-y-4 scroll-mt-3 ${
+      <search
+        aria-label="Hane ve başvuru dosyalarında ara"
+        ref={searchSectionRef as any}
+        className={`order-1 md:order-3 bg-gradient-to-br from-blue-50/90 via-indigo-50/40 to-white p-4 sm:p-6 rounded-3xl shadow-md shadow-blue-900/5 border-2 transition-all space-y-3.5 sm:space-y-4 scroll-mt-3 ${
           isMobileSearchActive
-            ? "border-blue-500 ring-4 ring-blue-500/12"
-            : "border-blue-100 focus-within:border-blue-500 focus-within:ring-4 focus-within:ring-blue-500/10"
+            ? "border-blue-600 ring-4 ring-blue-500/15"
+            : "border-blue-200/95 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-500/15"
         }`}
       >
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
@@ -1603,18 +1612,23 @@ export default function ApplicationsPage() {
 
         {/* Büyük, Belirgin Mobil & Masaüstü Uyumlu Arama Kutusu */}
         <div className="relative">
+          <label htmlFor="applications-search-input" className="sr-only">
+            Ad soyad, T.C. kimlik no, eş adı veya dosya numarası ara
+          </label>
           {loading || (searchTerm && searchTerm !== debouncedSearch) ? (
             <div className="absolute left-3.5 sm:left-4 top-1/2 -translate-y-1/2 pointer-events-none">
               <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
             </div>
           ) : (
-            <Search className="absolute left-3.5 sm:left-4 top-1/2 -translate-y-1/2 text-blue-600 w-5 h-5 pointer-events-none" />
+            <Search aria-hidden="true" className="absolute left-3.5 sm:left-4 top-1/2 -translate-y-1/2 text-blue-600 w-5 h-5 pointer-events-none" />
           )}
           <input
+            id="applications-search-input"
+            name="applicationSearch"
             ref={searchInputRef}
             type="search"
             enterKeyHint="search"
-            placeholder="Ad soyad, T.C. veya dosya no ara..."
+            placeholder="Ad soyad, T.C., eş adı veya dosya no yazarak anında bulun..."
             value={searchTerm}
             onFocus={() => {
               setIsMobileSearchFocused(true);
@@ -1650,7 +1664,7 @@ export default function ApplicationsPage() {
             } rounded-2xl text-base sm:text-lg focus:outline-none transition-all font-semibold text-slate-900 placeholder:text-slate-400 placeholder:font-normal ${
               searchTerm.trim().length > 0
                 ? "bg-white border-2 border-blue-600 ring-4 ring-blue-500/20 shadow-lg"
-                : "bg-slate-50/90 hover:bg-white focus:bg-white border-2 border-slate-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-500/15 shadow-inner"
+                : "bg-white hover:border-blue-400 focus:bg-white border-2 border-blue-300/90 focus:border-blue-600 focus:ring-4 focus:ring-blue-500/15 shadow-sm"
             }`}
           />
           <div className="absolute right-2.5 sm:right-3 top-1/2 -translate-y-1/2 flex items-center gap-1.5">
@@ -1679,16 +1693,16 @@ export default function ApplicationsPage() {
 
         {/* Alt Satır: Yatay Kaydırma Çubuğu Olmayan %100 Mobil Uyumlu 3'lü Filtre Sekmeleri */}
         <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-2.5 sm:gap-3 pt-0.5">
-          <div className="grid grid-cols-3 sm:inline-flex items-center gap-1 p-1 bg-slate-100 rounded-2xl w-full sm:w-auto">
+          <div className="grid grid-cols-3 sm:inline-flex items-center gap-1 p-1 bg-white border border-slate-200/90 rounded-2xl shadow-2xs w-full sm:w-auto">
             <button
               type="button"
               onClick={() => {
                 setFilterTab("all");
                 setCurrentPage(1);
               }}
-              className={`px-2 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all text-center truncate ${
+              className={`px-2 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-extrabold transition-all text-center truncate ${
                 filterTab === "all"
-                  ? "bg-white text-blue-600 shadow-sm"
+                  ? "bg-blue-600 text-white shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
@@ -1701,9 +1715,9 @@ export default function ApplicationsPage() {
                 setFilterTab("active");
                 setCurrentPage(1);
               }}
-              className={`px-2 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all text-center truncate ${
+              className={`px-2 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-extrabold transition-all text-center truncate ${
                 filterTab === "active"
-                  ? "bg-white text-emerald-600 shadow-sm"
+                  ? "bg-emerald-600 text-white shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
@@ -1716,15 +1730,21 @@ export default function ApplicationsPage() {
                 setFilterTab("empty");
                 setCurrentPage(1);
               }}
-              className={`px-2 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 truncate ${
+              className={`px-2 sm:px-4 py-2 rounded-xl text-[11px] sm:text-xs font-extrabold transition-all flex items-center justify-center gap-1 truncate ${
                 filterTab === "empty"
-                  ? "bg-white text-amber-600 shadow-sm"
+                  ? "bg-amber-500 text-white shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
               }`}
             >
               <span className="sm:hidden">Boş ({stats.emptyCount})</span>
               <span className="hidden sm:inline">Boş Dosyalar</span>
-              <span className="hidden sm:inline-block px-1.5 py-0.5 rounded-full text-[10px] font-extrabold bg-amber-100 text-amber-800">
+              <span
+                className={`hidden sm:inline-block px-1.5 py-0.5 rounded-full text-[10px] font-extrabold ${
+                  filterTab === "empty"
+                    ? "bg-white/25 text-white"
+                    : "bg-amber-100 text-amber-800"
+                }`}
+              >
                 {stats.emptyCount}
               </span>
             </button>
@@ -1734,17 +1754,21 @@ export default function ApplicationsPage() {
             <button
               type="button"
               onClick={() => setIsAdvancedFilterOpen(!isAdvancedFilterOpen)}
-              className={`flex-1 sm:flex-none justify-center px-3.5 py-2.5 rounded-2xl border text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0 ${
+              className={`flex-1 sm:flex-none justify-center px-3.5 py-2.5 rounded-2xl border text-xs font-bold transition-all flex items-center gap-1.5 flex-shrink-0 shadow-2xs ${
                 isAdvancedFilterOpen || hasActiveFilters
-                  ? "bg-blue-50 border-blue-200 text-blue-700"
-                  : "bg-slate-50 border-slate-200 text-slate-700 hover:bg-slate-100"
+                  ? "bg-blue-600 border-blue-600 text-white"
+                  : "bg-white border-slate-200/90 text-slate-700 hover:border-blue-300"
               }`}
               title="Detaylı Filtreleri Aç / Kapat"
             >
               <SlidersHorizontal className="w-4 h-4" />
               <span>Detaylı Filtreler</span>
               {hasActiveFilters && (
-                <span className="w-2 h-2 rounded-full bg-blue-600 animate-pulse" />
+                <span
+                  className={`w-2 h-2 rounded-full animate-pulse ${
+                    isAdvancedFilterOpen || hasActiveFilters ? "bg-amber-300" : "bg-blue-600"
+                  }`}
+                />
               )}
             </button>
 
@@ -1879,6 +1903,7 @@ export default function ApplicationsPage() {
             </div>
 
             <button
+              type="button"
               onClick={handleQuickExport}
               className="text-emerald-700 hover:text-emerald-900 font-bold flex items-center gap-1 hover:underline"
               title="Bu listeyi hemen Excel olarak indir"
@@ -1888,7 +1913,7 @@ export default function ApplicationsPage() {
             </button>
           </div>
         </div>
-      </div>
+      </search>
 
       {/* ========================================================= */}
       {/* ARAMA SONUCU VİTRİNİ (DOSYA / ARŞİV NUMARASI ÖNE ÇIKARMA) */}

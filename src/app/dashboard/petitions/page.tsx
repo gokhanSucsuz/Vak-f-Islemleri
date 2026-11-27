@@ -1355,130 +1355,175 @@ export default function PetitionsPage() {
         onChange={(e) => handleUploadTemplate("matbu", e.target.files?.[0])}
       />
 
-      {/* Üst Başlık & Ana Butonlar */}
-      <div className="bg-white p-6 rounded-3xl shadow-sm border border-slate-100 flex flex-col lg:flex-row justify-between items-start lg:items-center gap-4 print:hidden">
-        <div className="flex items-center gap-3.5">
-          <div className="p-3.5 bg-gradient-to-tr from-blue-600 to-indigo-600 text-white rounded-2xl shadow-lg shadow-blue-500/20">
-            <FileText className="w-7 h-7" />
+      {/* Kurumsal Koyu Lacivert Üst Başlık & Uyumlu Aksiyon Barı (Sunular Tasarımıyla Birebir Uyumlu) */}
+      <div className="rounded-3xl p-5 sm:p-6 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white shadow-xl shadow-slate-900/15 border border-slate-800/60 flex flex-col xl:flex-row justify-between items-start xl:items-center gap-4 print:hidden">
+        <div className="flex items-start sm:items-center gap-3.5 min-w-0">
+          <div className="p-3.5 rounded-2xl bg-gradient-to-br from-blue-500 to-indigo-600 text-white shadow-lg shadow-blue-950/50 ring-1 ring-white/20 shrink-0">
+            <FileText className="w-6 h-6 sm:w-7 sm:h-7" />
           </div>
-          <div>
-            <h1 className="text-2xl font-extrabold text-slate-900 tracking-tight">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2 mb-1">
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-white/10 border border-white/15 text-[11px] font-bold text-blue-200">
+                <Sparkles className="w-3 h-3 text-amber-300" />
+                Kurumsal Dilekçe Otomasyonu
+              </span>
+              <span className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full bg-emerald-500/20 border border-emerald-400/30 text-[11px] font-bold text-emerald-200">
+                Word (.docx) & A4 Çıktı
+              </span>
+            </div>
+            <h1 className="text-xl sm:text-2xl font-extrabold text-white tracking-tight">
               Dilekçe İşlemleri
             </h1>
-            <p className="text-slate-500 text-sm mt-0.5">
-              Şablon üzerinden detaylı veya matbu dilekçe hazırlayın, yazdırın, Word indirin ve
-              arşivleyin.
+            <p className="text-xs sm:text-sm text-blue-100/85 mt-0.5 max-w-2xl">
+              Şablon üzerinden detaylı veya matbu dilekçe hazırlayın, yazdırın, Word indirin ve arşivleyin.
             </p>
           </div>
         </div>
 
-        <div className="flex flex-wrap items-center gap-2.5 w-full lg:w-auto">
+        <div className="flex flex-wrap sm:flex-nowrap items-center justify-end gap-2.5 w-full xl:w-auto shrink-0">
           {isSuperAdmin && (
             <button
               type="button"
               onClick={() => setIsTemplateModalOpen(true)}
-              className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-4 py-2.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs sm:text-sm font-bold transition-all"
+              className="flex-1 sm:flex-none h-10.5 px-4 rounded-2xl bg-white/10 hover:bg-white/20 border border-white/20 text-white text-xs sm:text-sm font-bold inline-flex items-center justify-center gap-2 whitespace-nowrap backdrop-blur-xs transition-all active:scale-95"
             >
-              <UploadCloud className="w-4 h-4 text-slate-600" />
-              Şablonları Yönet
+              <UploadCloud className="w-4 h-4 text-blue-200 shrink-0" />
+              <span>Şablonları Yönet</span>
             </button>
           )}
 
           <button
             type="button"
             onClick={() => handleStartFromTemplate("matbu")}
-            className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-emerald-600/25 active:scale-95"
+            className="flex-1 sm:flex-none h-11 px-5 rounded-2xl bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-400 hover:to-teal-500 text-white text-xs sm:text-sm font-extrabold inline-flex items-center justify-center gap-2 whitespace-nowrap shadow-lg shadow-emerald-950/35 ring-1 ring-white/20 transition-all hover:-translate-y-0.5 active:scale-95"
           >
-            <FileCheck2 className="w-4 h-4" />
-            Matbu Dilekçe Al
+            <FileCheck2 className="w-4 h-4 shrink-0" />
+            <span>Matbu Dilekçe Al</span>
           </button>
 
           <button
             type="button"
             onClick={() => handleStartFromTemplate("detayli")}
-            className="flex-1 lg:flex-none flex items-center justify-center gap-2 px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white rounded-xl text-sm font-bold transition-all shadow-lg shadow-blue-600/25 active:scale-95"
+            className="flex-1 sm:flex-none h-11 px-5 rounded-2xl bg-gradient-to-r from-amber-500 via-orange-500 to-rose-500 hover:from-amber-400 hover:via-orange-500 hover:to-rose-400 text-white text-xs sm:text-sm font-extrabold inline-flex items-center justify-center gap-2 whitespace-nowrap shadow-lg shadow-orange-950/35 ring-1 ring-white/25 transition-all hover:-translate-y-0.5 active:scale-95"
           >
-            <FilePlus2 className="w-4 h-4" />
-            Dilekçe Al
+            <FilePlus2 className="w-4 h-4 shrink-0" />
+            <span>Detaylı Dilekçe Al</span>
           </button>
         </div>
       </div>
 
       {/* İstatistik Kartları */}
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 print:hidden">
-        <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-slate-100 text-slate-700 flex items-center justify-center">
-            <FileText className="w-6 h-6" />
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3.5 sm:gap-4 print:hidden">
+        <div className="gov-card p-4 sm:p-5 rounded-2xl sm:rounded-3xl flex items-center gap-4">
+          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-blue-50 text-blue-600 border border-blue-100 flex items-center justify-center shrink-0">
+            <FileText className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            <p className="text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">
               Toplam Dilekçe
             </p>
-            <h3 className="text-2xl font-black text-slate-800">{stats.totalCount}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-slate-900 tabular-nums">{stats.totalCount}</h3>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-indigo-50 text-indigo-600 flex items-center justify-center">
-            <FilePlus2 className="w-6 h-6" />
+        <div className="gov-card p-4 sm:p-5 rounded-2xl sm:rounded-3xl flex items-center gap-4">
+          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-indigo-50 text-indigo-600 border border-indigo-100 flex items-center justify-center shrink-0">
+            <FilePlus2 className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            <p className="text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">
               Detaylı Dilekçe
             </p>
-            <h3 className="text-2xl font-black text-indigo-700">{stats.detayliCount}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-indigo-700 tabular-nums">{stats.detayliCount}</h3>
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-3xl border border-slate-100 shadow-sm flex items-center gap-4">
-          <div className="w-12 h-12 rounded-2xl bg-emerald-50 text-emerald-600 flex items-center justify-center">
-            <FileCheck2 className="w-6 h-6" />
+        <div className="gov-card p-4 sm:p-5 rounded-2xl sm:rounded-3xl flex items-center gap-4">
+          <div className="w-11 h-11 sm:w-12 sm:h-12 rounded-2xl bg-emerald-50 text-emerald-600 border border-emerald-100 flex items-center justify-center shrink-0">
+            <FileCheck2 className="w-5 h-5 sm:w-6 sm:h-6" />
           </div>
           <div>
-            <p className="text-xs font-bold text-slate-400 uppercase tracking-wider">
+            <p className="text-[11px] sm:text-xs font-bold text-slate-400 uppercase tracking-wider">
               Matbu Dilekçe
             </p>
-            <h3 className="text-2xl font-black text-emerald-700">{stats.matbuCount}</h3>
+            <h3 className="text-xl sm:text-2xl font-black text-emerald-700 tabular-nums">{stats.matbuCount}</h3>
           </div>
         </div>
       </div>
 
-      {/* Öne Çıkan Ara-Bul & Sıralama Barı */}
-      <div className="bg-white p-5 rounded-3xl shadow-md shadow-slate-200/50 border-2 border-blue-100 focus-within:border-blue-500 transition-all space-y-4 print:hidden">
+      {/* Dikkat Çekici Dilekçe Ara-Bul & Filtreleme Barı */}
+      <search
+        aria-label="Alınan dilekçelerde ara ve filtrele"
+        className="bg-gradient-to-br from-blue-50/90 via-indigo-50/40 to-white p-4 sm:p-6 rounded-3xl shadow-md shadow-blue-900/5 border-2 border-blue-200/95 focus-within:border-blue-600 focus-within:ring-4 focus-within:ring-blue-500/15 transition-all space-y-3.5 sm:space-y-4 print:hidden"
+      >
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <div className="flex flex-wrap items-center gap-2.5">
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-600 text-white text-[11px] sm:text-xs font-extrabold tracking-wide shadow-sm shadow-blue-600/20">
+              <Search className="w-3.5 h-3.5" aria-hidden="true" />
+              DİLEKÇE ARA-BUL
+            </span>
+            <span className="text-xs sm:text-sm font-medium text-slate-600">
+              Ad soyad, T.C. kimlik numarası veya dilekçe konusu ile anında filtreleyin
+            </span>
+          </div>
+          {debouncedSearch.trim() && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-emerald-50 border border-emerald-200 text-emerald-700 text-xs font-bold">
+              <CheckCircle2 className="w-3.5 h-3.5" />
+              {loading ? "Aranıyor..." : `${totalRecords} eşleşen dilekçe`}
+            </span>
+          )}
+        </div>
+
         <div className="relative">
-          <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-600 w-5 h-5 pointer-events-none" />
+          <label htmlFor="petitions-search-input" className="sr-only">
+            Dilekçe sahibinin adı soyadı, T.C. kimlik no veya konusu ile ara
+          </label>
+          <Search
+            aria-hidden="true"
+            className="absolute left-4 top-1/2 -translate-y-1/2 text-blue-600 w-5 h-5 pointer-events-none"
+          />
           <input
-            type="text"
+            id="petitions-search-input"
+            name="petitionSearch"
+            type="search"
+            enterKeyHint="search"
             placeholder="Dilekçe sahibinin adı soyadı, T.C. kimlik no veya konusu ile ara-bul..."
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
-            className="w-full h-12 pl-12 pr-24 bg-slate-50 focus:bg-white border-2 border-slate-200 focus:border-blue-500 rounded-2xl text-sm sm:text-base font-semibold text-slate-900 focus:outline-none transition-all"
+            className={`w-full h-12 sm:h-13 pl-12 ${
+              searchTerm ? "pr-28" : "pr-4"
+            } rounded-2xl text-sm sm:text-base font-semibold text-slate-900 placeholder:text-slate-400 placeholder:font-normal focus:outline-none transition-all ${
+              searchTerm.trim()
+                ? "bg-white border-2 border-blue-600 ring-4 ring-blue-500/20 shadow-md"
+                : "bg-white border-2 border-blue-300/90 hover:border-blue-400 focus:border-blue-600 shadow-xs"
+            }`}
           />
           {searchTerm && (
             <button
               type="button"
               onClick={() => setSearchTerm("")}
-              className="absolute right-3 top-1/2 -translate-y-1/2 px-3 py-1 rounded-xl bg-slate-200 hover:bg-red-100 text-slate-700 hover:text-red-700 text-xs font-bold flex items-center gap-1"
+              className="absolute right-2.5 top-1/2 -translate-y-1/2 px-3 py-1.5 rounded-xl bg-slate-100 hover:bg-red-100 text-slate-700 hover:text-red-700 text-xs font-bold inline-flex items-center gap-1 transition-colors"
             >
               <X className="w-3.5 h-3.5" />
-              Temizle
+              <span>Temizle</span>
             </button>
           )}
         </div>
 
         <div className="flex flex-col sm:flex-row justify-between items-stretch sm:items-center gap-3">
           {/* Tür Sekmeleri */}
-          <div className="flex items-center p-1 bg-slate-100 rounded-2xl overflow-x-auto">
+          <div className="inline-flex items-center p-1 bg-white border border-slate-200/90 rounded-2xl shadow-2xs overflow-x-auto">
             <button
               type="button"
               onClick={() => {
                 setTypeFilter("all");
                 setPage(1);
               }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${typeFilter === "all"
-                  ? "bg-white text-blue-600 shadow-sm"
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap ${
+                typeFilter === "all"
+                  ? "bg-blue-600 text-white shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
-                }`}
+              }`}
             >
               Tümü ({stats.totalCount})
             </button>
@@ -1488,10 +1533,11 @@ export default function PetitionsPage() {
                 setTypeFilter("detayli");
                 setPage(1);
               }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${typeFilter === "detayli"
-                  ? "bg-white text-indigo-600 shadow-sm"
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap ${
+                typeFilter === "detayli"
+                  ? "bg-indigo-600 text-white shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
-                }`}
+              }`}
             >
               Detaylı ({stats.detayliCount})
             </button>
@@ -1501,10 +1547,11 @@ export default function PetitionsPage() {
                 setTypeFilter("matbu");
                 setPage(1);
               }}
-              className={`px-4 py-2 rounded-xl text-xs font-bold transition-all whitespace-nowrap ${typeFilter === "matbu"
-                  ? "bg-white text-emerald-600 shadow-sm"
+              className={`px-4 py-2 rounded-xl text-xs font-extrabold transition-all whitespace-nowrap ${
+                typeFilter === "matbu"
+                  ? "bg-emerald-600 text-white shadow-xs"
                   : "text-slate-600 hover:text-slate-900"
-                }`}
+              }`}
             >
               Matbu ({stats.matbuCount})
             </button>
@@ -1512,14 +1559,18 @@ export default function PetitionsPage() {
 
           {/* Sıralama */}
           <div className="flex items-center gap-2 justify-end">
-            <SlidersHorizontal className="w-4 h-4 text-slate-400" />
+            <SlidersHorizontal className="w-4 h-4 text-slate-500" aria-hidden="true" />
+            <label htmlFor="petitions-sort-select" className="sr-only">
+              Dilekçe sıralama ölçütü
+            </label>
             <select
+              id="petitions-sort-select"
               value={sortBy}
               onChange={(e) => {
                 setSortBy(e.target.value as any);
                 setPage(1);
               }}
-              className="px-3.5 py-2 rounded-xl border border-slate-200 bg-slate-50 text-xs font-bold text-slate-700 focus:outline-none focus:border-blue-500"
+              className="h-9.5 px-3.5 rounded-xl border border-slate-200/90 bg-white hover:border-blue-300 text-xs font-bold text-slate-700 focus:outline-none focus:ring-2 focus:ring-blue-500 shadow-2xs"
             >
               <option value="date_desc">En Yeni Önce</option>
               <option value="date_asc">En Eski Önce</option>
@@ -1528,10 +1579,26 @@ export default function PetitionsPage() {
             </select>
           </div>
         </div>
-      </div>
+      </search>
 
-      {/* Dilekçeler Listesi */}
-      <div className="bg-white rounded-3xl shadow-sm border border-slate-100 overflow-hidden print:hidden">
+      {/* Dilekçeler Listesi (Yatay Kaydırma Olmadan %100 Ekrana Sığan Tablo & Mobil Kartlar) */}
+      <div className="gov-card rounded-3xl overflow-hidden print:hidden">
+        <div className="px-5 py-3.5 border-b border-slate-100 bg-slate-50/60 flex items-center justify-between gap-2">
+          <h2
+            id="petitions-list-heading"
+            className="text-sm sm:text-base font-extrabold text-slate-800 flex items-center gap-2"
+          >
+            <FileText className="w-4 h-4 text-blue-600" aria-hidden="true" />
+            <span>Alınan Dilekçeler</span>
+            <span className="px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-xs font-extrabold border border-blue-200/80 tabular-nums">
+              {totalRecords}
+            </span>
+          </h2>
+          <span className="text-[11px] font-medium text-slate-500 hidden sm:inline">
+            Görüntülemek veya yazdırmak için ilgili satıra tıklayabilirsiniz
+          </span>
+        </div>
+
         {/* Mobil Görünüm: Dilekçe Kartları */}
         <div className="md:hidden divide-y divide-slate-100">
           {loading ? (
@@ -1634,23 +1701,43 @@ export default function PetitionsPage() {
           )}
         </div>
 
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-left border-collapse text-sm">
+        <div
+          role="region"
+          aria-labelledby="petitions-list-heading"
+          className="hidden md:block w-full overflow-hidden"
+        >
+          <table className="w-full table-fixed text-left border-collapse text-sm">
             <thead>
-              <tr className="bg-slate-50/90 border-b border-slate-200 text-xs font-bold text-slate-600 uppercase tracking-wider">
-                <th className="py-3.5 px-4">Tür</th>
-                <th className="py-3.5 px-4">Dilekçe Sahibi</th>
-                <th className="py-3.5 px-4">T.C. Kimlik No</th>
-                <th className="py-3.5 px-4">Konu / Not</th>
-                <th className="py-3.5 px-4">Alan Personel</th>
-                <th className="py-3.5 px-4">Tarih</th>
-                <th className="py-3.5 px-4 text-right">İşlemler</th>
+              <tr className="bg-slate-50/90 border-b border-slate-200 text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                <th scope="col" className="py-3 px-3 w-[88px]">
+                  Tür
+                </th>
+                <th scope="col" className="py-3 px-3 w-[25%]">
+                  Dilekçe Sahibi / T.C.
+                </th>
+                <th scope="col" className="py-3 px-3">
+                  Konu / Not
+                </th>
+                <th scope="col" className="py-3 px-3 w-[16%]">
+                  Alan Personel
+                </th>
+                <th scope="col" className="py-3 px-2.5 w-[92px]">
+                  Tarih
+                </th>
+                <th
+                  scope="col"
+                  className={`py-3 px-3 text-right ${
+                    isSuperAdmin ? "w-[214px]" : "w-[178px]"
+                  }`}
+                >
+                  İşlemler
+                </th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {loading ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-500">
+                  <td colSpan={6} className="py-12 text-center text-slate-500">
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-5 h-5 border-2 border-blue-600 border-t-transparent rounded-full animate-spin" />
                       Dilekçeler yükleniyor...
@@ -1659,7 +1746,7 @@ export default function PetitionsPage() {
                 </tr>
               ) : petitions.length === 0 ? (
                 <tr>
-                  <td colSpan={7} className="py-12 text-center text-slate-400">
+                  <td colSpan={6} className="py-12 text-center text-slate-400">
                     Kayıtlı dilekçe bulunamadı.
                   </td>
                 </tr>
@@ -1671,78 +1758,86 @@ export default function PetitionsPage() {
                   const isBusy = loadingContentId === rec._id;
 
                   return (
-                    <tr key={rec._id} className="hover:bg-blue-50/30 transition-colors">
-                      <td className="py-3.5 px-4 whitespace-nowrap">
+                    <tr
+                      key={rec._id}
+                      onClick={() => handleOpenPetition(rec, "preview")}
+                      className="hover:bg-blue-50/40 transition-colors cursor-pointer group"
+                    >
+                      <td className="py-3 px-3 align-middle">
                         {rec.petitionType === "matbu" ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
-                            <FileCheck2 className="w-3.5 h-3.5" />
-                            Matbu
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                            <FileCheck2 className="w-3 h-3 shrink-0" aria-hidden="true" />
+                            <span>Matbu</span>
                           </span>
                         ) : (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200">
-                            <FilePlus2 className="w-3.5 h-3.5" />
-                            Detaylı
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-extrabold bg-indigo-100 text-indigo-800 border border-indigo-200">
+                            <FilePlus2 className="w-3 h-3 shrink-0" aria-hidden="true" />
+                            <span>Detaylı</span>
                           </span>
                         )}
                       </td>
 
-                      <td className="py-3.5 px-4 font-bold text-slate-900 whitespace-nowrap">
-                        {highlightMatch(rec.citizenName, debouncedSearch)}
+                      <td className="py-3 px-3 align-middle min-w-0">
+                        <div className="font-bold text-slate-900 group-hover:text-blue-700 truncate transition-colors">
+                          {highlightMatch(rec.citizenName, debouncedSearch)}
+                        </div>
+                        <div className="font-mono text-xs font-semibold text-slate-500 truncate mt-0.5">
+                          TC: {highlightMatch(rec.tcNo, debouncedSearch)}
+                        </div>
                       </td>
 
-                      <td className="py-3.5 px-4 font-mono font-bold text-slate-700 whitespace-nowrap">
-                        {highlightMatch(rec.tcNo, debouncedSearch)}
+                      <td className="py-3 px-3 align-middle min-w-0">
+                        <div className="text-slate-600 text-xs sm:text-sm truncate">
+                          {rec.subject ? highlightMatch(rec.subject, debouncedSearch) : "-"}
+                        </div>
                       </td>
 
-                      <td className="py-3.5 px-4 text-slate-600 max-w-xs truncate">
-                        {rec.subject ? highlightMatch(rec.subject, debouncedSearch) : "-"}
+                      <td className="py-3 px-3 align-middle min-w-0">
+                        <div className="flex items-center gap-1.5 min-w-0 text-xs font-semibold text-slate-700">
+                          <UserIcon className="w-3.5 h-3.5 text-slate-400 shrink-0" aria-hidden="true" />
+                          <span className="truncate">{rec.createdBy?.name || "-"}</span>
+                        </div>
                       </td>
 
-                      <td className="py-3.5 px-4 whitespace-nowrap">
-                        <span className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-700">
-                          <UserIcon className="w-3.5 h-3.5 text-slate-400" />
-                          {rec.createdBy?.name || "-"}
-                        </span>
+                      <td className="py-3 px-2.5 align-middle text-xs font-mono text-slate-500 whitespace-nowrap">
+                        {new Date(rec.createdAt).toLocaleDateString("tr-TR")}
                       </td>
 
-                      <td className="py-3.5 px-4 whitespace-nowrap text-xs font-mono text-slate-500">
-                        <span className="inline-flex items-center gap-1">
-                          <Calendar className="w-3.5 h-3.5 text-slate-400" />
-                          {new Date(rec.createdAt).toLocaleDateString("tr-TR")}
-                        </span>
-                      </td>
-
-                      <td className="py-3.5 px-4 text-right whitespace-nowrap">
+                      <td
+                        className="py-3 px-3 align-middle text-right"
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         <div className="flex items-center justify-end gap-1">
                           <button
                             type="button"
                             disabled={isBusy}
                             onClick={() => handleOpenPetition(rec, "preview")}
-                            className="p-2 rounded-lg text-slate-500 hover:text-blue-600 hover:bg-blue-50 transition-colors"
+                            aria-label="Dilekçeyi görüntüle ve yazdır"
+                            className="w-8 h-8 rounded-lg bg-slate-100 hover:bg-blue-600 text-slate-700 hover:text-white inline-flex items-center justify-center transition-colors shrink-0"
                             title="Görüntüle / Yazdır / Word İndir"
                           >
-                            <Eye className="w-4 h-4" />
+                            <Eye className="w-3.5 h-3.5" />
                           </button>
                           <button
                             type="button"
                             disabled={isBusy}
                             onClick={() => handleOpenPetition(rec, "useAsTemplate")}
-                            className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-emerald-700 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors flex items-center gap-1"
+                            className="h-8 px-2.5 rounded-lg text-[11px] font-extrabold text-emerald-800 bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 transition-colors inline-flex items-center gap-1 shrink-0"
                             title="Bu dilekçeyi şablon olarak kullanıp yeni dilekçe oluştur"
                           >
-                            <CopyPlus className="w-3.5 h-3.5" />
-                            Şablon Kullan
+                            <CopyPlus className="w-3.5 h-3.5 shrink-0" />
+                            <span>Şablon</span>
                           </button>
                           {isSuperAdmin && (
                             <button
                               type="button"
                               disabled={isBusy}
                               onClick={() => handleSetAsDefaultTemplate(rec)}
-                              className="px-2.5 py-1.5 rounded-lg text-xs font-bold text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors flex items-center gap-1"
+                              aria-label="Varsayılan şablon yap"
+                              className="w-8 h-8 rounded-lg text-indigo-700 bg-indigo-50 hover:bg-indigo-100 border border-indigo-200 transition-colors inline-flex items-center justify-center shrink-0"
                               title="Bu dilekçeyi tüm özellikleri ile varsayılan şablon yap"
                             >
                               <Sparkles className="w-3.5 h-3.5" />
-                              Varsayılan Yap
                             </button>
                           )}
                           {canEdit && (
@@ -1750,20 +1845,22 @@ export default function PetitionsPage() {
                               type="button"
                               disabled={isBusy}
                               onClick={() => handleOpenPetition(rec, "edit")}
-                              className="p-2 rounded-lg text-slate-500 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                              aria-label="Dilekçeyi düzenle"
+                              className="w-8 h-8 rounded-lg text-blue-700 bg-blue-50 hover:bg-blue-100 border border-blue-200/80 transition-colors inline-flex items-center justify-center shrink-0"
                               title="Düzenle"
                             >
-                              <Edit3 className="w-4 h-4" />
+                              <Edit3 className="w-3.5 h-3.5" />
                             </button>
                           )}
                           {canDelete && (
                             <button
                               type="button"
                               onClick={() => handleDeletePetition(rec)}
-                              className="p-2 rounded-lg text-slate-400 hover:text-red-600 hover:bg-red-50 transition-colors"
+                              aria-label="Dilekçeyi sil"
+                              className="w-8 h-8 rounded-lg text-red-600 bg-red-50 hover:bg-red-100 border border-red-200/80 transition-colors inline-flex items-center justify-center shrink-0"
                               title="Sil"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           )}
                         </div>

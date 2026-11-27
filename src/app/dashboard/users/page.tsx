@@ -1,6 +1,8 @@
 "use client";
 
 import { useState, useEffect, useMemo } from "react";
+import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import {
   UserPlus,
@@ -27,6 +29,9 @@ interface StaffMember {
 }
 
 export default function UsersPage() {
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const isSuperAdmin = session?.user?.role === "superadmin";
   const [users, setUsers] = useState<StaffMember[]>([]);
   const [loading, setLoading] = useState(false);
   const [fetching, setFetching] = useState(true);
@@ -49,8 +54,14 @@ export default function UsersPage() {
   });
 
   useEffect(() => {
-    void fetchUsers();
-  }, []);
+    if (status === "authenticated" && !isSuperAdmin) {
+      router.replace("/dashboard");
+      return;
+    }
+    if (status === "authenticated" && isSuperAdmin) {
+      void fetchUsers();
+    }
+  }, [status, isSuperAdmin, router]);
 
   const fetchUsers = async () => {
     setFetching(true);
@@ -151,6 +162,24 @@ export default function UsersPage() {
         u.email.toLocaleLowerCase("tr-TR").includes(q)
     );
   }, [users, search]);
+
+  if (status === "loading") {
+    return (
+      <div className="flex items-center justify-center h-[60vh] text-sm text-slate-500">
+        Yetki kontrol ediliyor...
+      </div>
+    );
+  }
+
+  if (!isSuperAdmin) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <div className="text-center text-slate-500 text-sm">
+          Bu sayfayı görüntüleme yetkiniz yok.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6">

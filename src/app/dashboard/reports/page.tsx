@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useRef, useMemo } from "react";
 import { useSession } from "next-auth/react";
+import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import {
   Download,
@@ -39,7 +40,13 @@ import PaginationControls from "@/components/PaginationControls";
 type ReportTab = "transactions" | "petitions" | "presentations" | "babyFood" | "inKindAid";
 
 export default function ReportsPage() {
-  const { data: session } = useSession();
+  const { data: session, status } = useSession();
+  const router = useRouter();
+  const userRole = session?.user?.role;
+  const canAccessAdminSection =
+    userRole === "superadmin" ||
+    userRole === "manager" ||
+    Boolean(session?.user?.isAuthorized);
   const [activeTab, setActiveTab] = useState<ReportTab>("transactions");
   const [users, setUsers] = useState<any[]>([]);
   const [loading, setLoading] = useState(false);
@@ -113,16 +120,25 @@ export default function ReportsPage() {
   const [presPage, setPresPage] = useState(1);
   const reportPageSize = 20;
 
+  // Yetkisiz personeli ana ekrana yönlendir
+  useEffect(() => {
+    if (status === "authenticated" && !canAccessAdminSection) {
+      router.replace("/dashboard");
+    }
+  }, [status, canAccessAdminSection, router]);
+
   // Genel kullanıcı listesi ve başlangıç verileri
   useEffect(() => {
+    if (status !== "authenticated" || !canAccessAdminSection) return;
     fetchUsers();
     fetchHelpTypes();
     fetchBabyFoodTypes();
     fetchInKindTypes();
     fetchMeetings();
-  }, []);
+  }, [status, canAccessAdminSection]);
 
   useEffect(() => {
+    if (status !== "authenticated" || !canAccessAdminSection) return;
     if (activeTab === "transactions") {
       fetchTransactions();
     } else if (activeTab === "babyFood") {
@@ -134,7 +150,7 @@ export default function ReportsPage() {
     } else if (activeTab === "presentations") {
       fetchPresentations();
     }
-  }, [activeTab]);
+  }, [activeTab, status, canAccessAdminSection]);
 
   const fetchUsers = async () => {
     try {
@@ -747,6 +763,24 @@ export default function ReportsPage() {
       window.print();
     }
   };
+
+  if (status === "loading") {
+    return (
+      <div className="flex items-center justify-center h-[60vh] text-sm text-slate-500">
+        Yetki kontrol ediliyor...
+      </div>
+    );
+  }
+
+  if (!canAccessAdminSection) {
+    return (
+      <div className="flex items-center justify-center h-[60vh]">
+        <div className="text-center text-slate-500 text-sm">
+          Bu bölüme yalnızca Süper Admin veya Yetkili Personel erişebilir.
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-6 print:space-y-0 print:bg-white">
