@@ -1234,7 +1234,7 @@ export default function ApplicationsPage() {
         "Başvuru No",
         "Adı Soyadı",
         "Eşinin Adı Soyadı",
-        "Yardım Türü",
+        "Dosya Açılış Tarihi",
         "Mahalle / Köy",
       ];
     }
@@ -1244,6 +1244,47 @@ export default function ApplicationsPage() {
   };
 
   const tableColumns = getTableColumns();
+
+  // "Yardım Türü" sütun başlığını listede "Dosya Açılış Tarihi" olarak göster
+  const formatTableColumnHeader = (col: string): string => {
+    const cleanCol = cleanHeaderKey(col);
+    if (cleanCol.includes("yardim")) {
+      return "Dosya Açılış Tarihi";
+    }
+    return col;
+  };
+
+  // Tüm sütunların yatay kaydırma olmadan %100 ekrana sığması için dengeli sütun genişlikleri
+  const getTableColumnWidthClass = (col: string): string => {
+    const cleanCol = cleanHeaderKey(col);
+    if (
+      cleanCol.includes("basvuru") ||
+      cleanCol.includes("dosyano") ||
+      cleanCol.includes("haneno") ||
+      cleanCol === "no" ||
+      cleanCol === "sirano"
+    ) {
+      return "w-[144px]";
+    }
+    if (
+      cleanCol.includes("yardim") ||
+      cleanCol.includes("tarih") ||
+      cleanCol.includes("dosyaacilis")
+    ) {
+      return "w-[14%]";
+    }
+    if (
+      cleanCol.includes("mahalle") ||
+      cleanCol.includes("koy") ||
+      cleanCol.includes("yerlesim")
+    ) {
+      return "w-[16%]";
+    }
+    if (cleanCol.includes("tc") || cleanCol.includes("kimlik") || cleanCol.includes("tel")) {
+      return "w-[13%]";
+    }
+    return "";
+  };
 
   // Hücre içeriğini dinamik & düzeni bozmadan formatlama
   const renderCellContent = (col: string, record: ApplicationFileRecord) => {
@@ -1300,8 +1341,8 @@ export default function ApplicationsPage() {
         val = record.spouseName;
       } else if (cleanCol.includes("tc") || cleanCol.includes("kimlik")) {
         val = record.tcNo;
-      } else if (cleanCol.includes("yardim")) {
-        val = record.helpType;
+      } else if (cleanCol.includes("yardim") || cleanCol.includes("dosyaacilis")) {
+        val = record.applicationDate || record.helpType;
       } else if (cleanCol.includes("mahalle") || cleanCol.includes("koy") || cleanCol.includes("yerlesim")) {
         val = record.neighborhood;
       } else if (cleanCol.includes("tarih")) {
@@ -1386,22 +1427,25 @@ export default function ApplicationsPage() {
         <button
           type="button"
           onClick={() => handleCopyFileNo(record._id, displayNo)}
-          title="Dosya Numarasını Kopyala"
-          className="group inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-mono font-black text-sm shadow-sm shadow-blue-600/20 tracking-wide transition-all active:scale-95"
+          title={`Dosya Numarasını Kopyala: ${displayNo}`}
+          className="group max-w-full inline-flex items-center gap-1 px-2.5 py-1 rounded-xl bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-mono font-black text-xs shadow-xs tracking-tight transition-all active:scale-95 overflow-hidden"
         >
-          <Hash className="w-3.5 h-3.5 text-blue-200 shrink-0" />
-          <span>{highlightText(displayNo, debouncedSearch)}</span>
+          <Hash className="w-3 h-3 text-blue-200 shrink-0" />
+          <span className="truncate">{highlightText(displayNo, debouncedSearch)}</span>
           {isCopied ? (
-            <Check className="w-3.5 h-3.5 text-emerald-300 shrink-0" />
+            <Check className="w-3 h-3 text-emerald-300 shrink-0" />
           ) : (
-            <Copy className="w-3 h-3 text-blue-200 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
+            <Copy className="w-2.5 h-2.5 text-blue-200 opacity-0 group-hover:opacity-100 transition-opacity shrink-0" />
           )}
         </button>
       );
     }
 
     return (
-      <span className="text-slate-800 text-sm font-medium">
+      <span
+        title={String(val)}
+        className="block truncate text-slate-800 text-xs sm:text-[13px] font-semibold"
+      >
         {highlightText(String(val), debouncedSearch)}
       </span>
     );
@@ -2260,23 +2304,40 @@ export default function ApplicationsPage() {
           )}
         </div>
 
-        <div className="hidden md:block overflow-x-auto">
-          <table className="w-full text-left border-collapse text-sm">
+        <div
+          role="region"
+          aria-label="Hane ve başvuru dosyaları listesi"
+          className="hidden md:block w-full overflow-hidden"
+        >
+          <table className="w-full table-fixed text-left border-collapse text-sm">
             <thead>
-              <tr className="bg-slate-50/80 border-b border-slate-200">
-                <th className="py-3.5 px-4 font-bold text-slate-600 w-14 text-center text-xs">
+              <tr className="bg-slate-50/90 border-b border-slate-200 text-[11px] uppercase tracking-wider text-slate-600">
+                <th
+                  scope="col"
+                  className="py-3 px-2 font-extrabold w-[52px] text-center"
+                >
                   #
                 </th>
-                {tableColumns.map((col) => (
-                  <th
-                    key={col}
-                    className="py-3.5 px-4 font-bold text-slate-700 whitespace-nowrap text-left border-b border-slate-200 text-xs tracking-wider"
-                  >
-                    {col}
-                  </th>
-                ))}
+                {tableColumns.map((col) => {
+                  const displayHeader = formatTableColumnHeader(col);
+                  return (
+                    <th
+                      key={col}
+                      scope="col"
+                      title={displayHeader}
+                      className={`py-3 px-2.5 font-extrabold text-slate-700 text-left overflow-hidden ${getTableColumnWidthClass(
+                        col
+                      )}`}
+                    >
+                      <span className="block truncate">{displayHeader}</span>
+                    </th>
+                  );
+                })}
                 {canManage && (
-                  <th className="py-3.5 px-4 font-bold text-slate-700 text-right whitespace-nowrap sticky right-0 bg-slate-50/95 backdrop-blur-sm z-10 w-24">
+                  <th
+                    scope="col"
+                    className="py-3 px-2.5 font-extrabold text-slate-700 text-right w-[82px]"
+                  >
                     İşlemler
                   </th>
                 )}
@@ -2302,7 +2363,8 @@ export default function ApplicationsPage() {
                 records.map((record, idx) => {
                   const isEmpty = !record.applicantName || record.applicantName.trim() === "";
                   const isSearchActive = debouncedSearch.trim().length > 0;
-                  const isExactHighlight = isSearchActive && ((record as any)._exactMatch || records.length <= 5);
+                  const isExactHighlight =
+                    isSearchActive && ((record as any)._exactMatch || records.length <= 5);
 
                   return (
                     <tr
@@ -2311,50 +2373,59 @@ export default function ApplicationsPage() {
                         isExactHighlight
                           ? "bg-amber-50/90 hover:bg-amber-100/80 ring-2 ring-inset ring-amber-400"
                           : isEmpty
-                          ? "bg-amber-50/30 hover:bg-indigo-50/20"
-                          : "hover:bg-indigo-50/20"
+                            ? "bg-amber-50/30 hover:bg-blue-50/30"
+                            : "even:bg-slate-50/40 odd:bg-white hover:bg-blue-50/35"
                       }`}
                     >
                       {/* Sıra No */}
-                      <td className="py-3.5 px-4 font-mono text-xs text-slate-400 text-center whitespace-nowrap">
-                        <div className="flex flex-col items-center gap-1">
-                          <span className={isExactHighlight ? "font-bold text-amber-800" : ""}>
+                      <td className="py-2.5 px-2 font-mono text-xs text-slate-400 text-center align-middle overflow-hidden">
+                        <div className="flex flex-col items-center gap-0.5">
+                          <span
+                            className={`tabular-nums ${
+                              isExactHighlight ? "font-bold text-amber-800" : ""
+                            }`}
+                          >
                             {(currentPage - 1) * pageSize + idx + 1}
                           </span>
                           {isExactHighlight && (
-                            <span className="px-1.5 py-0.5 rounded-md text-[10px] font-extrabold bg-amber-400/90 text-amber-950 shadow-xs">
+                            <span className="px-1 py-0.5 rounded text-[9px] font-extrabold bg-amber-400/90 text-amber-950">
                               Eşleşme
                             </span>
                           )}
                         </div>
                       </td>
 
-                      {/* Dinamik Excel Sütunları */}
+                      {/* Dinamik Excel Sütunları (Taşmadan %100 Ekrana Sığar) */}
                       {tableColumns.map((col) => (
-                        <td key={col} className="py-3.5 px-4 whitespace-nowrap">
+                        <td
+                          key={col}
+                          className="py-2.5 px-2.5 align-middle min-w-0 overflow-hidden"
+                        >
                           {renderCellContent(col, record)}
                         </td>
                       ))}
 
                       {/* İşlemler */}
                       {canManage && (
-                        <td className="py-3.5 px-4 text-right whitespace-nowrap sticky right-0 bg-white/95 backdrop-blur-sm z-10 shadow-[-4px_0_6px_-2px_rgba(0,0,0,0.03)]">
-                          <div className="flex items-center justify-end gap-1">
+                        <td className="py-2.5 px-2.5 text-right align-middle overflow-hidden">
+                          <div className="inline-flex items-center justify-end gap-1">
                             <button
                               type="button"
                               onClick={() => openFormModalForEdit(record)}
-                              className="p-1.5 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                              aria-label="Dosyayı düzenle"
+                              className="w-7.5 h-7.5 inline-flex items-center justify-center text-blue-700 bg-blue-50 hover:bg-blue-600 hover:text-white border border-blue-200/80 hover:border-blue-600 rounded-lg transition-colors shrink-0"
                               title="Düzenle"
                             >
-                              <Edit3 className="w-4 h-4" />
+                              <Edit3 className="w-3.5 h-3.5" />
                             </button>
                             <button
                               type="button"
                               onClick={() => handleDeleteRecord(record)}
-                              className="p-1.5 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              aria-label="Dosyayı sil"
+                              className="w-7.5 h-7.5 inline-flex items-center justify-center text-red-600 bg-red-50 hover:bg-red-600 hover:text-white border border-red-200/80 hover:border-red-600 rounded-lg transition-colors shrink-0"
                               title="Sil"
                             >
-                              <Trash2 className="w-4 h-4" />
+                              <Trash2 className="w-3.5 h-3.5" />
                             </button>
                           </div>
                         </td>
@@ -2932,7 +3003,7 @@ export default function ApplicationsPage() {
 
                 <div>
                   <label className="block text-xs font-bold text-slate-700 uppercase tracking-wider mb-1.5">
-                    Kayıt / Başvuru Tarihi (Boş bırakılabilir)
+                    Dosya Açılış Tarihi (Boş bırakılabilir)
                   </label>
                   <input
                     type="date"

@@ -1577,7 +1577,7 @@ export default function PresentationsPage() {
   activeCoverRef.current = activeCoverTemplate;
   const [meetings, setMeetings] = useState<MeetingItem[]>([]);
   const [selectedMeetingId, setSelectedMeetingId] = useState<string>("");
-  const [insideFolder, setInsideFolder] = useState<boolean>(true);
+  const [insideFolder, setInsideFolder] = useState<boolean>(false);
   const [staffUsers, setStaffUsers] = useState<StaffUserOption[]>([]);
   const [presentations, setPresentations] = useState<PresentationListItem[]>([]);
   const [search, setSearch] = useState("");
@@ -2112,7 +2112,7 @@ export default function PresentationsPage() {
   );
 
   const fetchPresentations = useCallback(async () => {
-    if (!selectedMeetingId) return;
+    if (!selectedMeetingId || !insideFolder) return;
     try {
       const params = new URLSearchParams();
       params.set("meetingId", selectedMeetingId);
@@ -2122,7 +2122,7 @@ export default function PresentationsPage() {
     } catch {
       // sessiz
     }
-  }, [selectedMeetingId, debouncedSearch]);
+  }, [selectedMeetingId, insideFolder, debouncedSearch]);
 
   useEffect(() => {
     void fetchAll({ includeTemplates: true });
@@ -2988,6 +2988,10 @@ export default function PresentationsPage() {
       }
 
       toast.success(wasEditingId ? "Sunu anında güncellendi." : "Sunu toplantı klasörüne eklendi.");
+      if (card?.meetingId || editorMeetingId) {
+        setSelectedMeetingId(String(card?.meetingId || editorMeetingId));
+        setInsideFolder(true);
+      }
       setEditingId(null);
       setEditorCopySourceInfo(null);
       setEditorMode(false);
@@ -4877,11 +4881,21 @@ export default function PresentationsPage() {
             </div>
           )}
 
-          <div className="flex items-center justify-between pt-1">
+          <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
             <h2 className="text-sm font-extrabold uppercase tracking-wider text-slate-700 flex items-center gap-2">
               <FolderOpen className="w-4.5 h-4.5 text-blue-600" />
-              Toplantı Klasörleri — İşlem yapmak için bir klasör seçin
+              <span>Toplantı Dosyaları — İşlem yapmak için aktif veya geçmiş bir klasör seçin</span>
             </h2>
+            {meetings.length > 0 && (
+              <div className="flex items-center gap-2 text-xs font-bold">
+                <span className="px-2.5 py-1 rounded-full bg-emerald-50 text-emerald-700 border border-emerald-200">
+                  Aktif: {meetings.filter((m) => m.status === "open").length}
+                </span>
+                <span className="px-2.5 py-1 rounded-full bg-slate-100 text-slate-600 border border-slate-200">
+                  Kapatılmış: {meetings.filter((m) => m.status === "closed").length}
+                </span>
+              </div>
+            )}
           </div>
 
           {loading ? (
@@ -4892,77 +4906,106 @@ export default function PresentationsPage() {
             </div>
           ) : (
             <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-              {meetings.map((m) => (
-                <div
-                  key={m._id}
-                  onClick={() => {
-                    setSelectedMeetingId(m._id);
-                    setInsideFolder(true);
-                  }}
-                  className="group relative cursor-pointer p-5 rounded-2xl border border-slate-200/90 bg-white hover:border-blue-500 hover:shadow-xl hover:shadow-blue-900/8 hover:-translate-y-0.5 transition-all overflow-hidden"
-                >
+              {[...meetings]
+                .sort((a, b) => {
+                  if (a.status === "open" && b.status !== "open") return -1;
+                  if (a.status !== "open" && b.status === "open") return 1;
+                  return (
+                    new Date(b.meetingDate).getTime() -
+                    new Date(a.meetingDate).getTime()
+                  );
+                })
+                .map((m) => (
                   <div
-                    className={`absolute inset-x-0 top-0 h-1.5 ${
+                    key={m._id}
+                    onClick={() => {
+                      setSelectedMeetingId(m._id);
+                      setSearch("");
+                      setPresPage(1);
+                      setInsideFolder(true);
+                    }}
+                    className={`group relative cursor-pointer p-5 rounded-2xl border transition-all overflow-hidden hover:-translate-y-0.5 hover:shadow-xl ${
                       m.status === "open"
-                        ? m.isLocked
-                          ? "bg-gradient-to-r from-amber-400 to-orange-500"
-                          : "bg-gradient-to-r from-emerald-400 to-teal-500"
-                        : "bg-slate-300"
+                        ? "border-emerald-300 bg-gradient-to-br from-emerald-50/45 via-white to-white hover:border-emerald-500 shadow-sm shadow-emerald-900/5"
+                        : "border-slate-200/90 bg-white hover:border-blue-500 hover:shadow-blue-900/8"
                     }`}
-                  />
-                  <div className="flex items-start justify-between gap-3 pt-1">
-                    <div className="min-w-0">
-                      <div className="font-extrabold text-slate-900 group-hover:text-blue-700 text-base truncate flex items-center gap-2 transition-colors">
-                        <div className="p-2 rounded-xl bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white transition-colors shrink-0">
-                          <FolderOpen className="w-4 h-4" />
-                        </div>
-                        <span className="truncate">{m.title}</span>
-                      </div>
-                      <div className="flex flex-wrap items-center gap-1.5 mt-3">
-                        <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold">
-                          {new Date(m.meetingDate).toLocaleDateString("tr-TR")}
-                        </span>
-                        <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-bold">
-                          {m.recordCount} Sunu
-                        </span>
-                        <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-[11px] font-bold">
-                          {m.totalSlides} Sayfa
-                        </span>
-                      </div>
-                      {isSuperAdmin && m.authorizedUserId?.name && (
-                        <div className="text-[11px] text-indigo-700 font-semibold mt-2">
-                          Yetkili: {m.authorizedUserId.name}
-                        </div>
-                      )}
-                    </div>
-                    <span
-                      className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                  >
+                    <div
+                      className={`absolute inset-x-0 top-0 h-1.5 ${
                         m.status === "open"
                           ? m.isLocked
-                            ? "bg-amber-100 text-amber-800 border border-amber-200"
-                            : "bg-emerald-100 text-emerald-700 border border-emerald-200"
-                          : "bg-slate-100 text-slate-600 border border-slate-200"
+                            ? "bg-gradient-to-r from-amber-400 to-orange-500"
+                            : "bg-gradient-to-r from-emerald-400 to-teal-500"
+                          : "bg-slate-300"
                       }`}
-                    >
-                      {m.status === "open" ? (
-                        m.isLocked ? (
-                          <>
-                            <Lock className="w-3 h-3" /> Kilitli
-                          </>
+                    />
+                    <div className="flex items-start justify-between gap-3 pt-1">
+                      <div className="min-w-0 flex-1">
+                        <div className="font-extrabold text-slate-900 group-hover:text-blue-700 text-base truncate flex items-center gap-2 transition-colors">
+                          <div
+                            className={`p-2 rounded-xl transition-colors shrink-0 ${
+                              m.status === "open"
+                                ? "bg-emerald-100 text-emerald-700 group-hover:bg-emerald-600 group-hover:text-white"
+                                : "bg-blue-50 text-blue-600 group-hover:bg-blue-600 group-hover:text-white"
+                            }`}
+                          >
+                            <FolderOpen className="w-4 h-4" />
+                          </div>
+                          <span className="truncate">{m.title}</span>
+                        </div>
+                        <div className="flex flex-wrap items-center gap-1.5 mt-3">
+                          <span className="px-2.5 py-1 rounded-lg bg-slate-100 text-slate-700 text-[11px] font-bold">
+                            {new Date(m.meetingDate).toLocaleDateString("tr-TR")}
+                          </span>
+                          <span className="px-2.5 py-1 rounded-lg bg-indigo-50 text-indigo-700 text-[11px] font-bold">
+                            {m.recordCount} Sunu
+                          </span>
+                          <span className="px-2.5 py-1 rounded-lg bg-blue-50 text-blue-700 text-[11px] font-bold">
+                            {m.totalSlides} Sayfa
+                          </span>
+                        </div>
+                        <div className="flex items-center justify-between gap-2 mt-3 pt-2.5 border-t border-slate-100 text-[11px]">
+                          <span className="text-slate-500 font-medium truncate">
+                            {isSuperAdmin && m.authorizedUserId?.name
+                              ? `Yetkili: ${m.authorizedUserId.name}`
+                              : m.status === "open"
+                                ? "Slayt ekleme ve düzenlemeye açık"
+                                : "Görüntüleme ve kopyalamaya açık"}
+                          </span>
+                          <span className="font-extrabold text-blue-600 group-hover:translate-x-0.5 transition-transform inline-flex items-center gap-0.5 shrink-0">
+                            <span>Klasörü Aç</span>
+                            <ChevronRight className="w-3.5 h-3.5" />
+                          </span>
+                        </div>
+                      </div>
+                      <span
+                        className={`shrink-0 inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+                          m.status === "open"
+                            ? m.isLocked
+                              ? "bg-amber-100 text-amber-800 border border-amber-200"
+                              : "bg-emerald-100 text-emerald-700 border border-emerald-200"
+                            : "bg-slate-100 text-slate-600 border border-slate-200"
+                        }`}
+                      >
+                        {m.status === "open" ? (
+                          m.isLocked ? (
+                            <>
+                              <Lock className="w-3 h-3" /> Kilitli
+                            </>
+                          ) : (
+                            <>
+                              <Unlock className="w-3 h-3" /> Aktif / Açık
+                            </>
+                          )
                         ) : (
                           <>
-                            <Unlock className="w-3 h-3" /> Açık
+                            <Lock className="w-3 h-3" /> Pasif / Kapatıldı
                           </>
-                        )
-                      ) : (
-                        <>
-                          <Lock className="w-3 h-3" /> Kapatıldı
-                        </>
-                      )}
-                    </span>
+                        )}
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                ))}
             </div>
           )}
         </div>
