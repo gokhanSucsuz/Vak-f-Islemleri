@@ -7,19 +7,24 @@ import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
 import {
   Lock,
-  User as UserIcon,
+  Users,
   ShieldCheck,
-  KeyRound,
+  Shield,
   Eye,
   EyeOff,
-  Building2,
   ChevronDown,
   ArrowRight,
+  Landmark,
+  FolderOpen,
+  Presentation,
+  ScrollText,
+  CheckCircle2,
+  Loader2,
 } from "lucide-react";
 
 export default function LoginPage() {
   const { data: session, status } = useSession();
-  const [users, setUsers] = useState([]);
+  const [users, setUsers] = useState<any[]>([]);
   const [selectedEmail, setSelectedEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
@@ -101,9 +106,9 @@ export default function LoginPage() {
 
   if (status === "loading" || !settingsLoaded) {
     return (
-      <div className="min-h-screen flex flex-col items-center justify-center bg-[#f3f6fb] gap-3">
-        <div className="w-9 h-9 border-3 border-blue-700 border-t-transparent rounded-full animate-spin" />
-        <p className="text-sm font-semibold text-slate-600">Güvenli oturum hazırlanıyor...</p>
+      <div className="min-h-screen flex items-center justify-center bg-slate-900 text-white gap-2.5 text-xs font-bold uppercase tracking-wider">
+        <Loader2 className="w-5 h-5 animate-spin text-amber-400" />
+        <span>Güvenli Oturum Hazırlanıyor...</span>
       </div>
     );
   }
@@ -113,199 +118,287 @@ export default function LoginPage() {
   const canSeePersonnelForm = !isGoogleStepRequired || isGoogleVerified;
 
   return (
-    <main className="min-h-screen flex flex-col bg-[#f3f6fb] gov-grid-bg relative">
-      {/* Üst Resmi Kurum Şeridi */}
-      <div className="h-1.5 w-full bg-gradient-to-r from-[#c81e1e] via-[#1d4ed8] to-[#059669]" />
+    <main className="min-h-screen flex items-center justify-center bg-slate-900 p-4 sm:p-6 relative overflow-hidden">
+      {/* Subtle GovTech Background Grid */}
+      <div
+        aria-hidden="true"
+        className="absolute inset-0 opacity-10 pointer-events-none"
+        style={{
+          backgroundImage:
+            "radial-gradient(circle at 1px 1px, rgba(255,255,255,0.28) 1px, transparent 0)",
+          backgroundSize: "28px 28px",
+        }}
+      />
 
-      <div className="flex-1 flex items-center justify-center p-4 sm:p-6">
-        <div className="w-full max-w-md space-y-5">
-          {/* Kurum Başlığı */}
-          <div className="text-center space-y-2">
-            <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-br from-[#0b192c] to-[#1e3a5f] text-white shadow-xl shadow-slate-900/20 ring-4 ring-white">
-              <Building2 className="w-7 h-7" aria-hidden="true" />
+      <div className="w-full max-w-5xl relative z-10">
+        <div className="bg-white rounded-2xl shadow-2xl border border-slate-800/30 overflow-hidden grid grid-cols-1 lg:grid-cols-12">
+          {/* LEFT 5 COLUMNS: OFFICIAL INSTITUTION BRANDING & CAPABILITIES */}
+          <div className="lg:col-span-5 bg-slate-950 text-white p-6 sm:p-8 flex flex-col justify-between border-b lg:border-b-0 lg:border-r border-slate-800">
+            <div className="space-y-6">
+              {/* Logo & Institution Name */}
+              <div className="flex items-center gap-3.5">
+                <img
+                  src="/logo-sydv.jpg"
+                  alt="T.C. SYDV Logo"
+                  className="w-14 h-14 rounded-xl object-cover ring-2 ring-amber-400/60 shadow-lg shrink-0"
+                />
+                <div>
+                  <span className="text-[10px] font-bold text-amber-400 uppercase tracking-widest block">
+                    T.C. Valilik / Kaymakamlık
+                  </span>
+                  <h1 className="text-base sm:text-lg font-bold tracking-tight text-white uppercase leading-snug">
+                    Sosyal Yardımlaşma ve Dayanışma Vakfı
+                  </h1>
+                </div>
+              </div>
+
+              {/* Official Description */}
+              <div className="pt-4 border-t border-slate-800/90 space-y-2.5">
+                <div className="inline-flex items-center gap-1.5 bg-amber-400/10 border border-amber-400/30 text-amber-300 text-[10px] font-bold uppercase px-2.5 py-1 rounded-md tracking-wider">
+                  <Landmark className="w-3.5 h-3.5 text-amber-400" />
+                  <span>Vakıf İşlemleri ve Evrak Yönetim Sistemi</span>
+                </div>
+                <p className="text-xs text-slate-300 leading-relaxed font-medium">
+                  Sosyal yardım başvuru dosyalarının takibi, matbu ve detaylı dilekçe üretimi, Mütevelli Heyeti toplantı sunularının hazırlanması ve ayni yardım kayıtları için yetkilendirilmiş kurumsal çalışma alanı.
+                </p>
+              </div>
+
+              {/* Key System Capabilities List */}
+              <div className="space-y-2.5 pt-1">
+                <div className="flex items-start gap-2.5 text-xs text-slate-300">
+                  <FolderOpen className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                  <span>
+                    <strong className="text-white">Başvuru Dosyası & Yardım Takibi:</strong> Hane başvuru dosyalarını, bebek maması ve ayni yardım teslimatlarını tek merkezden anlık yönetme.
+                  </span>
+                </div>
+                <div className="flex items-start gap-2.5 text-xs text-slate-300">
+                  <Presentation className="w-4 h-4 text-blue-400 shrink-0 mt-0.5" />
+                  <span>
+                    <strong className="text-white">Heyet Sunu Stüdyosu:</strong> Toplantı slaytlarını canlı önizleme, tam ekran projeksiyon gösterisi ve tek tıkla sıkıştırılmış PowerPoint (.pptx) birleştirme.
+                  </span>
+                </div>
+                <div className="flex items-start gap-2.5 text-xs text-slate-300">
+                  <ScrollText className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                  <span>
+                    <strong className="text-white">Resmi Dilekçe & İstatistik:</strong> Kurumsal Word (.docx) dilekçe şablonlarıyla evrak üretimi ve detaylı Excel/PDF raporlama.
+                  </span>
+                </div>
+              </div>
             </div>
-            <div>
-              <h1 className="text-xl sm:text-2xl font-extrabold text-slate-900 tracking-tight">
-                Vakıf İşlemleri
-              </h1>
-              <p className="text-xs sm:text-sm font-medium text-slate-500 mt-1">
-                Yönetim ve Evrak Portalı
-              </p>
+
+            {/* Security Footer */}
+            <div className="mt-8 pt-4 border-t border-slate-800/90 flex items-center justify-between text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+              <span className="flex items-center gap-1.5">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                AES-256-GCM Şifreli Veri
+              </span>
+              <span>•</span>
+              <span>6698 KVKK & Denetim İzi</span>
             </div>
           </div>
 
-          {/* Giriş Kartı */}
-          <div className="glass-panel rounded-3xl overflow-hidden">
-            <div className="px-6 py-4 bg-gradient-to-r from-[#0b192c] to-[#163053] text-white flex items-center justify-between">
-              <div className="flex items-center gap-2.5">
-                {canSeePersonnelForm ? (
-                  <KeyRound className="w-4 h-4 text-blue-300" aria-hidden="true" />
-                ) : (
-                  <ShieldCheck className="w-4 h-4 text-amber-300" aria-hidden="true" />
-                )}
-                <span className="text-sm font-bold tracking-tight">
-                  {canSeePersonnelForm ? "Personel Oturum Girişi" : "Kurumsal Kimlik Doğrulaması"}
+          {/* RIGHT 7 COLUMNS: CLEAN PROFESSIONAL ACCESS PORTAL */}
+          <div className="lg:col-span-7 p-6 sm:p-8 bg-white flex flex-col justify-between space-y-6">
+            <div>
+              {/* Top Header */}
+              <div className="flex items-center justify-between border-b border-slate-200 pb-4 mb-5">
+                <div>
+                  <h2 className="text-base sm:text-lg font-bold text-slate-900 uppercase tracking-tight">
+                    Kurumsal Oturum Açma
+                  </h2>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
+                    Vakıf işlemleri, dilekçe ve sunu modüllerine devam etmek için giriş yapınız.
+                  </p>
+                </div>
+                <span className="inline-flex items-center gap-1.5 text-[10px] font-bold bg-slate-100 text-slate-700 px-3 py-1 rounded-full border border-slate-200 uppercase shrink-0">
+                  <Lock className="w-3 h-3 text-blue-700" />
+                  Yetkili Erişim
                 </span>
               </div>
-              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-emerald-500/20 border border-emerald-400/30 text-[10px] font-bold text-emerald-200">
-                <ShieldCheck className="w-3 h-3" aria-hidden="true" />
-                KVKK
-              </span>
-            </div>
 
-            <div className="p-6 sm:p-7">
-              {!canSeePersonnelForm ? (
-                <div className="space-y-5">
-                  <div className="p-4 bg-amber-50/90 border border-amber-200 rounded-2xl text-amber-900 text-xs sm:text-sm font-medium leading-relaxed">
-                    Güvenlik politikası gereği sisteme erişim için önce yetkili kurumsal Google hesabınız ile doğrulama yapmanız gerekmektedir.
+              {/* Primary Personnel Access Card */}
+              <div className="bg-slate-50/90 border border-slate-200 rounded-2xl p-5 sm:p-6 space-y-4 shadow-2xs">
+                <div className="flex items-start gap-3.5">
+                  <div className="w-11 h-11 rounded-xl bg-blue-700 text-white flex items-center justify-center shrink-0 shadow-sm">
+                    <Users className="w-5 h-5" />
                   </div>
+                  <div className="space-y-1">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <h3 className="text-sm font-bold text-slate-900 uppercase">
+                        Vakıf Personeli Girişi
+                      </h3>
+                      <span className="text-[10px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded uppercase">
+                        Evrak, Sunu & Yardım
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      {!canSeePersonnelForm
+                        ? "Güvenlik politikası gereği personel seçimine geçmek için önce yetkili kurum Google hesabınız ile doğrulama yapınız."
+                        : "Listeden adınızı seçip kişisel personel şifrenizi girerek çalışma alanınızı açın."}
+                    </p>
+                  </div>
+                </div>
+
+                {!canSeePersonnelForm ? (
                   <button
                     type="button"
                     onClick={() => signIn("google", { callbackUrl: "/login" })}
-                    className="w-full flex items-center justify-center gap-3 py-3.5 px-4 border border-slate-300 rounded-xl shadow-sm text-sm font-bold text-slate-800 bg-white hover:bg-slate-50 transition-all active:scale-[0.99]"
+                    className="w-full flex items-center justify-center gap-2.5 bg-blue-700 hover:bg-blue-800 text-white px-5 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm active:scale-[0.99]"
                   >
-                    <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
+                    <svg className="w-4 h-4" viewBox="0 0 24 24" aria-hidden="true">
                       <path
+                        fill="currentColor"
                         d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"
-                        fill="#4285F4"
                       />
                       <path
+                        fill="currentColor"
                         d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"
-                        fill="#34A853"
                       />
                       <path
+                        fill="currentColor"
                         d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"
-                        fill="#FBBC05"
                       />
                       <path
+                        fill="currentColor"
                         d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"
-                        fill="#EA4335"
                       />
                     </svg>
-                    Yetkili Kurum Hesabı ile Doğrula
+                    <span>Kurumsal Google Hesabı İle Doğrula</span>
+                    <ArrowRight className="w-4 h-4 ml-auto" />
                   </button>
-                </div>
-              ) : (
-                <form onSubmit={handleSubmit} className="space-y-5">
-                  <div>
-                    <label
-                      className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5"
-                      htmlFor="personnel"
-                    >
-                      Personel Seçimi
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                        <UserIcon className="h-4 w-4 text-slate-400" aria-hidden="true" />
-                      </div>
-                      <select
-                        id="personnel"
-                        required
-                        className="block w-full pl-10 pr-10 py-3 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 bg-slate-50/70 hover:bg-white focus:bg-white focus:border-blue-600 transition-colors appearance-none"
-                        value={selectedEmail}
-                        onChange={(e) => setSelectedEmail(e.target.value)}
+                ) : (
+                  <form onSubmit={handleSubmit} className="space-y-3.5 pt-1">
+                    <div>
+                      <label
+                        className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1.5"
+                        htmlFor="personnel"
                       >
-                        <option value="" disabled>
-                          Adınızı seçiniz...
-                        </option>
-                        {users.map((u: any) => (
-                          <option key={u._id} value={u.email}>
-                            {u.name} ({u.role === "manager" ? "Müdür" : "Personel"})
+                        Personel Seçimi
+                      </label>
+                      <div className="relative">
+                        <select
+                          id="personnel"
+                          name="email"
+                          autoComplete="username"
+                          required
+                          className="block w-full pl-3.5 pr-10 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 bg-white focus:border-blue-700 focus:ring-2 focus:ring-blue-700/20 outline-none transition-colors appearance-none"
+                          value={selectedEmail}
+                          onChange={(e) => setSelectedEmail(e.target.value)}
+                        >
+                          <option value="" disabled>
+                            Adınızı seçiniz...
                           </option>
-                        ))}
-                      </select>
-                      <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
-                        <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                          {users.map((u: any) => (
+                            <option key={u._id} value={u.email}>
+                              {u.name} ({u.role === "manager" ? "Müdür" : "Personel"})
+                            </option>
+                          ))}
+                        </select>
+                        <div className="absolute inset-y-0 right-0 pr-3.5 flex items-center pointer-events-none">
+                          <ChevronDown className="h-4 w-4 text-slate-400" aria-hidden="true" />
+                        </div>
                       </div>
                     </div>
-                  </div>
 
-                  <div>
-                    <label
-                      className="block text-xs font-bold uppercase tracking-wider text-slate-600 mb-1.5"
-                      htmlFor="password"
-                    >
-                      Şifre
-                    </label>
-                    <div className="relative">
-                      <div className="absolute inset-y-0 left-0 pl-3.5 flex items-center pointer-events-none">
-                        <Lock className="h-4 w-4 text-slate-400" aria-hidden="true" />
-                      </div>
-                      <input
-                        id="password"
-                        type={showPassword ? "text" : "password"}
-                        autoComplete="current-password"
-                        required
-                        className="block w-full pl-10 pr-11 py-3 border border-slate-200 rounded-xl text-sm font-medium text-slate-800 bg-slate-50/70 hover:bg-white focus:bg-white focus:border-blue-600 placeholder-slate-400 transition-colors"
-                        placeholder="••••••••"
-                        value={password}
-                        onChange={(e) => setPassword(e.target.value)}
-                      />
-                      <button
-                        type="button"
-                        aria-pressed={showPassword}
-                        aria-label={showPassword ? "Şifreyi gizle" : "Şifreyi göster"}
-                        onClick={() => setShowPassword((v) => !v)}
-                        className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600"
+                    <div>
+                      <label
+                        className="block text-[11px] font-bold uppercase tracking-wider text-slate-700 mb-1.5"
+                        htmlFor="password"
                       >
-                        {showPassword ? (
-                          <EyeOff className="w-4 h-4" aria-hidden="true" />
-                        ) : (
-                          <Eye className="w-4 h-4" aria-hidden="true" />
-                        )}
-                      </button>
+                        Personel Şifresi
+                      </label>
+                      <div className="relative">
+                        <Lock
+                          className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400 pointer-events-none"
+                          aria-hidden="true"
+                        />
+                        <input
+                          id="password"
+                          name="password"
+                          type={showPassword ? "text" : "password"}
+                          autoComplete="current-password"
+                          enterKeyHint="done"
+                          required
+                          className="block w-full pl-10 pr-11 py-2.5 border border-slate-300 rounded-xl text-sm font-semibold text-slate-900 bg-white focus:border-blue-700 focus:ring-2 focus:ring-blue-700/20 placeholder-slate-400 outline-none transition-colors"
+                          placeholder="••••••••"
+                          value={password}
+                          onChange={(e) => setPassword(e.target.value)}
+                        />
+                        <button
+                          type="button"
+                          aria-pressed={showPassword}
+                          aria-label={showPassword ? "Şifreyi gizle" : "Şifreyi göster"}
+                          onClick={() => setShowPassword((v) => !v)}
+                          className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-700"
+                        >
+                          {showPassword ? (
+                            <EyeOff className="w-4 h-4" aria-hidden="true" />
+                          ) : (
+                            <Eye className="w-4 h-4" aria-hidden="true" />
+                          )}
+                        </button>
+                      </div>
                     </div>
-                  </div>
 
-                  <button
-                    type="submit"
-                    disabled={loading}
-                    className="w-full flex items-center justify-center gap-2 py-3.5 px-4 rounded-xl shadow-md shadow-blue-900/15 text-sm font-bold text-white bg-gradient-to-r from-[#0b192c] to-[#1d4ed8] hover:from-[#122642] hover:to-[#1e40af] transition-all disabled:opacity-70 disabled:cursor-not-allowed active:scale-[0.99]"
-                  >
-                    {loading ? (
-                      <>
-                        <span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
-                        Doğrulanıyor...
-                      </>
-                    ) : (
-                      "Güvenli Giriş Yap"
-                    )}
-                  </button>
-                </form>
-              )}
+                    <button
+                      type="submit"
+                      disabled={loading}
+                      className="w-full flex items-center justify-center gap-2.5 bg-blue-700 hover:bg-blue-800 text-white px-5 py-3.5 rounded-xl font-bold text-xs uppercase tracking-wider transition-all shadow-sm disabled:opacity-60 disabled:cursor-not-allowed active:scale-[0.99]"
+                    >
+                      {loading ? (
+                        <>
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                          <span>Doğrulanıyor...</span>
+                        </>
+                      ) : (
+                        <>
+                          <span>Personel Girişi Yap</span>
+                          <ArrowRight className="w-4 h-4 ml-auto" />
+                        </>
+                      )}
+                    </button>
+                  </form>
+                )}
 
-              {/* Yönetici / Süper Admin Giriş Portalı Geçiş Butonu */}
-              <div className="mt-5 pt-4 border-t border-slate-200/80">
-                <Link
-                  href="/sa-login"
-                  prefetch={true}
-                  className="group w-full flex items-center justify-between gap-3 py-3 px-4 rounded-xl bg-slate-900/[0.04] hover:bg-[#0b192c] border border-slate-200/90 hover:border-[#0b192c] text-slate-700 hover:text-white transition-all active:scale-[0.99]"
-                >
-                  <span className="inline-flex items-center gap-2.5 text-xs sm:text-sm font-bold">
-                    <span className="w-7 h-7 rounded-lg bg-red-600/10 group-hover:bg-red-500/20 text-red-700 group-hover:text-red-300 flex items-center justify-center transition-colors shrink-0">
-                      <ShieldCheck className="w-4 h-4" aria-hidden="true" />
-                    </span>
-                    <span>Yönetici Giriş Sayfası (Süper Admin)</span>
+                <div className="flex flex-wrap items-center gap-4 pt-1 text-[11px] text-slate-500 font-medium">
+                  <span className="inline-flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    Modül bazlı yetkilendirme
                   </span>
-                  <ArrowRight
-                    className="w-4 h-4 text-slate-400 group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0"
-                    aria-hidden="true"
-                  />
-                </Link>
+                  <span className="inline-flex items-center gap-1">
+                    <CheckCircle2 className="w-3.5 h-3.5 text-emerald-600" />
+                    6 saatlik güvenli oturum koruması
+                  </span>
+                </div>
               </div>
             </div>
-          </div>
 
-          {/* Alt Güvenlik Bilgilendirmesi */}
-          <footer className="text-center space-y-1">
-            <p className="text-[11px] font-semibold text-slate-500 flex items-center justify-center gap-1.5">
-              <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" aria-hidden="true" />
-              AES-256-GCM Şifreli Veri Güvenliği • 6 Saatlik Oturum Koruması
-            </p>
-            <p className="text-[11px] text-slate-400">
-              Tüm erişim ve işlemler 6698 sayılı KVKK kapsamında kayıt altına alınmaktadır.
-            </p>
-          </footer>
+            {/* Secondary Super Admin Access Card */}
+            <div className="bg-slate-900 text-white p-4 rounded-xl border border-slate-800 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-3">
+                <div className="w-9 h-9 rounded-lg bg-slate-800 text-amber-400 flex items-center justify-center shrink-0 border border-slate-700">
+                  <Shield className="w-4 h-4" />
+                </div>
+                <div>
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-white">
+                    Süper Admin Yönetim Paneli
+                  </h4>
+                  <p className="text-[11px] text-slate-400">
+                    Personel hesapları, sayfa yetki tanımları ve sistem güvenlik yapılandırması
+                  </p>
+                </div>
+              </div>
+
+              <Link
+                href="/sa-login"
+                prefetch={true}
+                className="w-full sm:w-auto flex items-center justify-center gap-1.5 bg-slate-800 hover:bg-slate-700 text-amber-400 border border-slate-700 px-4 py-2 rounded-lg font-bold text-xs uppercase whitespace-nowrap transition-colors"
+              >
+                <ShieldCheck className="w-3.5 h-3.5" />
+                <span>Yönetici Girişi</span>
+              </Link>
+            </div>
+          </div>
         </div>
       </div>
     </main>
