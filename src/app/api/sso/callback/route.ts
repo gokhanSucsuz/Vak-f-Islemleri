@@ -20,30 +20,39 @@ export async function GET(req: Request) {
   }
 
   const token = url.searchParams.get("token");
-  const panelUrl = process.env.PANEL_URL || "https://www.vakifyonetim.space";
-
   if (!token) {
-    return NextResponse.redirect(panelUrl);
+    return NextResponse.redirect(`${publicOrigin}/yetkisiz-erisim`);
   }
 
   const hostHeader = req.headers.get("x-forwarded-host") || req.headers.get("host") || url.host;
   const payload = await verifyPanelJwt(token, secret, hostHeader);
 
   if (!payload) {
-    return NextResponse.redirect(`${panelUrl}/login?error=InvalidSsoToken`);
+    return NextResponse.redirect(`${publicOrigin}/yetkisiz-erisim`);
   }
 
   const email = (payload.email || payload.sub || "edirnesydv@gmail.com").toLowerCase();
-  const gateValue = await signGateCookie(email, secret);
+  const { cookieValue, maxAge } = await signGateCookie(
+    {
+      email,
+      uid: payload.uid,
+      username: payload.username,
+      sid: payload.sid,
+      tv: payload.tv,
+      sessionExp: payload.sessionExp,
+      mode: payload.mode,
+    },
+    secret
+  );
   const isProd = process.env.NODE_ENV === "production";
 
   const res = NextResponse.redirect(`${publicOrigin}/login`);
-  res.cookies.set("vakif_panel_gate", gateValue, {
+  res.cookies.set("vakif_panel_gate", cookieValue, {
     httpOnly: true,
     secure: isProd,
     sameSite: "lax",
     path: "/",
-    maxAge: 8 * 60 * 60,
+    maxAge,
   });
 
   return res;

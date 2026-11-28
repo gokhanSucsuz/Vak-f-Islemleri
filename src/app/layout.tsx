@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 import "./globals.css";
 import Providers from "@/components/Providers";
+import PanelSessionGuard from "@/components/PanelSessionGuard";
 
 const inter = Inter({ subsets: ["latin", "latin-ext"] });
 
@@ -18,6 +19,7 @@ export default function RootLayout({
   return (
     <html lang="tr">
       <body className={`${inter.className} bg-slate-50 text-slate-900 min-h-screen flex flex-col`}>
+        <PanelSessionGuard />
         <Providers>{children}</Providers>
       </body>
     </html>

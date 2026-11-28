@@ -1,7 +1,7 @@
 import { withAuth } from "next-auth/middleware";
 import { NextResponse } from "next/server";
 import type { NextRequest } from "next/server";
-import { verifyGateCookie } from "@/lib/ssoGate";
+import { clearAllAuthCookies, verifyGateCookie } from "@/lib/ssoGate";
 
 const authMiddleware = withAuth(
   function middleware(req) {
@@ -42,24 +42,30 @@ export default async function middleware(req: NextRequest, event: any) {
   const { pathname } = req.nextUrl;
   const ssoSecret = process.env.PANEL_SSO_SECRET;
 
-  // Eğer PANEL_SSO_SECRET tanımlıysa doğrudan URL erişimini engelle, sadece VakıfPanel SSO kapısından geçenlere izin ver
+  // PANEL_SSO_SECRET tanımlıysa doğrudan URL erişimini ve süresi bitmiş/çıkış yapılmış panel oturumlarını engelle
   if (ssoSecret) {
     const gateCookie = req.cookies.get("vakif_panel_gate")?.value;
     const isGateValid = gateCookie ? await verifyGateCookie(gateCookie, ssoSecret) : false;
 
     if (!isGateValid) {
       if (pathname.startsWith("/api/")) {
-        return NextResponse.json(
-          { error: "Doğrudan erişim engellendi. Lütfen VakıfPanel üzerinden giriş yapın." },
+        const apiRes = NextResponse.json(
+          {
+            error: "Merkezi Panel oturumunuz sonlandırıldı veya doğrudan erişim engellendi.",
+            code: "PANEL_SESSION_ENDED",
+            redirectTo: "/yetkisiz-erisim",
+          },
           { status: 403 }
         );
+        return clearAllAuthCookies(apiRes);
       }
       const proto = req.headers.get("x-forwarded-proto") || "https";
       const host = req.headers.get("x-forwarded-host") || req.headers.get("host");
       const baseOrigin =
         process.env.NEXTAUTH_URL?.replace(/\/+$/, "") ||
         (host ? `${proto}://${host}` : req.nextUrl.origin);
-      return NextResponse.redirect(`${baseOrigin}/yetkisiz-erisim`);
+      const redirectRes = NextResponse.redirect(`${baseOrigin}/yetkisiz-erisim`);
+      return clearAllAuthCookies(redirectRes);
     }
   }
 
@@ -72,5 +78,7 @@ export default async function middleware(req: NextRequest, event: any) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|logo-sydv.jpg|logo-vakif.jpg|api/sso/callback|api/auth|yetkisiz-erisim).*)"],
+  matcher: [
+    "/((?!_next/static|_next/image|favicon.ico|logo-sydv.jpg|logo-vakif.jpg|api/sso/callback|api/sso/logout|api/sso/status|yetkisiz-erisim).*)",
+  ],
 };
