@@ -72,5 +72,5 @@ export default async function middleware(req: NextRequest, event: any) {
 }
 
 export const config = {
-  matcher: ["/((?!_next/static|_next/image|favicon.ico|api/sso/callback|api/auth|yetkisiz-erisim).*)"],
+  matcher: ["/((?!_next/static|_next/image|favicon.ico|logo-sydv.jpg|logo-vakif.jpg|api/sso/callback|api/auth|yetkisiz-erisim).*)"],
 };
