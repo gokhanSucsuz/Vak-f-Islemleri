@@ -149,7 +149,9 @@ export async function GET(req: Request) {
 export async function DELETE(req: Request) {
   try {
     const session = await getServerSession(authOptions);
-    if (!session || session.user.role !== "superadmin") {
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
+    if (!session || !perms.isManager) {
       return NextResponse.json({ error: "Yetkisiz erişim" }, { status: 401 });
     }
 

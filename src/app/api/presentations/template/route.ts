@@ -136,12 +136,13 @@ export async function GET(req: NextRequest) {
 export async function POST(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    const role = (session?.user as any)?.role;
     const userId = (session?.user as any)?.id;
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
 
-    if (!session?.user || role !== "superadmin") {
+    if (!session?.user || !perms.isManager) {
       return NextResponse.json(
-        { error: "Şablon yükleme ve düzenleme yetkisi yalnızca süper admin'e aittir." },
+        { error: "Şablon yükleme ve düzenleme yetkisi yalnızca Süper Admin ve Müdür'e aittir." },
         { status: 403 }
       );
     }
@@ -283,12 +284,13 @@ export async function POST(req: NextRequest) {
 export async function PATCH(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    const role = (session?.user as any)?.role;
     const userId = (session?.user as any)?.id;
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
 
-    if (!session?.user || role !== "superadmin") {
+    if (!session?.user || !perms.isManager) {
       return NextResponse.json(
-        { error: "Kapak şablonu yönetimi yalnızca Süper Admin'e aittir." },
+        { error: "Kapak şablonu yönetimi yalnızca Süper Admin ve Müdür'e aittir." },
         { status: 403 }
       );
     }
@@ -380,12 +382,13 @@ export async function PATCH(req: NextRequest) {
 export async function DELETE(req: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    const role = (session?.user as any)?.role;
     const userId = (session?.user as any)?.id;
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
 
-    if (!session?.user || role !== "superadmin") {
+    if (!session?.user || !perms.isManager) {
       return NextResponse.json(
-        { error: "Şablon silme yetkisi yalnızca süper admin'e aittir." },
+        { error: "Şablon silme yetkisi yalnızca Süper Admin ve Müdür'e aittir." },
         { status: 403 }
       );
     }

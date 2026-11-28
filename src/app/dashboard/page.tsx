@@ -612,7 +612,10 @@ export default function DashboardPage() {
             paginatedTransactions.map((t: any) => {
               const isEditing = editingId === t._id;
               const isOwner = String(t.userId?._id || t.userId || "") === String(session?.user?.id || "");
-              const canCrud = session?.user?.role === "superadmin" || (session?.user?.role === "personnel" && isOwner);
+              const canCrud =
+                session?.user?.role === "superadmin" ||
+                session?.user?.role === "manager" ||
+                (session?.user?.role === "personnel" && isOwner);
               const isSearchMatch = txSearch.trim().length > 0;
 
               return (
@@ -665,45 +668,43 @@ export default function DashboardPage() {
                       {t.helpType?.name || "-"}
                     </span>
 
-                    {session?.user?.role !== "manager" && (
-                      <div>
-                        {!canCrud ? (
-                          <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
-                            Salt Okunur
-                          </span>
-                        ) : isEditing ? (
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => handleUpdate(t._id)}
-                              className="p-1.5 bg-green-100 text-green-700 rounded-lg"
-                            >
-                              <Check className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => setEditingId(null)}
-                              className="p-1.5 bg-slate-100 text-slate-600 rounded-lg"
-                            >
-                              <X className="w-4 h-4" />
-                            </button>
-                          </div>
-                        ) : (
-                          <div className="flex items-center gap-1.5">
-                            <button
-                              onClick={() => startEditing(t)}
-                              className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
-                            >
-                              <Edit2 className="w-4 h-4" />
-                            </button>
-                            <button
-                              onClick={() => handleDelete(t._id)}
-                              className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
-                            >
-                              <Trash2 className="w-4 h-4" />
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    )}
+                    <div>
+                      {!canCrud ? (
+                        <span className="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                          Salt Okunur
+                        </span>
+                      ) : isEditing ? (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => handleUpdate(t._id)}
+                            className="p-1.5 bg-green-100 text-green-700 rounded-lg"
+                          >
+                            <Check className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => setEditingId(null)}
+                            className="p-1.5 bg-slate-100 text-slate-600 rounded-lg"
+                          >
+                            <X className="w-4 h-4" />
+                          </button>
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            onClick={() => startEditing(t)}
+                            className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg"
+                          >
+                            <Edit2 className="w-4 h-4" />
+                          </button>
+                          <button
+                            onClick={() => handleDelete(t._id)}
+                            className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg"
+                          >
+                            <Trash2 className="w-4 h-4" />
+                          </button>
+                        </div>
+                      )}
+                    </div>
                   </div>
                 </div>
               );
@@ -720,27 +721,28 @@ export default function DashboardPage() {
                 <th className="w-40 py-3 px-4 font-semibold text-slate-600 text-xs uppercase tracking-wider">Personel</th>
                 <th className="py-3 px-4 font-semibold text-slate-600 text-xs uppercase tracking-wider">Vatandaş Bilgisi</th>
                 <th className="w-52 py-3 px-4 font-semibold text-slate-600 text-xs uppercase tracking-wider">Tür</th>
-                {session?.user?.role !== "manager" && (
-                  <th className="w-28 py-3 px-4 font-semibold text-slate-600 text-xs uppercase tracking-wider text-right">İşlemler</th>
-                )}
+                <th className="w-28 py-3 px-4 font-semibold text-slate-600 text-xs uppercase tracking-wider text-right">İşlemler</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-100">
               {searchingAll ? (
                 <tr>
-                  <td colSpan={session?.user?.role !== "manager" ? 5 : 4} className="py-8 text-center text-slate-500 text-sm">
+                  <td colSpan={5} className="py-8 text-center text-slate-500 text-sm">
                     Tüm işlemlerde aranıyor...
                   </td>
                 </tr>
               ) : (allSearchedTransactions ?? transactions).length === 0 ? (
                 <tr>
-                  <td colSpan={session?.user?.role !== "manager" ? 5 : 4} className="py-8 text-center text-slate-500">Henüz bir kayıt bulunmamaktadır.</td>
+                  <td colSpan={5} className="py-8 text-center text-slate-500">Henüz bir kayıt bulunmamaktadır.</td>
                 </tr>
               ) : (
                 paginatedTransactions.map((t: any) => {
                   const isEditing = editingId === t._id;
                   const isOwner = String(t.userId?._id || t.userId || "") === String(session?.user?.id || "");
-                  const canCrud = session?.user?.role === "superadmin" || (session?.user?.role === "personnel" && isOwner);
+                  const canCrud =
+                    session?.user?.role === "superadmin" ||
+                    session?.user?.role === "manager" ||
+                    (session?.user?.role === "personnel" && isOwner);
                   const isSearchMatch = txSearch.trim().length > 0;
                   
                   return (
@@ -787,33 +789,31 @@ export default function DashboardPage() {
                         )}
                       </td>
                       
-                      {session?.user?.role !== "manager" && (
-                        <td className="py-3 px-4 align-middle text-right border-t border-slate-100">
-                          {!canCrud ? (
-                            <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
-                              Salt Okunur
-                            </span>
-                          ) : isEditing ? (
-                            <div className="flex justify-end gap-2">
-                              <button onClick={() => handleUpdate(t._id)} className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition">
-                                <Check className="w-4 h-4" />
-                              </button>
-                              <button onClick={() => setEditingId(null)} className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition">
-                                <X className="w-4 h-4" />
-                              </button>
-                            </div>
-                          ) : (
-                            <div className="flex justify-end gap-2">
-                              <button onClick={() => startEditing(t)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Düzenle">
-                                <Edit2 className="w-4 h-4" />
-                              </button>
-                              <button onClick={() => handleDelete(t._id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition" title="Sil">
-                                <Trash2 className="w-4 h-4" />
-                              </button>
-                            </div>
-                          )}
-                        </td>
-                      )}
+                      <td className="py-3 px-4 align-middle text-right border-t border-slate-100">
+                        {!canCrud ? (
+                          <span className="inline-flex items-center px-2.5 py-1 rounded-lg text-[11px] font-semibold bg-slate-100 text-slate-500 border border-slate-200">
+                            Salt Okunur
+                          </span>
+                        ) : isEditing ? (
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => handleUpdate(t._id)} className="p-1.5 bg-green-100 text-green-700 rounded-lg hover:bg-green-200 transition">
+                              <Check className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => setEditingId(null)} className="p-1.5 bg-slate-100 text-slate-600 rounded-lg hover:bg-slate-200 transition">
+                              <X className="w-4 h-4" />
+                            </button>
+                          </div>
+                        ) : (
+                          <div className="flex justify-end gap-2">
+                            <button onClick={() => startEditing(t)} className="p-1.5 text-blue-600 hover:bg-blue-50 rounded-lg transition" title="Düzenle">
+                              <Edit2 className="w-4 h-4" />
+                            </button>
+                            <button onClick={() => handleDelete(t._id)} className="p-1.5 text-red-600 hover:bg-red-50 rounded-lg transition" title="Sil">
+                              <Trash2 className="w-4 h-4" />
+                            </button>
+                          </div>
+                        )}
+                      </td>
                     </tr>
                   );
                 })

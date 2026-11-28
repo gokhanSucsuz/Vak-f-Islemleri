@@ -139,8 +139,20 @@
   contain-intrinsic-size: auto none auto 420px;
 }
 
+.pres-reorder-row {
+  content-visibility: auto;
+  contain-intrinsic-size: auto none auto 66px;
+}
+
+.pres-filmstrip-scroller {
+  content-visibility: auto;
+  contain-intrinsic-size: auto 256px auto 640px;
+}
+
 @supports not (content-visibility: auto) {
-  .perf-contained-list {
+  .perf-contained-list,
+  .pres-reorder-row,
+  .pres-filmstrip-scroller {
     contain: layout style paint;
   }
 }

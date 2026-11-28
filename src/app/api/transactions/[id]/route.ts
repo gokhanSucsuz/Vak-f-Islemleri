@@ -25,14 +25,11 @@ export async function PUT(req: Request, { params }: { params: Promise<{ id: stri
       return NextResponse.json({ error: "Kayıt bulunamadı" }, { status: 404 });
     }
 
-    // superadmin her şeyi düzenleyebilir.
-    // personel sadece kendi kaydını düzenleyebilir.
-    // müdür düzenleyemez.
-    if (session.user.role === "manager") {
-      return NextResponse.json({ error: "Müdür yetkisi ile kayıt düzenlenemez" }, { status: 403 });
-    }
-    
-    if (session.user.role === "personnel" && transaction.userId.toString() !== session.user.id) {
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
+
+    // Süper Admin ve Müdür her şeyi düzenleyebilir; personel sadece kendi kaydını düzenleyebilir.
+    if (!perms.isManager && transaction.userId.toString() !== session.user.id) {
       return NextResponse.json({ error: "Bu kaydı düzenleme yetkiniz yok" }, { status: 403 });
     }
 
@@ -71,14 +68,11 @@ export async function DELETE(req: Request, { params }: { params: Promise<{ id: s
       return NextResponse.json({ error: "Kayıt bulunamadı" }, { status: 404 });
     }
 
-    // superadmin her şeyi silebilir. 
-    // personel sadece kendi kaydını silebilir.
-    // müdür silemez.
-    if (session.user.role === "manager") {
-      return NextResponse.json({ error: "Müdür yetkisi ile kayıt silinemez" }, { status: 403 });
-    }
-    
-    if (session.user.role === "personnel" && transaction.userId.toString() !== session.user.id) {
+    const { getEffectivePermissions } = await import("@/lib/permissions");
+    const perms = await getEffectivePermissions(session);
+
+    // Süper Admin ve Müdür her şeyi silebilir; personel sadece kendi kaydını silebilir.
+    if (!perms.isManager && transaction.userId.toString() !== session.user.id) {
       return NextResponse.json({ error: "Bu kaydı silme yetkiniz yok" }, { status: 403 });
     }
 

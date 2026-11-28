@@ -65,12 +65,21 @@ export default function Sidebar() {
     { name: "Raporlar & İstatistik", href: "/dashboard/reports", icon: BarChart3, roles: ["superadmin", "manager"], allowAuthorized: true, group: "admin" },
     { name: "Personel Yönetimi", href: "/dashboard/users", icon: Users, roles: ["superadmin"], group: "admin" },
     { name: "Sistem Logları", href: "/dashboard/logs", icon: Activity, roles: ["superadmin"], group: "admin" },
-    { name: "Ayarlar", href: "/dashboard/settings", icon: Settings, roles: ["superadmin", "manager"], allowAuthorized: true, group: "admin" },
+    { name: "Ayarlar", href: "/dashboard/settings", icon: Settings, roles: ["superadmin"], allowAuthorized: true, group: "admin" },
   ];
 
   const userRole = session?.user?.role as string;
   const isAuthorizedPersonnel = Boolean(session?.user?.isAuthorized);
   const filteredItems = navItems.filter((item) => {
+    // Müdür rolü; Personel Yönetimi, Sistem Logları ve Ayarlar sayfalarını kesinlikle görmez
+    if (
+      userRole === "manager" &&
+      (item.href === "/dashboard/users" ||
+        item.href === "/dashboard/logs" ||
+        item.href === "/dashboard/settings")
+    ) {
+      return false;
+    }
     if (item.roles.includes(userRole)) return true;
     if (!item.allowAuthorized) return false;
     if (item.href === "/dashboard/help-types") {
@@ -152,7 +161,9 @@ export default function Sidebar() {
                     ? "Müdür"
                     : "Personel"}
                 </span>
-                {session?.user?.isAuthorized && userRole !== "superadmin" && (
+                {session?.user?.isAuthorized &&
+                  userRole !== "superadmin" &&
+                  userRole !== "manager" && (
                   <span className="inline-flex items-center px-1.5 py-0.5 rounded-md text-[10px] font-bold bg-emerald-500/20 text-emerald-300 border border-emerald-400/25">
                     Yetkili
                   </span>

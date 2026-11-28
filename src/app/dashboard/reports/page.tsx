@@ -797,7 +797,8 @@ export default function ReportsPage() {
         </div>
 
         <div className="flex flex-wrap items-center gap-2">
-          {activeTab === "transactions" && session?.user?.role === "superadmin" && (
+          {activeTab === "transactions" &&
+            (session?.user?.role === "superadmin" || session?.user?.role === "manager") && (
             <button
               onClick={handleDeleteAllTx}
               className="h-10 inline-flex items-center justify-center px-3.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs sm:text-sm font-semibold transition-colors shadow-sm"
@@ -1075,7 +1076,8 @@ export default function ReportsPage() {
                       )}
                       <th className="py-3 px-4 font-semibold text-slate-700">Vatandaş Bilgisi</th>
                       <th className="py-3 px-4 font-semibold text-slate-700 w-48">Tür</th>
-                      {session?.user?.role === "superadmin" && (
+                      {(session?.user?.role === "superadmin" ||
+                        session?.user?.role === "manager") && (
                         <th className="py-3 px-4 font-semibold text-slate-700 text-right print:hidden">
                           İşlem
                         </th>
@@ -1097,7 +1099,8 @@ export default function ReportsPage() {
                             {t.helpType?.name || "-"}
                           </span>
                         </td>
-                        {session?.user?.role === "superadmin" && (
+                        {(session?.user?.role === "superadmin" ||
+                          session?.user?.role === "manager") && (
                           <td className="py-3 px-4 text-right print:hidden">
                             <button
                               onClick={() => handleDeleteTx(t._id)}

@@ -52,7 +52,12 @@ export const authOptions: NextAuthOptions = {
 
         await dbConnect();
 
-        const user = await User.findOne({ email: credentials.email });
+        const cleanEmail = credentials.email.trim();
+        let user = await User.findOne({ email: cleanEmail });
+        if (!user) {
+          const escaped = cleanEmail.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+          user = await User.findOne({ email: { $regex: new RegExp(`^${escaped}$`, "i") } });
+        }
 
         if (!user) {
           throw new Error("Kullanıcı bulunamadı");
@@ -181,10 +186,13 @@ export const authOptions: NextAuthOptions = {
             );
             const liveRole = dbUser.role || (token.role as string);
             const authorizedModules =
-              liveRole === "superadmin"
+              liveRole === "superadmin" || liveRole === "manager"
                 ? [...ALL_PERMISSION_MODULE_KEYS]
                 : resolveUserAuthorizedModules(dbUser);
-            const isAuthorized = liveRole === "superadmin" || authorizedModules.length > 0;
+            const isAuthorized =
+              liveRole === "superadmin" ||
+              liveRole === "manager" ||
+              authorizedModules.length > 0;
             const canManageSystem =
               liveRole === "superadmin" || liveRole === "manager" || isAuthorized;
             session.user.role = liveRole;

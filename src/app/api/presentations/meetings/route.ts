@@ -98,8 +98,8 @@ export async function POST(req: NextRequest) {
     const body = await req.json();
     const title = (body.title || "").trim();
     const meetingDate = body.meetingDate ? new Date(body.meetingDate) : new Date();
-    // Yetkili personel atamasını yalnızca Süper Admin yapabilir
-    const authorizedUserId = perms.isSuperAdmin && body.authorizedUserId ? body.authorizedUserId : undefined;
+    // Yetkili personel atamasını Süper Admin ve Müdür yapabilir
+    const authorizedUserId = perms.isManager && body.authorizedUserId ? body.authorizedUserId : undefined;
 
     if (!title) {
       return NextResponse.json({ error: "Toplantı başlığı zorunludur." }, { status: 400 });

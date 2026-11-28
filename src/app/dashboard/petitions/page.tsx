@@ -89,7 +89,7 @@ export default function PetitionsPage() {
   const { data: session } = useSession();
   const userRole = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
-  const isSuperAdmin = userRole === "superadmin";
+  const isSuperAdmin = userRole === "superadmin" || userRole === "manager";
   const isManager =
     userRole === "superadmin" ||
     userRole === "manager" ||

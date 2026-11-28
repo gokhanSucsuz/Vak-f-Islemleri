@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo } from "react";
+import { useState, useEffect, useCallback, useRef, useLayoutEffect, useMemo, memo } from "react";
 import { useSession } from "next-auth/react";
 import toast from "react-hot-toast";
 import {
@@ -1217,55 +1217,56 @@ function buildBulkFlatSlides(
 /**
  * PowerPoint Sol Şerit İçin Hafif, Çok Hızlı ve Tut-Sürükle Sıralama Destekli Mini Slayt Önizleme Kartı
  */
-function SlideMiniThumbnail({
-  index,
-  isActive,
-  slide,
-  authorName,
-  templates,
-  isCoverSlide = false,
-  coverTemplate,
-  meetingBackgroundPreset,
-  meetingPhotoFramePreset,
-  onClick,
-  groupIndex,
-  groupSlideIndex,
-  groupSlideCount,
-  canReorder,
-  canMovePrev,
-  canMoveNext,
-  isBeingDragged,
-  dragTranslateX,
-  dragTranslateY,
-  showDropBefore,
-  showDropAfter,
-  onDragHandlePointerDown,
-  onMoveGroupStep,
-}: {
-  index: number;
-  isActive: boolean;
-  slide: SlideItem;
-  authorName?: string;
-  templates: PresentationTemplateClient[];
-  isCoverSlide?: boolean;
-  coverTemplate?: PresentationTemplateClient;
-  meetingBackgroundPreset?: string;
-  meetingPhotoFramePreset?: string;
-  onClick: () => void;
-  groupIndex?: number;
-  groupSlideIndex?: number;
-  groupSlideCount?: number;
-  canReorder?: boolean;
-  canMovePrev?: boolean;
-  canMoveNext?: boolean;
-  isBeingDragged?: boolean;
-  dragTranslateX?: number;
-  dragTranslateY?: number;
-  showDropBefore?: boolean;
-  showDropAfter?: boolean;
-  onDragHandlePointerDown?: (e: React.PointerEvent<HTMLButtonElement>) => void;
-  onMoveGroupStep?: (delta: -1 | 1) => void;
-}) {
+const SlideMiniThumbnail = memo(
+  function SlideMiniThumbnail({
+    index,
+    isActive,
+    slide,
+    authorName,
+    templates,
+    isCoverSlide = false,
+    coverTemplate,
+    meetingBackgroundPreset,
+    meetingPhotoFramePreset,
+    onClick,
+    groupIndex,
+    groupSlideIndex,
+    groupSlideCount,
+    canReorder,
+    canMovePrev,
+    canMoveNext,
+    isBeingDragged,
+    dragTranslateX,
+    dragTranslateY,
+    showDropBefore,
+    showDropAfter,
+    onDragHandlePointerDown,
+    onMoveGroupStep,
+  }: {
+    index: number;
+    isActive: boolean;
+    slide: SlideItem;
+    authorName?: string;
+    templates: PresentationTemplateClient[];
+    isCoverSlide?: boolean;
+    coverTemplate?: PresentationTemplateClient;
+    meetingBackgroundPreset?: string;
+    meetingPhotoFramePreset?: string;
+    onClick: () => void;
+    groupIndex?: number;
+    groupSlideIndex?: number;
+    groupSlideCount?: number;
+    canReorder?: boolean;
+    canMovePrev?: boolean;
+    canMoveNext?: boolean;
+    isBeingDragged?: boolean;
+    dragTranslateX?: number;
+    dragTranslateY?: number;
+    showDropBefore?: boolean;
+    showDropAfter?: boolean;
+    onDragHandlePointerDown?: (e: React.PointerEvent<HTMLButtonElement>) => void;
+    onMoveGroupStep?: (delta: -1 | 1) => void;
+  }) {
   const defaultTpl = templates[0] || null;
   const activeTpl =
     (slide.templateId && templates.find((t) => t._id === slide.templateId)) ||
@@ -1288,14 +1289,7 @@ function SlideMiniThumbnail({
     <div
       data-filmstrip-idx={index}
       data-filmstrip-group-idx={groupIndex}
-      style={
-        isBeingDragged
-          ? {
-              transform: `translate3d(${dragTranslateX || 0}px, ${dragTranslateY || 0}px, 0)`,
-              zIndex: 35,
-            }
-          : undefined
-      }
+      style={isBeingDragged ? { zIndex: 35 } : undefined}
       className={`group w-36 sm:w-44 lg:w-full shrink-0 rounded-2xl p-1.5 sm:p-2 transition-shadow duration-150 relative flex items-start gap-1.5 sm:gap-2 ${
         isBeingDragged
           ? "bg-blue-50 ring-2 ring-blue-600 shadow-2xl shadow-blue-900/25 opacity-95"
@@ -1559,13 +1553,36 @@ function SlideMiniThumbnail({
       </button>
     </div>
   );
-}
+  },
+  (prev, next) =>
+    prev.index === next.index &&
+    prev.isActive === next.isActive &&
+    prev.slide === next.slide &&
+    prev.authorName === next.authorName &&
+    prev.templates === next.templates &&
+    prev.isCoverSlide === next.isCoverSlide &&
+    prev.coverTemplate === next.coverTemplate &&
+    prev.meetingBackgroundPreset === next.meetingBackgroundPreset &&
+    prev.meetingPhotoFramePreset === next.meetingPhotoFramePreset &&
+    prev.groupIndex === next.groupIndex &&
+    prev.groupSlideIndex === next.groupSlideIndex &&
+    prev.groupSlideCount === next.groupSlideCount &&
+    prev.canReorder === next.canReorder &&
+    prev.canMovePrev === next.canMovePrev &&
+    prev.canMoveNext === next.canMoveNext &&
+    prev.isBeingDragged === next.isBeingDragged &&
+    prev.dragTranslateX === next.dragTranslateX &&
+    prev.dragTranslateY === next.dragTranslateY &&
+    prev.showDropBefore === next.showDropBefore &&
+    prev.showDropAfter === next.showDropAfter
+);
 
 export default function PresentationsPage() {
   const { data: session } = useSession();
   const role = (session?.user as any)?.role;
   const userId = (session?.user as any)?.id;
-  const isSuperAdmin = role === "superadmin";
+  // Müdür olan personel de Sunular modülünde Süper Admin ile birebir aynı tüm özelliklere erişir
+  const isSuperAdmin = role === "superadmin" || role === "manager";
   const isManager =
     role === "superadmin" ||
     role === "manager" ||
@@ -1662,6 +1679,8 @@ export default function PresentationsPage() {
     groups: OrderedPresentationGroup[];
     flatSlides: BulkFlatSlideItem[];
   } | null>(null);
+  const bulkPreviewRef = useRef(bulkPreviewModal);
+  bulkPreviewRef.current = bulkPreviewModal;
   const [bulkIdx, setBulkIdx] = useState(0);
   const [savingBulkEdit, setSavingBulkEdit] = useState(false);
   const [savingBulkOrder, setSavingBulkOrder] = useState(false);
@@ -1677,6 +1696,7 @@ export default function PresentationsPage() {
   const filmstripDragRef = useRef<{
     pointerId: number;
     fromGroupIdx: number;
+    fromSlideOffset: number;
     dropInsertIdx: number;
     startX: number;
     startY: number;
@@ -1692,6 +1712,13 @@ export default function PresentationsPage() {
     meeting: MeetingItem;
     orderedPresentations: OrderedPresentationGroup[];
   } | null>(null);
+  const [rankDrafts, setRankDrafts] = useState<Record<string, string>>({});
+  const [pendingRankIds, setPendingRankIds] = useState<Record<string, boolean>>({});
+  const [justMovedRankId, setJustMovedRankId] = useState<string | null>(null);
+  const rankDraftsRef = useRef<Record<string, string>>({});
+  const rankTimersRef = useRef<Map<string, ReturnType<typeof setTimeout>>>(new Map());
+  const justMovedTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const reorderListRef = useRef<HTMLDivElement | null>(null);
   const [loadingMeetingSlides, setLoadingMeetingSlides] = useState(false);
   const [isHydratingBulkSlides, setIsHydratingBulkSlides] = useState(false);
   const [exportingMeeting, setExportingMeeting] = useState(false);
@@ -1942,12 +1969,12 @@ export default function PresentationsPage() {
 
   // Aktif slayt değiştiğinde sol PowerPoint film şeridinde ilgili küçük slaytı görünür alana kaydır
   useEffect(() => {
-    if (!bulkPreviewModal || !bulkFilmstripRef.current || filmstripDrag) return;
+    if (!bulkPreviewRef.current || !bulkFilmstripRef.current || filmstripDragRef.current) return;
     const activeBtn = bulkFilmstripRef.current.querySelector<HTMLElement>(
       `[data-filmstrip-idx="${bulkIdx}"]`
     );
     activeBtn?.scrollIntoView({ block: "nearest", inline: "nearest", behavior: "smooth" });
-  }, [bulkIdx, bulkPreviewModal, filmstripDrag]);
+  }, [bulkIdx]);
 
   useEffect(() => {
     if (!previewRecord || !singleFilmstripRef.current) return;
@@ -3281,9 +3308,11 @@ export default function PresentationsPage() {
   };
 
   // Toplu Önizleme Sol PowerPoint Şeridinde Grup Sırasını Taşı (Çok Sayfalı Sunular Birlikte Hareket Eder)
-  const reorderBulkGroups = useCallback((fromIdx: number, toIdx: number) => {
-    setBulkPreviewModal((prev) => {
-      if (!prev) return null;
+  // Yeri değiştirilen slayt sağdaki ana sahnede otomatik olarak aktif slayt haline gelir!
+  const reorderBulkGroups = useCallback(
+    (fromIdx: number, toIdx: number, preferredSlideOffset = 0) => {
+      const prev = bulkPreviewRef.current;
+      if (!prev) return;
       if (
         fromIdx < 0 ||
         fromIdx >= prev.groups.length ||
@@ -3291,13 +3320,8 @@ export default function PresentationsPage() {
         toIdx >= prev.groups.length ||
         fromIdx === toIdx
       ) {
-        return prev;
+        return;
       }
-
-      const activeItem = prev.flatSlides[bulkIdx];
-      const activeKey = activeItem
-        ? `${activeItem.presentationId}_${activeItem.slideIndex}`
-        : "";
 
       const nextGroups = [...prev.groups];
       const [movedGrp] = nextGroups.splice(fromIdx, 1);
@@ -3318,27 +3342,50 @@ export default function PresentationsPage() {
         nextGroups,
         prev.flatSlides[0]?.isCoverSlide ? activeCoverRef.current : null
       );
-      if (activeKey) {
-        const nextSlidePos = nextFlat.findIndex(
-          (fs) => `${fs.presentationId}_${fs.slideIndex}` === activeKey
+
+      const safeOffset = Math.max(
+        0,
+        Math.min(Math.max(0, (movedGrp.slideCount || movedGrp.slides?.length || 1) - 1), preferredSlideOffset)
+      );
+      let movedFlatIdx = nextFlat.findIndex(
+        (fs) =>
+          !fs.isCoverSlide &&
+          fs.presentationId === movedGrp.presentationId &&
+          fs.slideIndex === safeOffset
+      );
+      if (movedFlatIdx < 0) {
+        movedFlatIdx = nextFlat.findIndex(
+          (fs) => !fs.isCoverSlide && fs.presentationId === movedGrp.presentationId
         );
-        if (nextSlidePos >= 0) {
-          setBulkIdx(nextSlidePos);
-        }
+      }
+
+      setBulkPreviewModal({
+        ...prev,
+        allGroups: nextAllGroups,
+        groups: nextGroups,
+        flatSlides: nextFlat,
+      });
+
+      if (movedFlatIdx >= 0) {
+        setBulkIdx(movedFlatIdx);
+        requestAnimationFrame(() => {
+          const activeBtn = bulkFilmstripRef.current?.querySelector<HTMLElement>(
+            `[data-filmstrip-idx="${movedFlatIdx}"]`
+          );
+          activeBtn?.scrollIntoView({
+            block: "nearest",
+            inline: "nearest",
+            behavior: "smooth",
+          });
+        });
       }
 
       setReorderLiveMsg(
         `${movedGrp.summaryTitle} sunusu ${toIdx + 1}. sıraya taşındı (toplam ${nextGroups.length}).`
       );
-
-      return {
-        ...prev,
-        allGroups: nextAllGroups,
-        groups: nextGroups,
-        flatSlides: nextFlat,
-      };
-    });
-  }, [bulkIdx]);
+    },
+    []
+  );
 
   // Toplu Önizlemede Yapılan Sıralamayı Sunucuya Kaydet
   const saveBulkPreviewOrder = async (closeAfterSave: boolean) => {
@@ -3375,7 +3422,8 @@ export default function PresentationsPage() {
             : null
         );
       }
-      await fetchAll();
+      void fetchAll({ silent: true });
+      void fetchPresentations();
     } catch (err: any) {
       toast.error(err.message || "Sıralama kaydedilemedi");
     } finally {
@@ -3383,10 +3431,11 @@ export default function PresentationsPage() {
     }
   };
 
-  // PowerPoint Sol Dikey (Mobil Yatay) Mini Slayt Şeridi Pointer-Captured Tut-Sürükle İşleyicisi
+  // PowerPoint Sol Dikey (Mobil Yatay) Mini Slayt Şeridi 60FPS Tut-Sürükle İşleyicisi
   const handleFilmstripDragPointerDown = (
     fromGroupIdx: number,
-    e: React.PointerEvent<HTMLButtonElement>
+    e: React.PointerEvent<HTMLButtonElement>,
+    fromSlideOffset = 0
   ) => {
     if (e.button !== 0 || filmstripDragRef.current || !bulkPreviewModal) return;
     e.preventDefault();
@@ -3396,8 +3445,49 @@ export default function PresentationsPage() {
     handleEl.setPointerCapture(e.pointerId);
     const isHorizontal = window.innerWidth < 1024;
     const totalGroups = bulkPreviewModal.groups.length;
+    const scrollerEl = bulkFilmstripRef.current;
 
     document.documentElement.classList.add("is-reordering-slides");
+
+    // Drag başlangıcında tüm grup orta noktalarını scroll-koordinatında önbellekle (pointermove sırasında 0 layout thrashing!)
+    const baseScrollLeft = scrollerEl?.scrollLeft || 0;
+    const baseScrollTop = scrollerEl?.scrollTop || 0;
+    const scrollerStartRect = scrollerEl?.getBoundingClientRect();
+    const cachedMidpoints: Array<{ g: number; contentMid: number }> = [];
+    if (scrollerEl && scrollerStartRect) {
+      for (let g = 0; g < totalGroups; g++) {
+        if (g === fromGroupIdx) continue;
+        const nodes = scrollerEl.querySelectorAll<HTMLElement>(
+          `[data-filmstrip-group-idx="${g}"]`
+        );
+        if (nodes.length === 0) continue;
+        const firstRect = nodes[0].getBoundingClientRect();
+        const lastRect = nodes[nodes.length - 1].getBoundingClientRect();
+        const contentMid = isHorizontal
+          ? (firstRect.left + lastRect.right) / 2 - scrollerStartRect.left + baseScrollLeft
+          : (firstRect.top + lastRect.bottom) / 2 - scrollerStartRect.top + baseScrollTop;
+        cachedMidpoints.push({ g, contentMid });
+      }
+    }
+
+    const draggedNodes = scrollerEl
+      ? Array.from(
+          scrollerEl.querySelectorAll<HTMLElement>(
+            `[data-filmstrip-group-idx="${fromGroupIdx}"]`
+          )
+        )
+      : [];
+    for (const node of draggedNodes) {
+      node.style.willChange = "transform";
+      node.style.zIndex = "35";
+    }
+
+    const applyDraggedTransform = (dx: number, dy: number) => {
+      const tf = `translate3d(${dx}px, ${dy}px, 0)`;
+      for (const node of draggedNodes) {
+        node.style.transform = tf;
+      }
+    };
 
     const computeDropInsertIdx = (clientX: number, clientY: number): number => {
       const scroller = bulkFilmstripRef.current;
@@ -3406,20 +3496,13 @@ export default function PresentationsPage() {
       const clampedCoord = isHorizontal
         ? Math.max(scrollerRect.left, Math.min(scrollerRect.right, clientX))
         : Math.max(scrollerRect.top, Math.min(scrollerRect.bottom, clientY));
+      const pointerInContent = isHorizontal
+        ? clampedCoord - scrollerRect.left + scroller.scrollLeft
+        : clampedCoord - scrollerRect.top + scroller.scrollTop;
 
-      for (let g = 0; g < totalGroups; g++) {
-        if (g === fromGroupIdx) continue;
-        const nodes = scroller.querySelectorAll<HTMLElement>(
-          `[data-filmstrip-group-idx="${g}"]`
-        );
-        if (nodes.length === 0) continue;
-        const firstRect = nodes[0].getBoundingClientRect();
-        const lastRect = nodes[nodes.length - 1].getBoundingClientRect();
-        const midpoint = isHorizontal
-          ? (firstRect.left + lastRect.right) / 2
-          : (firstRect.top + lastRect.bottom) / 2;
-        if (clampedCoord < midpoint) {
-          return g;
+      for (let i = 0; i < cachedMidpoints.length; i++) {
+        if (pointerInContent < cachedMidpoints[i].contentMid) {
+          return cachedMidpoints[i].g;
         }
       }
       return totalGroups;
@@ -3466,6 +3549,7 @@ export default function PresentationsPage() {
     filmstripDragRef.current = {
       pointerId: e.pointerId,
       fromGroupIdx,
+      fromSlideOffset,
       dropInsertIdx: fromGroupIdx,
       startX: e.clientX,
       startY: e.clientY,
@@ -3486,6 +3570,11 @@ export default function PresentationsPage() {
       const active = filmstripDragRef.current;
       if (active?.rafId) window.cancelAnimationFrame(active.rafId);
       filmstripDragRef.current = null;
+      for (const node of draggedNodes) {
+        node.style.transform = "";
+        node.style.willChange = "";
+        node.style.zIndex = "";
+      }
       setFilmstripDrag(null);
       document.documentElement.classList.remove("is-reordering-slides");
       handleEl.removeEventListener("pointermove", onPointerMove);
@@ -3501,27 +3590,45 @@ export default function PresentationsPage() {
       active.lastY = ev.clientY;
       const dx = active.isHorizontal ? ev.clientX - active.startX : 0;
       const dy = active.isHorizontal ? 0 : ev.clientY - active.startY;
+      applyDraggedTransform(dx, dy);
+
       const nextInsert = computeDropInsertIdx(ev.clientX, ev.clientY);
-      active.dropInsertIdx = nextInsert;
-      setFilmstripDrag({
-        fromGroupIdx: active.fromGroupIdx,
-        dropInsertIdx: nextInsert,
-        dx,
-        dy,
-      });
+      if (nextInsert !== active.dropInsertIdx) {
+        active.dropInsertIdx = nextInsert;
+        setFilmstripDrag({
+          fromGroupIdx: active.fromGroupIdx,
+          dropInsertIdx: nextInsert,
+          dx: 0,
+          dy: 0,
+        });
+      }
     };
 
     const onPointerUp = (ev: PointerEvent) => {
       const active = filmstripDragRef.current;
       if (!active || ev.pointerId !== active.pointerId) return;
-      const { fromGroupIdx: fromIdx, dropInsertIdx: insertIdx } = active;
+      const {
+        fromGroupIdx: fromIdx,
+        fromSlideOffset: slideOffset,
+        dropInsertIdx: insertIdx,
+      } = active;
       if (handleEl.hasPointerCapture(ev.pointerId)) {
         handleEl.releasePointerCapture(ev.pointerId);
       }
       cleanup();
       const targetIdx = insertIdx > fromIdx ? insertIdx - 1 : insertIdx;
       if (targetIdx !== fromIdx) {
-        reorderBulkGroups(fromIdx, targetIdx);
+        reorderBulkGroups(fromIdx, targetIdx, slideOffset);
+      } else {
+        // Aynı yere bırakılsa bile tutulan slaytı sağda aktif göster (ilk slayda kaymasını engelle)
+        const snapModal = bulkPreviewRef.current;
+        const grp = snapModal?.groups[fromIdx];
+        if (snapModal && grp) {
+          const hitIdx = snapModal.flatSlides.findIndex(
+            (fs) => !fs.isCoverSlide && fs.presentationId === grp.presentationId
+          );
+          if (hitIdx >= 0) setBulkIdx(hitIdx);
+        }
       }
     };
 
@@ -3605,11 +3712,162 @@ export default function PresentationsPage() {
     }
   };
 
-  // Toplantı Yönetimi Modalını Aç (Kayıt bazlı sıralama - çok sayfalı slaytlar kopmaz!)
+  // Sıralama Penceresi Zamanlayıcılarını Temizle
+  const clearAllRankTimers = useCallback(() => {
+    rankTimersRef.current.forEach((timer) => clearTimeout(timer));
+    rankTimersRef.current.clear();
+    rankDraftsRef.current = {};
+    setRankDrafts({});
+    setPendingRankIds({});
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      rankTimersRef.current.forEach((timer) => clearTimeout(timer));
+      rankTimersRef.current.clear();
+      if (justMovedTimerRef.current) clearTimeout(justMovedTimerRef.current);
+    };
+  }, []);
+
+  const closeManageMeetingModal = useCallback(() => {
+    clearAllRankTimers();
+    setJustMovedRankId(null);
+    setManageMeetingModal(null);
+  }, [clearAllRankTimers]);
+
+  // 3 Saniye Sonunda (veya Enter ile) Yazılan Sıra Numarasına Göre Doğrudan O Sıraya Taşı
+  const commitRankMove = useCallback((presentationId: string, rawVal: string) => {
+    const existingTimer = rankTimersRef.current.get(presentationId);
+    if (existingTimer) {
+      clearTimeout(existingTimer);
+      rankTimersRef.current.delete(presentationId);
+    }
+    delete rankDraftsRef.current[presentationId];
+    setRankDrafts((prev) => {
+      if (!(presentationId in prev)) return prev;
+      const next = { ...prev };
+      delete next[presentationId];
+      return next;
+    });
+    setPendingRankIds((prev) => {
+      if (!prev[presentationId]) return prev;
+      const next = { ...prev };
+      delete next[presentationId];
+      return next;
+    });
+
+    const parsed = parseInt(rawVal.trim(), 10);
+    if (!Number.isFinite(parsed) || parsed < 1) return;
+
+    let didMove = false;
+    let movedTitle = "";
+    let finalRank = parsed;
+
+    setManageMeetingModal((prev) => {
+      if (!prev) return null;
+      const list = [...prev.orderedPresentations];
+      const currentIdx = list.findIndex((g) => g.presentationId === presentationId);
+      if (currentIdx === -1) return prev;
+      const targetIdx = Math.max(0, Math.min(list.length - 1, parsed - 1));
+      finalRank = targetIdx + 1;
+      if (targetIdx === currentIdx) return prev;
+
+      const [moved] = list.splice(currentIdx, 1);
+      list.splice(targetIdx, 0, moved);
+      didMove = true;
+      movedTitle = moved.summaryTitle;
+      return {
+        ...prev,
+        orderedPresentations: list,
+      };
+    });
+
+    setTimeout(() => {
+      if (!didMove) return;
+      setReorderLiveMsg(`${movedTitle} sunusu ${finalRank}. sıraya taşındı.`);
+      setJustMovedRankId(presentationId);
+      if (justMovedTimerRef.current) clearTimeout(justMovedTimerRef.current);
+      justMovedTimerRef.current = setTimeout(() => {
+        setJustMovedRankId((cur) => (cur === presentationId ? null : cur));
+      }, 1600);
+      requestAnimationFrame(() => {
+        const rowEl = reorderListRef.current?.querySelector<HTMLElement>(
+          `[data-reorder-pid="${presentationId}"]`
+        );
+        rowEl?.scrollIntoView({ block: "nearest", behavior: "smooth" });
+      });
+    }, 0);
+  }, []);
+
+  // Sıra Numarası Kutusu Değişim İşleyicisi (2 veya 3 Haneli Girişler İçin Tam 3 Saniye Bekler)
+  const handleRankInputChange = useCallback(
+    (presentationId: string, rawValue: string) => {
+      const digitsOnly = rawValue.replace(/\D/g, "").slice(0, 4);
+      rankDraftsRef.current[presentationId] = digitsOnly;
+      setRankDrafts((prev) => ({ ...prev, [presentationId]: digitsOnly }));
+
+      const prevTimer = rankTimersRef.current.get(presentationId);
+      if (prevTimer) {
+        clearTimeout(prevTimer);
+        rankTimersRef.current.delete(prevTimer as any);
+        rankTimersRef.current.delete(presentationId);
+      }
+
+      if (!digitsOnly) {
+        setPendingRankIds((prev) => {
+          if (!prev[presentationId]) return prev;
+          const next = { ...prev };
+          delete next[presentationId];
+          return next;
+        });
+        const resetTimer = setTimeout(() => {
+          commitRankMove(presentationId, "");
+        }, 3000);
+        rankTimersRef.current.set(presentationId, resetTimer);
+        return;
+      }
+
+      setPendingRankIds((prev) => ({ ...prev, [presentationId]: true }));
+      const timer = setTimeout(() => {
+        commitRankMove(presentationId, digitsOnly);
+      }, 3000);
+      rankTimersRef.current.set(presentationId, timer);
+    },
+    [commitRankMove]
+  );
+
+  // Kullanıcı 3 saniye dolmadan "Kaydet / Kilitle / Sonlandır" butonuna basarsa bekleyen sıra girişlerini anında uygula
+  const flushPendingRankMoves = useCallback(
+    (sourceList: OrderedPresentationGroup[]): OrderedPresentationGroup[] => {
+      const entries = Object.entries(rankDraftsRef.current);
+      if (entries.length === 0) return sourceList;
+      const list = [...sourceList];
+      for (const [pid, rawVal] of entries) {
+        const parsed = parseInt(rawVal.trim(), 10);
+        if (!Number.isFinite(parsed) || parsed < 1) continue;
+        const curIdx = list.findIndex((g) => g.presentationId === pid);
+        if (curIdx === -1) continue;
+        const targetIdx = Math.max(0, Math.min(list.length - 1, parsed - 1));
+        if (targetIdx !== curIdx) {
+          const [moved] = list.splice(curIdx, 1);
+          list.splice(targetIdx, 0, moved);
+        }
+      }
+      clearAllRankTimers();
+      setManageMeetingModal((prev) =>
+        prev ? { ...prev, orderedPresentations: list } : null
+      );
+      return list;
+    },
+    [clearAllRankTimers]
+  );
+
+  // Toplantı Yönetimi Modalını Aç (metaOnly=1 ile ağır slaytları açmadan milisaniyeler içinde yükler!)
   const openManageMeeting = async (meeting: MeetingItem) => {
     previewAbortRef.current?.abort();
     const controller = new AbortController();
     previewAbortRef.current = controller;
+    clearAllRankTimers();
 
     setLoadingMeetingSlides(true);
     setPreviewLoadingModal({
@@ -3617,9 +3875,12 @@ export default function PresentationsPage() {
       subtitle: `${meeting.title} • Sunu listesi hazırlanıyor`,
     });
     try {
-      const res = await shieldedFetchJson(`/api/presentations/meetings/${meeting._id}`, {
-        signal: controller.signal,
-      });
+      const res = await shieldedFetchJson(
+        `/api/presentations/meetings/${meeting._id}?metaOnly=1`,
+        {
+          signal: controller.signal,
+        }
+      );
       const data = res.data;
       setPreviewLoadingModal(null);
       if (!res.ok) throw new Error(data?.error || "Toplantı slaytları alınamadı");
@@ -3758,7 +4019,7 @@ export default function PresentationsPage() {
 
       if (manageMeetingModal && manageMeetingModal.meeting._id === meeting._id) {
         const refreshed = await shieldedFetchJson(
-          `/api/presentations/meetings/${meeting._id}`
+          `/api/presentations/meetings/${meeting._id}?metaOnly=1`
         );
         const refData = refreshed.data;
         if (refreshed.ok) {
@@ -3779,7 +4040,10 @@ export default function PresentationsPage() {
     action: "reorder" | "lock" | "unlock" | "close" | "downloadCombined"
   ) => {
     if (!manageMeetingModal) return;
-    const { meeting, orderedPresentations } = manageMeetingModal;
+    const { meeting } = manageMeetingModal;
+    const orderedPresentations = flushPendingRankMoves(
+      manageMeetingModal.orderedPresentations
+    );
     const presentationOrder = orderedPresentations.map((g) => g.presentationId);
 
     if (action === "downloadCombined") {
@@ -3810,10 +4074,14 @@ export default function PresentationsPage() {
               : "Slayt sıralaması kaydedildi."
       );
       setManageMeetingModal({
-        ...manageMeetingModal,
+        orderedPresentations,
         meeting: { ...meeting, ...data.meeting },
       });
-      await fetchAll();
+      setMeetings((prev) =>
+        prev.map((m) => (m._id === meeting._id ? { ...m, ...data.meeting } : m))
+      );
+      void fetchAll({ silent: true });
+      void fetchPresentations();
     } catch (err: any) {
       toast.error(err.message);
     }
@@ -7050,81 +7318,161 @@ export default function PresentationsPage() {
                   {manageMeetingModal.meeting.title}
                 </h3>
                 <p className="text-xs text-slate-500">
-                  {manageMeetingModal.orderedPresentations.length} Sunu Kaydı • Çok sayfalı kayıtlar bir arada kalır ve sırası bozulmaz
+                  {manageMeetingModal.orderedPresentations.length} Sunu Kaydı •{" "}
+                  {manageMeetingModal.meeting.status === "open"
+                    ? "Mavi sıra kutusuna yeni sıra numarasını yazın (2-3 haneli girişler için 3 sn bekleyip otomatik taşır)"
+                    : "Çok sayfalı kayıtlar bir arada kalır ve sırası bozulmaz"}
                 </p>
               </div>
               <button
-                onClick={() => setManageMeetingModal(null)}
+                type="button"
+                onClick={closeManageMeetingModal}
+                aria-label="Sıralama penceresini kapat"
                 className="p-1.5 rounded-xl hover:bg-slate-100"
               >
                 <X className="w-5 h-5" />
               </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+            <div ref={reorderListRef} className="flex-1 overflow-y-auto space-y-2.5 pr-1">
               {manageMeetingModal.orderedPresentations.length === 0 ? (
                 <div className="text-center py-10 text-sm text-slate-500">
                   Bu toplantıda henüz slayt yok.
                 </div>
               ) : (
-                manageMeetingModal.orderedPresentations.map((grp, idx) => (
-                  <div
-                    key={grp.presentationId}
-                    className="p-3 rounded-2xl border border-slate-200 bg-slate-50/70 flex items-center justify-between gap-3"
-                  >
-                    <div className="flex items-center gap-3 min-w-0">
-                      <span className="w-8 h-8 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center justify-center shrink-0">
-                        {idx + 1}
-                      </span>
-                      {grp.firstPhoto ? (
-                        <div className="w-14 h-10 rounded-lg overflow-hidden border border-slate-200 shrink-0">
-                          <ProtectedCanvasImage
-                            src={grp.firstPhoto}
-                            alt=""
-                            fit="cover"
-                            className="w-14 h-10"
-                          />
+                manageMeetingModal.orderedPresentations.map((grp, idx) => {
+                  const hasDraft = grp.presentationId in rankDrafts;
+                  const displayedRank = hasDraft
+                    ? rankDrafts[grp.presentationId]
+                    : String(idx + 1);
+                  const isPendingMove = Boolean(pendingRankIds[grp.presentationId]);
+                  const isJustMoved = justMovedRankId === grp.presentationId;
+                  const inputId = `pres-rank-${grp.presentationId}`;
+
+                  return (
+                    <div
+                      key={grp.presentationId}
+                      data-reorder-pid={grp.presentationId}
+                      className={`pres-reorder-row p-3 rounded-2xl border flex items-center justify-between gap-3 transition-colors duration-300 ${
+                        isJustMoved
+                          ? "border-emerald-400 bg-emerald-50/80 ring-2 ring-emerald-500/30"
+                          : isPendingMove
+                            ? "border-amber-300 bg-amber-50/50"
+                            : "border-slate-200 bg-slate-50/70"
+                      }`}
+                    >
+                      <div className="flex items-center gap-3 min-w-0">
+                        {manageMeetingModal.meeting.status === "open" ? (
+                          <div className="relative shrink-0">
+                            <label htmlFor={inputId} className="visually-hidden">
+                              {`${grp.summaryTitle} sıra numarası (1-${manageMeetingModal.orderedPresentations.length})`}
+                            </label>
+                            <input
+                              id={inputId}
+                              name={`rank_${grp.presentationId}`}
+                              type="text"
+                              inputMode="numeric"
+                              pattern="[0-9]*"
+                              enterKeyHint="done"
+                              autoComplete="off"
+                              autoCorrect="off"
+                              autoCapitalize="none"
+                              spellCheck={false}
+                              value={displayedRank}
+                              title="Yeni sıra numarasını yazın; yazmayı bitirdikten 3 saniye sonra otomatik o sıraya taşınır (Hemen taşımak için Enter)"
+                              onFocus={(e) => {
+                                e.currentTarget.select();
+                              }}
+                              onChange={(e) =>
+                                handleRankInputChange(grp.presentationId, e.target.value)
+                              }
+                              onKeyDown={(e) => {
+                                if (e.key === "Enter" && !e.nativeEvent.isComposing) {
+                                  e.preventDefault();
+                                  commitRankMove(
+                                    grp.presentationId,
+                                    rankDraftsRef.current[grp.presentationId] ??
+                                      String(idx + 1)
+                                  );
+                                  e.currentTarget.blur();
+                                } else if (e.key === "Escape") {
+                                  e.preventDefault();
+                                  commitRankMove(grp.presentationId, "");
+                                  e.currentTarget.blur();
+                                }
+                              }}
+                              className={`w-11 h-9 rounded-xl text-xs font-extrabold text-center tabular-nums outline-none transition-all cursor-text ${
+                                isPendingMove
+                                  ? "bg-amber-500 text-white ring-2 ring-amber-300 shadow-sm"
+                                  : "bg-blue-600 hover:bg-blue-700 focus:bg-white text-white focus:text-blue-700 focus:ring-2 focus:ring-blue-600 shadow-xs"
+                              }`}
+                            />
+                            {isPendingMove && (
+                              <span
+                                aria-hidden="true"
+                                className="pointer-events-none absolute -top-1.5 -right-1.5 px-1 py-0.2 rounded-full bg-amber-600 text-[9px] font-black text-white shadow-xs animate-pulse"
+                              >
+                                3sn
+                              </span>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="w-9 h-9 rounded-xl bg-blue-600 text-white text-xs font-bold flex items-center justify-center shrink-0 tabular-nums">
+                            {idx + 1}
+                          </span>
+                        )}
+                        {grp.firstPhoto ? (
+                          <div className="w-14 h-10 rounded-lg overflow-hidden border border-slate-200 shrink-0">
+                            <ProtectedCanvasImage
+                              src={grp.firstPhoto}
+                              alt=""
+                              fit="cover"
+                              className="w-14 h-10"
+                            />
+                          </div>
+                        ) : (
+                          <div className="w-14 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
+                            <Sparkles className="w-4 h-4" />
+                          </div>
+                        )}
+                        <div className="min-w-0">
+                          <div className="font-bold text-sm text-slate-900 truncate">
+                            {grp.summaryTitle}
+                          </div>
+                          <div className="text-xs text-slate-500">
+                            Hazırlayan: <strong className="text-slate-700">{grp.authorName}</strong> •{" "}
+                            <span className="text-indigo-700 font-semibold">
+                              {grp.slideCount} Sayfa (Birlikte Sıralanır)
+                            </span>
+                          </div>
                         </div>
-                      ) : (
-                        <div className="w-14 h-10 rounded-lg bg-white border border-slate-200 flex items-center justify-center text-slate-400 shrink-0">
-                          <Sparkles className="w-4 h-4" />
+                      </div>
+
+                      {manageMeetingModal.meeting.status === "open" && (
+                        <div className="flex items-center gap-1.5 shrink-0">
+                          <button
+                            type="button"
+                            onClick={() => moveOrderedGroup(idx, -1)}
+                            disabled={idx === 0}
+                            className="p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40"
+                            title="Yukarı Taşı"
+                          >
+                            <ArrowUp className="w-4 h-4" />
+                          </button>
+                          <button
+                            type="button"
+                            onClick={() => moveOrderedGroup(idx, 1)}
+                            disabled={idx === manageMeetingModal.orderedPresentations.length - 1}
+                            className="p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40"
+                            title="Aşağı Taşı"
+                          >
+                            <ArrowDown className="w-4 h-4" />
+                          </button>
                         </div>
                       )}
-                      <div className="min-w-0">
-                        <div className="font-bold text-sm text-slate-900 truncate">
-                          {grp.summaryTitle}
-                        </div>
-                        <div className="text-xs text-slate-500">
-                          Hazırlayan: <strong className="text-slate-700">{grp.authorName}</strong> •{" "}
-                          <span className="text-indigo-700 font-semibold">
-                            {grp.slideCount} Sayfa (Birlikte Sıralanır)
-                          </span>
-                        </div>
-                      </div>
                     </div>
-
-                    {manageMeetingModal.meeting.status === "open" && (
-                      <div className="flex items-center gap-1.5 shrink-0">
-                        <button
-                          onClick={() => moveOrderedGroup(idx, -1)}
-                          disabled={idx === 0}
-                          className="p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40"
-                          title="Yukarı Taşı"
-                        >
-                          <ArrowUp className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => moveOrderedGroup(idx, 1)}
-                          disabled={idx === manageMeetingModal.orderedPresentations.length - 1}
-                          className="p-2 rounded-xl bg-white border border-slate-200 hover:bg-slate-100 disabled:opacity-40"
-                          title="Aşağı Taşı"
-                        >
-                          <ArrowDown className="w-4 h-4" />
-                        </button>
-                      </div>
-                    )}
-                  </div>
-                ))
+                  );
+                })
               )}
             </div>
 
@@ -7528,10 +7876,10 @@ export default function PresentationsPage() {
                           showDropBefore={showDropBefore}
                           showDropAfter={showDropAfter}
                           onDragHandlePointerDown={(e) =>
-                            handleFilmstripDragPointerDown(gIdx, e)
+                            handleFilmstripDragPointerDown(gIdx, e, item.slideIndex)
                           }
                           onMoveGroupStep={(delta) =>
-                            reorderBulkGroups(gIdx, gIdx + delta)
+                            reorderBulkGroups(gIdx, gIdx + delta, item.slideIndex)
                           }
                         />
                       );

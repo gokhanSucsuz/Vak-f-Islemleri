@@ -35,8 +35,7 @@ export default function SettingsPage() {
   const isSuperAdmin = userRole === "superadmin";
   const canAccessAdminSection =
     isSuperAdmin ||
-    userRole === "manager" ||
-    Boolean(session?.user?.isAuthorized);
+    (userRole !== "manager" && Boolean(session?.user?.isAuthorized));
 
   const [loading, setLoading] = useState(false);
   const [googleLoginEnabled, setGoogleLoginEnabled] = useState(false);

@@ -14,6 +14,10 @@ const authMiddleware = withAuth(
     ) {
       return NextResponse.redirect(new URL("/dashboard", req.url));
     }
+
+    if (path.startsWith("/dashboard/settings") && role === "manager") {
+      return NextResponse.redirect(new URL("/dashboard", req.url));
+    }
   },
   {
     callbacks: {

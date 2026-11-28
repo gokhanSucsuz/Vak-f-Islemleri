@@ -1,17 +1,25 @@
 "use client";
 
-import { useState } from "react";
-import { signIn } from "next-auth/react";
+import { useState, useEffect } from "react";
+import Link from "next/link";
+import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
-import { Lock, Mail, ShieldCheck, Eye, EyeOff } from "lucide-react";
+import { Lock, Mail, ShieldCheck, Eye, EyeOff, ChevronLeft } from "lucide-react";
 
 export default function SuperAdminLoginPage() {
+  const { data: session } = useSession();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [showPassword, setShowPassword] = useState(false);
   const [loading, setLoading] = useState(false);
   const router = useRouter();
+
+  useEffect(() => {
+    if (session?.user?.role) {
+      router.replace("/dashboard");
+    }
+  }, [session, router]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,7 +28,7 @@ export default function SuperAdminLoginPage() {
     try {
       const res = await signIn("credentials", {
         redirect: false,
-        email,
+        email: email.trim(),
         password,
         loginType: "superadmin",
       });
@@ -74,8 +82,12 @@ export default function SuperAdminLoginPage() {
                   </div>
                   <input
                     id="sa-email"
+                    name="email"
                     type="email"
                     autoComplete="email"
+                    autoCorrect="off"
+                    autoCapitalize="none"
+                    spellCheck={false}
                     required
                     className="block w-full pl-10 pr-3.5 py-3 border border-slate-700 rounded-xl text-sm bg-slate-900/80 text-white placeholder-slate-500 focus:border-red-500 transition-colors"
                     placeholder="admin@vakif.local"
@@ -98,6 +110,7 @@ export default function SuperAdminLoginPage() {
                   </div>
                   <input
                     id="sa-password"
+                    name="password"
                     type={showPassword ? "text" : "password"}
                     autoComplete="current-password"
                     required
@@ -108,6 +121,7 @@ export default function SuperAdminLoginPage() {
                   />
                   <button
                     type="button"
+                    aria-pressed={showPassword}
                     aria-label={showPassword ? "Şifreyi gizle" : "Şifreyi göster"}
                     onClick={() => setShowPassword((v) => !v)}
                     className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-200"
@@ -132,9 +146,20 @@ export default function SuperAdminLoginPage() {
                     Doğrulanıyor...
                   </>
                 ) : (
-                  "Yetkili Girişi Yap"
+                  "Süper Admin Girişi Yap"
                 )}
               </button>
+
+              <div className="pt-3 border-t border-slate-800/90">
+                <Link
+                  href="/login"
+                  prefetch={true}
+                  className="w-full flex items-center justify-center gap-1.5 py-2.5 px-4 rounded-xl bg-slate-800/60 hover:bg-slate-800 border border-slate-700/80 text-xs font-bold text-slate-300 hover:text-white transition-colors"
+                >
+                  <ChevronLeft className="w-4 h-4" aria-hidden="true" />
+                  <span>Personel Giriş Sayfasına Dön</span>
+                </Link>
+              </div>
             </form>
           </div>
 

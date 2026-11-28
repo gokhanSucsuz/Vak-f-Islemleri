@@ -28,6 +28,7 @@ export async function GET(
     const { id } = await context.params;
     const { searchParams } = new URL(req.url);
     const fastMode = searchParams.get("fast") === "1";
+    const metaOnly = searchParams.get("metaOnly") === "1";
     const downloadCombined = searchParams.get("downloadCombined") === "1";
     const filterAuthor = (searchParams.get("author") || "").trim();
     await dbConnect();
@@ -163,9 +164,11 @@ export async function GET(
         )
       : orderedMetaDocs;
 
-    const eagerIds = fastMode
-      ? new Set(matchingForFast.slice(0, 3).map((d) => String(d._id)))
-      : new Set(orderedMetaDocs.map((d) => String(d._id)));
+    const eagerIds = metaOnly
+      ? new Set<string>()
+      : fastMode
+        ? new Set(matchingForFast.slice(0, 3).map((d) => String(d._id)))
+        : new Set(orderedMetaDocs.map((d) => String(d._id)));
 
     const fullDocs =
       eagerIds.size > 0
@@ -197,7 +200,7 @@ export async function GET(
       slides: ISlideData[];
     };
 
-    const hasDeferred = fastMode && orderedMetaDocs.length > eagerIds.size;
+    const hasDeferred = (fastMode || metaOnly) && orderedMetaDocs.length > eagerIds.size;
 
     const orderedPresentations: RecordGroup[] = orderedMetaDocs.map((pres) => {
       const pid = String(pres._id);
@@ -407,13 +410,13 @@ export async function PATCH(
       });
     }
 
-    // Tam ekran sunum slayt geçiş efekti seçimi yalnızca Süper Admin'e aittir (açık/kapalı tüm toplantılarda seçilebilir)
+    // Tam ekran sunum slayt geçiş efekti seçimi Süper Admin ve Müdür'e aittir (açık/kapalı tüm toplantılarda seçilebilir)
     if (action === "setTransitionPreset") {
-      if (role !== "superadmin") {
+      if (!perms.isManager) {
         return NextResponse.json(
           {
             error:
-              "Tam ekran sunum slayt geçiş efektini değiştirme yetkisi yalnızca Süper Admin'e aittir.",
+              "Tam ekran sunum slayt geçiş efektini değiştirme yetkisi yalnızca Süper Admin ve Müdür'e aittir.",
           },
           { status: 403 }
         );
@@ -447,11 +450,11 @@ export async function PATCH(
       );
     }
 
-    // Yetkili personel atama ve değiştirme yalnızca Süper Admin'e aittir
+    // Yetkili personel atama ve değiştirme Süper Admin ve Müdür'e aittir
     if (action === "setAuthorizedUser") {
-      if (role !== "superadmin") {
+      if (!perms.isManager) {
         return NextResponse.json(
-          { error: "Yetkili personel belirleme işlemi yalnızca Süper Admin'e aittir." },
+          { error: "Yetkili personel belirleme işlemi yalnızca Süper Admin ve Müdür'e aittir." },
           { status: 403 }
         );
       }
@@ -501,13 +504,13 @@ export async function PATCH(
       });
     }
 
-    // Toplantı fotoğraflarına toplu kurumsal çerçeve ekleme / değiştirme yalnızca Süper Admin'e aittir
+    // Toplantı fotoğraflarına toplu kurumsal çerçeve ekleme / değiştirme Süper Admin ve Müdür'e aittir
     if (action === "setPhotoFramePreset") {
-      if (role !== "superadmin") {
+      if (!perms.isManager) {
         return NextResponse.json(
           {
             error:
-              "Fotoğraflara toplu çerçeve ekleme ve değiştirme yetkisi yalnızca Süper Admin'e aittir.",
+              "Fotoğraflara toplu çerçeve ekleme ve değiştirme yetkisi yalnızca Süper Admin ve Müdür'e aittir.",
           },
           { status: 403 }
         );

@@ -117,11 +117,11 @@ export async function getEffectivePermissions(session: any): Promise<EffectivePe
   const role = String(dbUser?.role || fallbackRole);
   const isSuperAdmin = role === "superadmin";
   const isManager = isSuperAdmin || role === "manager";
-  const authorizedModules = isSuperAdmin
+  const authorizedModules = isManager
     ? [...ALL_PERMISSION_MODULE_KEYS]
     : resolveUserAuthorizedModules(dbUser);
-  const isAuthorized = isSuperAdmin || authorizedModules.length > 0;
-  const hasMod = (k: PermissionModuleKey) => isSuperAdmin || authorizedModules.includes(k);
+  const isAuthorized = isManager || authorizedModules.length > 0;
+  const hasMod = (k: PermissionModuleKey) => isManager || authorizedModules.includes(k);
 
   const result: EffectivePermissions = {
     userId,
@@ -131,7 +131,7 @@ export async function getEffectivePermissions(session: any): Promise<EffectivePe
     isAuthorized,
     authorizedModules,
     canManageSystem: isSuperAdmin || isManager || isAuthorized,
-    canManageApplications: hasMod("applications"),
+    canManageApplications: isManager || hasMod("applications"),
     canManagePetitions: isManager || hasMod("petitions"),
     canManagePresentations: isManager || hasMod("presentations"),
     canManageHelpTypes: isManager || hasMod("helpTypes"),

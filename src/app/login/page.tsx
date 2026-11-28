@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import toast from "react-hot-toast";
@@ -13,6 +14,7 @@ import {
   EyeOff,
   Building2,
   ChevronDown,
+  ArrowRight,
 } from "lucide-react";
 
 export default function LoginPage() {
@@ -241,6 +243,7 @@ export default function LoginPage() {
                       />
                       <button
                         type="button"
+                        aria-pressed={showPassword}
                         aria-label={showPassword ? "Şifreyi gizle" : "Şifreyi göster"}
                         onClick={() => setShowPassword((v) => !v)}
                         className="absolute inset-y-0 right-0 pr-3.5 flex items-center text-slate-400 hover:text-slate-600"
@@ -270,6 +273,26 @@ export default function LoginPage() {
                   </button>
                 </form>
               )}
+
+              {/* Yönetici / Süper Admin Giriş Portalı Geçiş Butonu */}
+              <div className="mt-5 pt-4 border-t border-slate-200/80">
+                <Link
+                  href="/sa-login"
+                  prefetch={true}
+                  className="group w-full flex items-center justify-between gap-3 py-3 px-4 rounded-xl bg-slate-900/[0.04] hover:bg-[#0b192c] border border-slate-200/90 hover:border-[#0b192c] text-slate-700 hover:text-white transition-all active:scale-[0.99]"
+                >
+                  <span className="inline-flex items-center gap-2.5 text-xs sm:text-sm font-bold">
+                    <span className="w-7 h-7 rounded-lg bg-red-600/10 group-hover:bg-red-500/20 text-red-700 group-hover:text-red-300 flex items-center justify-center transition-colors shrink-0">
+                      <ShieldCheck className="w-4 h-4" aria-hidden="true" />
+                    </span>
+                    <span>Yönetici Giriş Sayfası (Süper Admin)</span>
+                  </span>
+                  <ArrowRight
+                    className="w-4 h-4 text-slate-400 group-hover:text-white group-hover:translate-x-0.5 transition-all shrink-0"
+                    aria-hidden="true"
+                  />
+                </Link>
+              </div>
             </div>
           </div>
 
