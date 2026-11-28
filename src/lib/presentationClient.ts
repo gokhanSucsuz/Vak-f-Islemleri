@@ -2118,18 +2118,36 @@ export async function exportSlidesToPptx(params: {
   const finalFileName = safeName.endsWith(".pptx") ? safeName : `${safeName}.pptx`;
 
   // PptxGenJS çıktısını maksimum kayıpsız DEFLATE (seviye 9) ile sıkıştır ve aynı görsel varsa tekilleştir
-  const rawBlob = (await pptx.write({ compression: true } as any)) as Blob;
+  // NOT: PptxGenJS v4 write() metoduna nesne verildiğinde { outputType: "blob" } parametresi ZORUNLUDUR;
+  // aksi halde PptxGenJS nesneyi JSZip'e iletir ve JSZip type.toLowerCase() hatası ("t.toLowerCase is not a function") fırlatır.
+  const rawOutput = await pptx.write({ outputType: "blob", compression: true });
+  const rawBlob: Blob =
+    rawOutput instanceof Blob
+      ? rawOutput
+      : new Blob([rawOutput as any], {
+          type: "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        });
+
   let compressedBlob = rawBlob;
   try {
-    const zip = await JSZip.loadAsync(await rawBlob.arrayBuffer());
-    compressedBlob = await zip.generateAsync({
-      type: "blob",
-      mimeType:
-        "application/vnd.openxmlformats-officedocument.presentationml.presentation",
-      compression: "DEFLATE",
-      compressionOptions: { level: 9 },
-    });
-  } catch {
+    const arrayBuffer =
+      typeof rawBlob.arrayBuffer === "function"
+        ? await rawBlob.arrayBuffer()
+        : (rawOutput as any) instanceof ArrayBuffer
+          ? (rawOutput as any)
+          : null;
+    if (arrayBuffer) {
+      const zip = await JSZip.loadAsync(arrayBuffer);
+      compressedBlob = await zip.generateAsync({
+        type: "blob",
+        mimeType:
+          "application/vnd.openxmlformats-officedocument.presentationml.presentation",
+        compression: "DEFLATE",
+        compressionOptions: { level: 9 },
+      });
+    }
+  } catch (recompressErr) {
+    console.warn("DEFLATE-9 sıkıştırma aşaması atlandı, doğrudan üretilen sunu kullanılıyor:", recompressErr);
     compressedBlob = rawBlob;
   }
 

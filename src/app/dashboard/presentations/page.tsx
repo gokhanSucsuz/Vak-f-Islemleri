@@ -3691,7 +3691,8 @@ export default function PresentationsPage() {
       if (cachedRes.status === 200) {
         const archivedBlob = await cachedRes.blob();
         if (archivedBlob.size > 0) {
-          const safeName = `${meeting.title.replace(/[\\/:*?"<>|]/g, "_")}.pptx`;
+          const rawTitle = meeting?.title || "Toplu_Sunum";
+          const safeName = `${rawTitle.replace(/[\\/:*?"<>|]/g, "_")}.pptx`;
           const url = URL.createObjectURL(archivedBlob);
           const a = document.createElement("a");
           a.style.display = "none";
@@ -3724,7 +3725,7 @@ export default function PresentationsPage() {
         fullGroups = fullData.orderedPresentations || [];
       }
 
-      const combinedSlides = fullGroups.flatMap((g) => g.slides);
+      const combinedSlides = fullGroups.flatMap((g) => g.slides || []);
       if (combinedSlides.length === 0) {
         toast.error("Bu toplantıda indirilecek slayt bulunmuyor.");
         return;
@@ -3733,7 +3734,7 @@ export default function PresentationsPage() {
       // 3. Kayıpsız yüksek çözünürlüklü + Kapak Slaytı (Sayfa 1) + SlideMaster tekilleştirmeli + DEFLATE-9 sıkıştırmalı .pptx üret ve indir
       const { blob, fileName } = await exportSlidesToPptx({
         slides: combinedSlides,
-        fileName: `${meeting.title}.pptx`,
+        fileName: `${meeting?.title || "Toplu_Sunum"}.pptx`,
         templates,
         coverTemplate: activeCoverRef.current,
         meetingBackgroundPreset: meeting.backgroundPreset || "template",
