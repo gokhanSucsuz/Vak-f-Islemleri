@@ -35,12 +35,14 @@ type EditorTab = "crop" | "adjust";
 interface PhotoCropModalProps {
   isOpen: boolean;
   photoSrc: string;
+  originalPhotoSrc?: string;
   allPhotos?: string[];
   activePhotoIdx?: number;
   initialTab?: EditorTab;
   onSelectPhotoIdx?: (idx: number) => void;
   onClose: () => void;
   onApplyCrop: (croppedBase64: string, targetIdx: number) => void;
+  onRevertToOriginal?: (targetIdx: number) => void;
 }
 
 // Hazır Işık ve Renk Filtreleri
@@ -123,12 +125,14 @@ const PRESETS: FilterPreset[] = [
 export default function PhotoCropModal({
   isOpen,
   photoSrc,
+  originalPhotoSrc,
   allPhotos = [],
   activePhotoIdx = 0,
   initialTab = "crop",
   onSelectPhotoIdx,
   onClose,
   onApplyCrop,
+  onRevertToOriginal,
 }: PhotoCropModalProps) {
   const containerRef = useRef<HTMLDivElement>(null);
 
@@ -758,6 +762,21 @@ export default function PhotoCropModal({
                   >
                     <RefreshCw className="w-4 h-4" />
                   </button>
+                  {originalPhotoSrc && onRevertToOriginal && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        handleResetCrop();
+                        handleResetAdjustments();
+                        onRevertToOriginal(activePhotoIdx);
+                      }}
+                      className="px-2.5 py-1.5 rounded-xl bg-emerald-950/50 hover:bg-emerald-900/70 text-emerald-300 border border-emerald-500/40 text-xs font-semibold flex items-center gap-1 transition-all shadow-sm ml-1"
+                      title="Kırpma ve efektleri kaldırıp yüklenen orijinal fotoğrafa geri döner"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span className="hidden sm:inline">Orijinale Dön</span>
+                    </button>
+                  )}
                 </div>
               </div>
             </div>
@@ -919,6 +938,21 @@ export default function PhotoCropModal({
             </div>
 
             <div className="flex items-center gap-2">
+              {originalPhotoSrc && onRevertToOriginal && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    handleResetCrop();
+                    handleResetAdjustments();
+                    onRevertToOriginal(activePhotoIdx);
+                  }}
+                  className="px-3 py-2 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 border border-emerald-500/40 text-xs sm:text-sm font-semibold flex items-center gap-1.5 transition-all shadow-sm"
+                  title="Fotoğrafı kırpılmamış ham haline döndür"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Orijinale Sıfırla</span>
+                </button>
+              )}
               <button
                 type="button"
                 onClick={onClose}

@@ -356,6 +356,7 @@ export interface SlideItem {
   neighborhood: string;
   photoCount: 0 | 1 | 2 | 4;
   photos: string[];
+  originalPhotos?: string[];
   description: string;
   descriptionHtml?: string;
   fontFamily?: string;

@@ -45,10 +45,12 @@ import {
   Frame,
   Copy,
   CopyPlus,
+  RotateCcw,
 } from "lucide-react";
 import ModernConfirmDialog from "@/components/ModernConfirmDialog";
 import PaginationControls from "@/components/PaginationControls";
 import PhotoCropModal from "@/components/PhotoCropModal";
+import ImportFromClosedMeetingModal from "@/components/ImportFromClosedMeetingModal";
 import ProtectedCanvasImage from "@/components/ProtectedCanvasImage";
 import {
   SlideItem,
@@ -1635,6 +1637,9 @@ export default function PresentationsPage() {
     initialTab: "crop",
   });
 
+  // Eski Toplantıdan Sunu Al Modalı
+  const [importClosedModalOpen, setImportClosedModalOpen] = useState(false);
+
   // Önizleme Modalı (Tekil)
   const [previewRecord, setPreviewRecord] = useState<{
     item: PresentationListItem;
@@ -2226,6 +2231,17 @@ export default function PresentationsPage() {
       (!activeOpenMeeting.isLocked || isManager || isAuthorizedForOpenMeeting)
   );
 
+  // Bir sununun açık toplantıya kopyalanabilirlik izni:
+  // - Açık toplantı mevcut ve kilitsiz olmalı (veya yetkili olmalı)
+  // - VE sunu ya kapatılmış bir toplantıya ait olmalı (herkes kopyalayabilir)
+  //   YA DA kendi oluşturduğu sunu olmalı (başkalarının aktif toplantıdaki sunuları kopyalanamaz!)
+  const canCopyItemToOpenMeeting = (item: PresentationListItem) => {
+    if (!canAddToOpenMeeting) return false;
+    const isClosedMeetingRecord = item.meetingStatus === "closed";
+    const isOwn = String(item.createdBy?._id) === String(userId);
+    return isClosedMeetingRecord || isOwn;
+  };
+
   // Yeni Şablon Yükle (Birden fazla şablon destekli)
   const handleUploadTemplate = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
@@ -2466,6 +2482,12 @@ export default function PresentationsPage() {
       );
       return;
     }
+    if (item.meetingStatus === "open" && String(item.createdBy?._id) !== String(userId)) {
+      toast.error(
+        "Aktif toplantı dosyasındaki diğer personellere ait sunular kopyalanamaz. Yalnızca kapatılmış toplantılardaki sunuları kopyalayabilirsiniz."
+      );
+      return;
+    }
     if (copyingRecordId) return;
 
     setCopyingRecordId(item._id);
@@ -2542,6 +2564,12 @@ export default function PresentationsPage() {
     if (!canAddToOpenMeeting) {
       toast.error(
         "Açık toplantı sıralama/kapatma için kilitlenmiştir. Sadece yönetici ve yetkili personel sunu ekleyebilir."
+      );
+      return;
+    }
+    if (item.meetingStatus === "open" && String(item.createdBy?._id) !== String(userId)) {
+      toast.error(
+        "Aktif toplantı dosyasındaki diğer personellere ait sunular kopyalanamaz. Yalnızca kapatılmış toplantılardaki sunuları kopyalayabilirsiniz."
       );
       return;
     }
@@ -2887,11 +2915,16 @@ export default function PresentationsPage() {
       setSlides((prev) =>
         prev.map((s, idx) => {
           if (idx !== activeSlideIdx) return s;
+          const currentOriginals = s.originalPhotos || [...s.photos];
           const merged =
             s.photos.length >= maxAllowed
               ? compressed.slice(0, maxAllowed)
               : [...s.photos, ...compressed].slice(0, maxAllowed);
-          return { ...s, photos: merged };
+          const mergedOriginals =
+            currentOriginals.length >= maxAllowed
+              ? compressed.slice(0, maxAllowed)
+              : [...currentOriginals, ...compressed].slice(0, maxAllowed);
+          return { ...s, photos: merged, originalPhotos: mergedOriginals };
         })
       );
       toast.success(`${compressed.length} fotoğraf sıkıştırılarak eklendi.`);
@@ -2922,15 +2955,35 @@ export default function PresentationsPage() {
       prev.map((s, sIdx) => {
         if (sIdx !== activeSlideIdx) return s;
         const nextPhotos = [...s.photos];
+        const nextOriginals =
+          s.originalPhotos && s.originalPhotos.length === s.photos.length
+            ? [...s.originalPhotos]
+            : [...s.photos];
         if (targetIdx >= 0 && targetIdx < nextPhotos.length) {
           nextPhotos[targetIdx] = croppedBase64;
         } else {
           nextPhotos[0] = croppedBase64;
         }
-        return { ...s, photos: nextPhotos };
+        return { ...s, photos: nextPhotos, originalPhotos: nextOriginals };
       })
     );
     toast.success("Fotoğraf başarıyla kırpıldı ve güncellendi.");
+  };
+
+  const handleRevertToOriginal = (targetIdx: number) => {
+    setSlides((prev) =>
+      prev.map((s, sIdx) => {
+        if (sIdx !== activeSlideIdx) return s;
+        if (!s.originalPhotos || !s.originalPhotos[targetIdx]) {
+          toast.error("Orijinal fotoğraf bulunamadı.");
+          return s;
+        }
+        const nextPhotos = [...s.photos];
+        nextPhotos[targetIdx] = s.originalPhotos[targetIdx];
+        return { ...s, photos: nextPhotos };
+      })
+    );
+    toast.success("Fotoğraf kırpma öncesi orijinal haline döndürüldü.");
   };
 
   const updateCurrentSlide = (patch: Partial<SlideItem>) => {
@@ -4144,11 +4197,25 @@ export default function PresentationsPage() {
                         >
                           <Sun className="w-3 h-3" />
                         </button>
+                        {activeSlide.originalPhotos?.[idx] &&
+                          activeSlide.originalPhotos[idx] !== src && (
+                            <button
+                              type="button"
+                              onClick={() => handleRevertToOriginal(idx)}
+                              className="absolute top-1 left-13 p-1 rounded-full bg-emerald-600/90 text-white hover:bg-emerald-600 transition-all shadow-md group-hover:scale-105"
+                              title="Fotoğrafı Kırpılmamış Orijinal Haline Döndür"
+                            >
+                              <RotateCcw className="w-3 h-3" />
+                            </button>
+                          )}
                         <button
                           type="button"
                           onClick={() =>
                             updateCurrentSlide({
                               photos: activeSlide.photos.filter((_, i) => i !== idx),
+                              originalPhotos: activeSlide.originalPhotos?.filter(
+                                (_, i) => i !== idx
+                              ),
                             })
                           }
                           className="absolute top-1 right-1 p-1 rounded-full bg-red-600 text-white opacity-90 hover:opacity-100"
@@ -4566,6 +4633,8 @@ export default function PresentationsPage() {
           <PhotoCropModal
             isOpen={cropModal.isOpen}
             photoSrc={activeSlide.photos[cropModal.photoIdx]}
+            originalPhotoSrc={activeSlide.originalPhotos?.[cropModal.photoIdx]}
+            onRevertToOriginal={handleRevertToOriginal}
             allPhotos={activeSlide.photos}
             activePhotoIdx={cropModal.photoIdx}
             initialTab={cropModal.initialTab}
@@ -4663,6 +4732,18 @@ export default function PresentationsPage() {
                 </button>
               )}
             </div>
+          )}
+
+          {hasOpenMeeting && (
+            <button
+              type="button"
+              onClick={() => setImportClosedModalOpen(true)}
+              className="w-full sm:w-auto h-11 px-5 rounded-2xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white text-xs sm:text-sm font-extrabold shadow-lg shadow-teal-950/35 ring-1 ring-white/20 inline-flex items-center justify-center gap-2 whitespace-nowrap transition-all hover:-translate-y-0.5 active:scale-95"
+              title="Kapatılmış eski toplantılardaki sunuları aktif toplantıya kopyalayın"
+            >
+              <Copy className="w-4 h-4" />
+              <span>Eski Toplantıdan Sunu Al</span>
+            </button>
           )}
 
           <button
@@ -4872,7 +4953,7 @@ export default function PresentationsPage() {
                             <span>Görüntüle</span>
                           </button>
 
-                          {canAddToOpenMeeting && (
+                          {canCopyItemToOpenMeeting(item) && (
                             <div className="flex items-center gap-1.5">
                               <button
                                 type="button"
@@ -5179,6 +5260,18 @@ export default function PresentationsPage() {
                   >
                     <Layers className="w-4 h-4" />
                     <span>Sırala / Kilitle & Sonlandır</span>
+                  </button>
+                )}
+
+                {selectedMeeting.status === "open" && !selectedMeeting.isLocked && (
+                  <button
+                    type="button"
+                    onClick={() => setImportClosedModalOpen(true)}
+                    className="h-10 px-4 rounded-xl bg-gradient-to-r from-teal-600 to-emerald-600 hover:from-teal-500 hover:to-emerald-500 text-white text-xs font-extrabold shadow-sm inline-flex items-center gap-2 transition-all active:scale-95"
+                    title="Daha önce kapatılmış toplantılardan bu açık toplantıya sunu aktarın"
+                  >
+                    <Copy className="w-4 h-4" />
+                    <span>Eski Toplantıdan Sunu Al</span>
                   </button>
                 )}
 
@@ -5784,7 +5877,7 @@ export default function PresentationsPage() {
                                 </div>
 
                                 <div className="flex items-center gap-1.5">
-                                  {canAddToOpenMeeting && (
+                                  {canCopyItemToOpenMeeting(item) && (
                                     <>
                                       {!canModify && (
                                         <button
@@ -5891,7 +5984,7 @@ export default function PresentationsPage() {
                                   >
                                     <Download className="w-3.5 h-3.5" />
                                   </button>
-                                  {canAddToOpenMeeting && (
+                                  {canCopyItemToOpenMeeting(item) && (
                                     <button
                                       type="button"
                                       onClick={() => handleCopyToEditorAndModify(item)}
@@ -6090,7 +6183,7 @@ export default function PresentationsPage() {
                                         >
                                           <Download aria-hidden="true" className="w-4 h-4" />
                                         </button>
-                                        {canAddToOpenMeeting && (
+                                        {canCopyItemToOpenMeeting(item) && (
                                           <button
                                             type="button"
                                             disabled={copyingRecordId === item._id}
@@ -6123,7 +6216,7 @@ export default function PresentationsPage() {
                                               <Trash2 aria-hidden="true" className="w-4 h-4" />
                                             </button>
                                           </>
-                                        ) : canAddToOpenMeeting ? (
+                                        ) : canCopyItemToOpenMeeting(item) ? (
                                           <button
                                             type="button"
                                             disabled={copyingRecordId === item._id}
@@ -6602,7 +6695,7 @@ export default function PresentationsPage() {
                     </div>
                   )}
 
-                  {canAddToOpenMeeting && (
+                  {canCopyItemToOpenMeeting(previewRecord.item) && (
                     <div className="hidden sm:flex items-center gap-1.5">
                       {previewRecord.slides.length > 1 && (
                         <button
@@ -6696,9 +6789,9 @@ export default function PresentationsPage() {
               </div>
 
               {/* Mobil Hızlı İşlem Şeridi (Sadece < sm ekranlarda, Geri/Kapat butonlarını sıkıştırmadan alt satırda görünür) */}
-              {(canAddToOpenMeeting || previewRecord.canModify) && (
+              {(canCopyItemToOpenMeeting(previewRecord.item) || previewRecord.canModify) && (
                 <div className="sm:hidden flex items-center gap-1.5 overflow-x-auto pt-1 border-t border-white/10">
-                  {canAddToOpenMeeting && (
+                  {canCopyItemToOpenMeeting(previewRecord.item) && (
                     <>
                       {previewRecord.slides.length > 1 && (
                         <button
@@ -8016,6 +8109,26 @@ export default function PresentationsPage() {
         confirmText="Evet, Sil"
         cancelText="Vazgeç"
       />
+
+      {/* Eski / Kapatılmış Toplantıdan Sunu Al Modalı */}
+      {importClosedModalOpen && (
+        <ImportFromClosedMeetingModal
+          isOpen={importClosedModalOpen}
+          onClose={() => setImportClosedModalOpen(false)}
+          activeMeeting={
+            (selectedMeeting?.status === "open" ? selectedMeeting : null) ||
+            activeOpenMeeting || {
+              _id: "",
+              title: "Aktif Toplantı",
+            }
+          }
+          closedMeetings={meetings.filter((m) => m.status === "closed")}
+          onSuccess={() => {
+            void fetchPresentations();
+            void fetchAll({ silent: true });
+          }}
+        />
+      )}
     </div>
   );
 }

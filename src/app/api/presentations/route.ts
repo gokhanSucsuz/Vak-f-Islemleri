@@ -32,6 +32,9 @@ function sanitizeIncomingSlides(rawSlides: ISlideData[]): ISlideData[] {
       photos: Array.isArray(s.photos)
         ? s.photos.filter((p) => typeof p === "string").slice(0, 4)
         : [],
+      originalPhotos: Array.isArray(s.originalPhotos)
+        ? s.originalPhotos.filter((p) => typeof p === "string").slice(0, 4)
+        : undefined,
       description: cleanPlain,
       descriptionHtml: cleanHtml,
       fontFamily: "Verdana",
@@ -391,6 +394,18 @@ export async function POST(req: NextRequest) {
         return NextResponse.json(
           { error: "Kopyalanmak istenen kaynak sunu bulunamadı." },
           { status: 404 }
+        );
+      }
+
+      const sourceMeeting = sourceRecord.meetingId as any;
+      const isOwnRecord = String(sourceRecord.createdBy) === String(userId);
+      if (sourceMeeting?.status === "open" && !isOwnRecord) {
+        return NextResponse.json(
+          {
+            error:
+              "Aktif toplantı dosyasındaki diğer personellere ait sunular kopyalanamaz. Yalnızca kapatılmış/sonlandırılmış toplantılardaki sunuları aktif toplantıya kopyalayabilirsiniz.",
+          },
+          { status: 403 }
         );
       }
 

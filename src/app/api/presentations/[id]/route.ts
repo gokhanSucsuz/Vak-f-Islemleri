@@ -179,6 +179,9 @@ export async function PUT(
           ? Number(s.photoCount)
           : 0) as 0 | 1 | 2 | 4,
         photos: Array.isArray(s.photos) ? s.photos.slice(0, 4) : [],
+        originalPhotos: Array.isArray(s.originalPhotos)
+          ? s.originalPhotos.filter((p) => typeof p === "string").slice(0, 4)
+          : undefined,
         description: cleanPlain,
         descriptionHtml: cleanHtml,
         fontFamily: "Verdana",

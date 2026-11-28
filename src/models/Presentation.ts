@@ -6,6 +6,7 @@ export interface ISlideData {
   neighborhood: string;
   photoCount: 0 | 1 | 2 | 4;
   photos: string[]; // Sıkıştırılmış JPEG data URI dizisi
+  originalPhotos?: string[]; // Kırpma öncesi ilk yüklenen orijinal görseller
   description: string;
   descriptionHtml?: string; // Zengin metin editörü HTML içeriği
   fontFamily?: string; // Varsayılan: "Verdana"
