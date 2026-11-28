@@ -2018,6 +2018,30 @@ export default function PresentationsPage() {
     };
   }, []);
 
+  // Mobil & Masaüstü Donanım / Tarayıcı "Geri" Tuşu Desteği (Önizleme açıkken sayfadan çıkmak yerine önizlemeyi kapatır)
+  const hasAnyPreviewOpen = Boolean(previewRecord || bulkPreviewModal);
+  useEffect(() => {
+    if (!hasAnyPreviewOpen || typeof window === "undefined") return;
+    if (!window.history.state?.vakifPresPreview) {
+      window.history.pushState({ vakifPresPreview: true }, "");
+    }
+    const onPopState = () => {
+      if (isSlideshowActiveRef.current) {
+        void exitSlideshowMode();
+        return;
+      }
+      if (previewRecord) {
+        setPreviewRecord(null);
+        return;
+      }
+      if (bulkPreviewModal) {
+        requestCloseBulkPreview();
+      }
+    };
+    window.addEventListener("popstate", onPopState);
+    return () => window.removeEventListener("popstate", onPopState);
+  }, [hasAnyPreviewOpen, previewRecord, bulkPreviewModal, exitSlideshowMode, requestCloseBulkPreview]);
+
   const fetchTemplates = useCallback(async () => {
     try {
       const tplRes = await shieldedFetchJson("/api/presentations/template");
@@ -6509,149 +6533,244 @@ export default function PresentationsPage() {
 
       {/* Tekil Sunu Slayt Önizleme Modalı (PowerPoint Sol Şerit + %100 Mobil Uyumlu Stüdyo Görünümü) */}
       {previewRecord && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-950/85 backdrop-blur-sm">
+        <div
+          role="dialog"
+          aria-modal="true"
+          aria-label={`${previewRecord.title} sunu önizlemesi`}
+          className="fixed inset-0 z-[70] flex items-center justify-center p-0 sm:p-4 bg-slate-950/85 backdrop-blur-sm"
+        >
           <div className="bg-white rounded-none sm:rounded-3xl shadow-2xl max-w-5xl w-full h-dvh sm:h-[88vh] sm:max-h-[820px] flex flex-col overflow-hidden border-0 sm:border border-slate-800/20">
-            {/* Üst Kompakt Stüdyo Barı */}
-            <div className="relative shrink-0 px-3.5 sm:px-6 py-3 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white flex flex-wrap items-center justify-between gap-2.5">
-              <div className="min-w-0 flex-1 flex items-center gap-2.5 sm:gap-3">
-                <div className="p-2 rounded-xl bg-white/10 border border-white/15 shrink-0">
-                  <PresentationIcon className="w-4 h-4 text-sky-300" />
-                </div>
-                <div className="min-w-0">
-                  <h3 className="text-xs sm:text-base font-extrabold text-white truncate">
-                    {previewRecord.title}
-                  </h3>
-                  <p className="text-[11px] text-blue-200/90 truncate">
-                    Hazırlayan: <strong className="text-white">{previewRecord.authorName}</strong>
-                    {previewRecord.meetingTitle ? ` • Klasör: ${previewRecord.meetingTitle}` : ""}
-                  </p>
-                </div>
-              </div>
+            {/* Üst Kompakt Stüdyo Barı (Mobilde Geri Dön ve Kapat Butonları Asla Taşmaz / Kaybolmaz) */}
+            <div className="relative shrink-0 px-3 sm:px-6 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 sm:py-3 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                {/* Sol: Belirgin Geri Dön Butonu + Sunu Başlığı */}
+                <div className="min-w-0 flex-1 flex items-center gap-2 sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={() => setPreviewRecord(null)}
+                    aria-label="Sunu listesine geri dön"
+                    className="min-h-11 sm:min-h-9 px-2.5 sm:px-3 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-extrabold inline-flex items-center gap-1 shrink-0 transition-all active:scale-95"
+                  >
+                    <ChevronLeft className="w-4 h-4 shrink-0" aria-hidden="true" />
+                    <span>Geri</span>
+                  </button>
 
-              <div className="flex flex-wrap items-center gap-1.5 sm:gap-2 shrink-0">
-                {previewRecord.slides.length > 1 && (
-                  <div className="inline-flex items-center bg-white/10 border border-white/15 rounded-xl p-0.5">
-                    <button
-                      type="button"
-                      disabled={previewSlideIdx === 0}
-                      onClick={() => setPreviewSlideIdx((p) => Math.max(0, p - 1))}
-                      className="px-2 sm:px-2.5 py-1.5 rounded-lg hover:bg-white/15 disabled:opacity-35 text-xs font-bold flex items-center gap-1 transition-colors"
-                      title="Önceki Sayfa (←)"
-                      aria-label="Önceki sayfa"
-                    >
-                      <ChevronLeft className="w-4 h-4" />
-                      <span className="hidden sm:inline">Önceki</span>
-                    </button>
-                    <span className="px-2 text-xs font-extrabold text-sky-200 tabular-nums">
-                      {previewSlideIdx + 1} / {previewRecord.slides.length}
-                    </span>
-                    <button
-                      type="button"
-                      disabled={previewSlideIdx >= previewRecord.slides.length - 1}
-                      onClick={() =>
-                        setPreviewSlideIdx((p) =>
-                          Math.min(previewRecord.slides.length - 1, p + 1)
-                        )
-                      }
-                      className="px-2 sm:px-2.5 py-1.5 rounded-lg hover:bg-white/15 disabled:opacity-35 text-xs font-bold flex items-center gap-1 transition-colors"
-                      title="Sonraki Sayfa (→)"
-                      aria-label="Sonraki sayfa"
-                    >
-                      <span className="hidden sm:inline">Sonraki</span>
-                      <ChevronRight className="w-4 h-4" />
-                    </button>
+                  <div className="min-w-0 flex-1">
+                    <h3 className="text-xs sm:text-base font-extrabold text-white truncate">
+                      {previewRecord.title}
+                    </h3>
+                    <p className="text-[11px] text-blue-200/90 truncate">
+                      Hazırlayan: <strong className="text-white">{previewRecord.authorName}</strong>
+                      {previewRecord.meetingTitle ? ` • ${previewRecord.meetingTitle}` : ""}
+                    </p>
                   </div>
-                )}
+                </div>
 
-                {canAddToOpenMeeting && (
-                  <>
-                    {previewRecord.slides.length > 1 && (
+                {/* Sağ: Masaüstü Kontrolleri + Her Ekranda Sabit Görünür Kapat Butonu */}
+                <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+                  {previewRecord.slides.length > 1 && (
+                    <div className="hidden sm:inline-flex items-center bg-white/10 border border-white/15 rounded-xl p-0.5">
+                      <button
+                        type="button"
+                        disabled={previewSlideIdx === 0}
+                        onClick={() => setPreviewSlideIdx((p) => Math.max(0, p - 1))}
+                        className="px-2.5 py-1.5 rounded-lg hover:bg-white/15 disabled:opacity-35 text-xs font-bold flex items-center gap-1 transition-colors"
+                        title="Önceki Sayfa (←)"
+                        aria-label="Önceki sayfa"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        <span>Önceki</span>
+                      </button>
+                      <span className="px-2 text-xs font-extrabold text-sky-200 tabular-nums">
+                        {previewSlideIdx + 1} / {previewRecord.slides.length}
+                      </span>
+                      <button
+                        type="button"
+                        disabled={previewSlideIdx >= previewRecord.slides.length - 1}
+                        onClick={() =>
+                          setPreviewSlideIdx((p) =>
+                            Math.min(previewRecord.slides.length - 1, p + 1)
+                          )
+                        }
+                        className="px-2.5 py-1.5 rounded-lg hover:bg-white/15 disabled:opacity-35 text-xs font-bold flex items-center gap-1 transition-colors"
+                        title="Sonraki Sayfa (→)"
+                        aria-label="Sonraki sayfa"
+                      >
+                        <span>Sonraki</span>
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  )}
+
+                  {canAddToOpenMeeting && (
+                    <div className="hidden sm:flex items-center gap-1.5">
+                      {previewRecord.slides.length > 1 && (
+                        <button
+                          type="button"
+                          disabled={copyingRecordId === previewRecord.item._id}
+                          onClick={() =>
+                            handleCopyToOpenMeetingDirect(previewRecord.item, [previewSlideIdx])
+                          }
+                          title={`Sadece ${previewSlideIdx + 1}. slaytı aktif açık toplantıya aynen kopyala`}
+                          className="px-2.5 py-1.5 rounded-xl bg-teal-500/25 hover:bg-teal-500/40 border border-teal-300/35 text-teal-100 text-xs font-extrabold inline-flex items-center gap-1 transition-colors"
+                        >
+                          <CopyPlus className="w-3.5 h-3.5 shrink-0" />
+                          <span>{previewSlideIdx + 1}. Slaytı Kopyala</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={copyingRecordId === previewRecord.item._id}
+                        onClick={() => handleCopyToOpenMeetingDirect(previewRecord.item)}
+                        title="Bu sununun tüm slaytlarını olduğu gibi aktif açık toplantıya kopyala"
+                        className="px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-white text-xs font-extrabold inline-flex items-center gap-1 shadow-xs transition-colors"
+                      >
+                        <CopyPlus className="w-3.5 h-3.5 shrink-0" />
+                        <span>
+                          {previewRecord.slides.length > 1 ? "Tümünü Kopyala" : "Aynen Kopyala"}
+                        </span>
+                      </button>
                       <button
                         type="button"
                         disabled={copyingRecordId === previewRecord.item._id}
                         onClick={() =>
-                          handleCopyToOpenMeetingDirect(previewRecord.item, [previewSlideIdx])
+                          handleCopyToEditorAndModify(
+                            previewRecord.item,
+                            undefined,
+                            previewRecord.slides
+                          )
                         }
-                        title={`Sadece ${previewSlideIdx + 1}. slaytı aktif açık toplantıya aynen kopyala`}
-                        className="px-2.5 py-1.5 rounded-xl bg-teal-500/25 hover:bg-teal-500/40 border border-teal-300/35 text-teal-100 text-xs font-extrabold inline-flex items-center gap-1 transition-colors"
+                        title="Yeni sunuya bir örnek kopyala ve üzerinde değişiklik yaparak kaydet"
+                        className="px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-xs font-extrabold inline-flex items-center gap-1 shadow-xs transition-colors"
+                      >
+                        <Copy className="w-3.5 h-3.5 shrink-0" />
+                        <span>Kopyala & Düzenle</span>
+                      </button>
+                    </div>
+                  )}
+
+                  {previewRecord.canModify ? (
+                    <div className="hidden sm:flex items-center gap-1.5">
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = previewRecord.item;
+                          setPreviewRecord(null);
+                          handleOpenRecord(target, "edit");
+                        }}
+                        className="px-3 py-1.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-colors"
+                      >
+                        <Edit3 className="w-3.5 h-3.5" />
+                        <span>Düzenle</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = previewRecord.item;
+                          setPreviewRecord(null);
+                          setDeleteTarget(target);
+                        }}
+                        aria-label="Sunuyu sil"
+                        className="px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-100 hover:text-white border border-rose-400/30 text-xs font-bold flex items-center gap-1 transition-colors"
+                      >
+                        <Trash2 className="w-3.5 h-3.5" />
+                        <span>Sil</span>
+                      </button>
+                    </div>
+                  ) : (
+                    <span className="hidden sm:inline-flex px-2.5 py-1 rounded-lg bg-white/10 border border-white/15 text-blue-100 text-[11px] font-bold">
+                      Salt Görüntüleme
+                    </span>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={() => setPreviewRecord(null)}
+                    aria-label="Önizlemeyi kapat"
+                    className="min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 px-2.5 rounded-xl bg-rose-500/90 sm:bg-white/15 hover:bg-rose-500 text-white text-xs font-extrabold inline-flex items-center justify-center gap-1 shrink-0 shadow-sm transition-all active:scale-95"
+                  >
+                    <X className="w-4 h-4 shrink-0" aria-hidden="true" />
+                    <span className="sm:hidden">Kapat</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Mobil Hızlı İşlem Şeridi (Sadece < sm ekranlarda, Geri/Kapat butonlarını sıkıştırmadan alt satırda görünür) */}
+              {(canAddToOpenMeeting || previewRecord.canModify) && (
+                <div className="sm:hidden flex items-center gap-1.5 overflow-x-auto pt-1 border-t border-white/10">
+                  {canAddToOpenMeeting && (
+                    <>
+                      {previewRecord.slides.length > 1 && (
+                        <button
+                          type="button"
+                          disabled={copyingRecordId === previewRecord.item._id}
+                          onClick={() =>
+                            handleCopyToOpenMeetingDirect(previewRecord.item, [previewSlideIdx])
+                          }
+                          className="h-9 px-2.5 rounded-lg bg-teal-500/25 border border-teal-300/35 text-teal-100 text-[11px] font-extrabold inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+                        >
+                          <CopyPlus className="w-3.5 h-3.5 shrink-0" />
+                          <span>{previewSlideIdx + 1}. Slaytı Kopyala</span>
+                        </button>
+                      )}
+                      <button
+                        type="button"
+                        disabled={copyingRecordId === previewRecord.item._id}
+                        onClick={() => handleCopyToOpenMeetingDirect(previewRecord.item)}
+                        className="h-9 px-2.5 rounded-lg bg-emerald-500 text-white text-[11px] font-extrabold inline-flex items-center gap-1 whitespace-nowrap shrink-0"
                       >
                         <CopyPlus className="w-3.5 h-3.5 shrink-0" />
-                        <span>{previewSlideIdx + 1}. Slaytı Kopyala</span>
+                        <span>
+                          {previewRecord.slides.length > 1 ? "Tümünü Kopyala" : "Aynen Kopyala"}
+                        </span>
                       </button>
-                    )}
-                    <button
-                      type="button"
-                      disabled={copyingRecordId === previewRecord.item._id}
-                      onClick={() => handleCopyToOpenMeetingDirect(previewRecord.item)}
-                      title="Bu sununun tüm slaytlarını olduğu gibi aktif açık toplantıya kopyala"
-                      className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-emerald-500 hover:bg-emerald-400 disabled:opacity-60 text-white text-xs font-extrabold inline-flex items-center gap-1 shadow-xs transition-colors"
-                    >
-                      <CopyPlus className="w-3.5 h-3.5 shrink-0" />
-                      <span>
-                        {previewRecord.slides.length > 1 ? "Tümünü Kopyala" : "Aynen Kopyala"}
-                      </span>
-                    </button>
-                    <button
-                      type="button"
-                      disabled={copyingRecordId === previewRecord.item._id}
-                      onClick={() =>
-                        handleCopyToEditorAndModify(
-                          previewRecord.item,
-                          undefined,
-                          previewRecord.slides
-                        )
-                      }
-                      title="Yeni sunuya bir örnek kopyala ve üzerinde değişiklik yaparak kaydet"
-                      className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-amber-500 hover:bg-amber-400 text-white text-xs font-extrabold inline-flex items-center gap-1 shadow-xs transition-colors"
-                    >
-                      <Copy className="w-3.5 h-3.5 shrink-0" />
-                      <span>Kopyala & Düzenle</span>
-                    </button>
-                  </>
-                )}
-
-                {previewRecord.canModify ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const target = previewRecord.item;
-                        setPreviewRecord(null);
-                        handleOpenRecord(target, "edit");
-                      }}
-                      className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-blue-500 hover:bg-blue-400 text-white text-xs font-bold flex items-center gap-1 shadow-xs transition-colors"
-                    >
-                      <Edit3 className="w-3.5 h-3.5" />
-                      <span className="hidden xs:inline sm:inline">Düzenle</span>
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => {
-                        const target = previewRecord.item;
-                        setPreviewRecord(null);
-                        setDeleteTarget(target);
-                      }}
-                      aria-label="Sunuyu sil"
-                      className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-rose-500/20 hover:bg-rose-500 text-rose-100 hover:text-white border border-rose-400/30 text-xs font-bold flex items-center gap-1 transition-colors"
-                    >
-                      <Trash2 className="w-3.5 h-3.5" />
-                      <span className="hidden sm:inline">Sil</span>
-                    </button>
-                  </>
-                ) : (
-                  <span className="hidden sm:inline-flex px-2.5 py-1 rounded-lg bg-white/10 border border-white/15 text-blue-100 text-[11px] font-bold">
-                    Salt Görüntüleme
-                  </span>
-                )}
-
-                <button
-                  onClick={() => setPreviewRecord(null)}
-                  aria-label="Önizlemeyi kapat"
-                  className="p-2 rounded-xl bg-white/10 hover:bg-white/20 text-white transition-colors"
-                >
-                  <X className="w-4.5 h-4.5" />
-                </button>
-              </div>
+                      <button
+                        type="button"
+                        disabled={copyingRecordId === previewRecord.item._id}
+                        onClick={() =>
+                          handleCopyToEditorAndModify(
+                            previewRecord.item,
+                            undefined,
+                            previewRecord.slides
+                          )
+                        }
+                        className="h-9 px-2.5 rounded-lg bg-amber-500 text-white text-[11px] font-extrabold inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+                      >
+                        <Copy className="w-3.5 h-3.5 shrink-0" />
+                        <span>Kopyala & Düzenle</span>
+                      </button>
+                    </>
+                  )}
+                  {previewRecord.canModify && (
+                    <>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = previewRecord.item;
+                          setPreviewRecord(null);
+                          handleOpenRecord(target, "edit");
+                        }}
+                        className="h-9 px-2.5 rounded-lg bg-blue-500 text-white text-[11px] font-extrabold inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+                      >
+                        <Edit3 className="w-3.5 h-3.5 shrink-0" />
+                        <span>Düzenle</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => {
+                          const target = previewRecord.item;
+                          setPreviewRecord(null);
+                          setDeleteTarget(target);
+                        }}
+                        className="h-9 px-2.5 rounded-lg bg-rose-500/25 border border-rose-400/35 text-rose-100 text-[11px] font-extrabold inline-flex items-center gap-1 whitespace-nowrap shrink-0"
+                      >
+                        <Trash2 className="w-3.5 h-3.5 shrink-0" />
+                        <span>Sil</span>
+                      </button>
+                    </>
+                  )}
+                </div>
+              )}
             </div>
 
             {/* İçerik Gövdesi: Sol PowerPoint Film Şeridi + Sağ Ana Slayt Sahnesi */}
@@ -6762,33 +6881,65 @@ export default function PresentationsPage() {
                   )}
                 </div>
 
-                {previewRecord.slides.length > 1 && (
-                  <div className="sm:hidden w-full flex items-center justify-between gap-2 bg-white border border-slate-200 rounded-2xl p-2 shadow-xs shrink-0">
-                    <button
-                      type="button"
-                      disabled={previewSlideIdx === 0}
-                      onClick={() => setPreviewSlideIdx((p) => Math.max(0, p - 1))}
-                      className="px-3 py-2 rounded-xl bg-slate-100 text-slate-800 text-xs font-extrabold disabled:opacity-35 flex items-center gap-1"
-                    >
-                      <ChevronLeft className="w-4 h-4" /> Önceki
-                    </button>
-                    <span className="text-[11px] font-bold text-slate-500">
-                      Sağa / sola kaydırın ({previewSlideIdx + 1}/{previewRecord.slides.length})
-                    </span>
-                    <button
-                      type="button"
-                      disabled={previewSlideIdx >= previewRecord.slides.length - 1}
-                      onClick={() =>
-                        setPreviewSlideIdx((p) =>
-                          Math.min(previewRecord.slides.length - 1, p + 1)
-                        )
-                      }
-                      className="px-3 py-2 rounded-xl bg-blue-600 text-white text-xs font-extrabold disabled:opacity-35 flex items-center gap-1"
-                    >
-                      Sonraki <ChevronRight className="w-4 h-4" />
-                    </button>
-                  </div>
-                )}
+                {/* Mobil Alt Gezinme & Geri Dönüş Çubuğu (Tek sayfalı ve çok sayfalı tüm sunularda parmak hizasında sabit) */}
+                <div className="sm:hidden w-full bg-white border border-slate-200/90 rounded-2xl p-2 shadow-sm shrink-0">
+                  {previewRecord.slides.length > 1 ? (
+                    <div className="flex items-center justify-between gap-2">
+                      <button
+                        type="button"
+                        disabled={previewSlideIdx === 0}
+                        onClick={() => setPreviewSlideIdx((p) => Math.max(0, p - 1))}
+                        className="min-h-11 px-3 rounded-xl bg-slate-100 text-slate-800 text-xs font-extrabold disabled:opacity-35 inline-flex items-center gap-1"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        <span>Önceki</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        onClick={() => setPreviewRecord(null)}
+                        className="min-h-11 px-3.5 rounded-xl bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold inline-flex items-center gap-1.5 shadow-xs"
+                      >
+                        <ChevronLeft className="w-3.5 h-3.5" />
+                        <span>Geri Dön ({previewSlideIdx + 1}/{previewRecord.slides.length})</span>
+                      </button>
+
+                      <button
+                        type="button"
+                        disabled={previewSlideIdx >= previewRecord.slides.length - 1}
+                        onClick={() =>
+                          setPreviewSlideIdx((p) =>
+                            Math.min(previewRecord.slides.length - 1, p + 1)
+                          )
+                        }
+                        className="min-h-11 px-3 rounded-xl bg-blue-600 text-white text-xs font-extrabold disabled:opacity-35 inline-flex items-center gap-1"
+                      >
+                        <span>Sonraki</span>
+                        <ChevronRight className="w-4 h-4" />
+                      </button>
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-2">
+                      <button
+                        type="button"
+                        onClick={() => setPreviewRecord(null)}
+                        className="flex-1 min-h-11 px-4 rounded-xl bg-[#0b192c] hover:bg-[#132c52] text-white text-xs font-extrabold inline-flex items-center justify-center gap-2 shadow-xs active:scale-98 transition-all"
+                      >
+                        <ChevronLeft className="w-4 h-4" />
+                        <span>Listeye Geri Dön / Kapat</span>
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => handleOpenRecord(previewRecord.item, "download")}
+                        aria-label="Sunuyu PowerPoint olarak indir"
+                        className="min-h-11 px-3.5 rounded-xl bg-emerald-50 text-emerald-700 border border-emerald-200 text-xs font-extrabold inline-flex items-center justify-center gap-1.5 shrink-0"
+                      >
+                        <Download className="w-4 h-4" />
+                        <span>.pptx</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
               </div>
             </div>
           </div>
@@ -6952,7 +7103,12 @@ export default function PresentationsPage() {
           bulkPreviewModal.meeting.status === "open" && canManageSelectedMeeting;
 
         return (
-          <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-950/85 backdrop-blur-sm">
+          <div
+            role="dialog"
+            aria-modal="true"
+            aria-label={`${bulkPreviewModal.meeting.title} toplu sunu önizlemesi`}
+            className="fixed inset-0 z-[70] flex items-center justify-center p-0 sm:p-4 bg-slate-950/85 backdrop-blur-sm"
+          >
             {/* Erişilebilirlik Canlı Duyuru Alanı */}
             <div aria-live="polite" aria-atomic="true" className="visually-hidden">
               {reorderLiveMsg}
@@ -6960,11 +7116,17 @@ export default function PresentationsPage() {
 
             <div className="bg-white rounded-none sm:rounded-3xl shadow-2xl max-w-[1440px] w-full h-dvh sm:h-[92vh] sm:max-h-[880px] flex flex-col overflow-hidden border-0 sm:border border-slate-800/20">
               {/* Üst Kompakt Stüdyo Kontrol Barı */}
-              <div className="relative shrink-0 px-3.5 sm:px-6 py-2.5 sm:py-3 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white flex flex-wrap items-center justify-between gap-2.5">
-                <div className="min-w-0 flex-1 flex items-center gap-2.5 sm:gap-3">
-                  <div className="p-2 rounded-xl bg-white/10 border border-white/15 shrink-0 hidden xs:flex sm:flex">
-                    <Eye className="w-4.5 h-4.5 text-sky-300" />
-                  </div>
+              <div className="relative shrink-0 px-3 sm:px-6 pt-[max(0.625rem,env(safe-area-inset-top))] pb-2.5 sm:py-3 bg-gradient-to-r from-[#0b192c] via-[#132c52] to-[#1e3a8a] text-white flex flex-wrap items-center justify-between gap-2">
+                <div className="min-w-0 flex-1 flex items-center gap-2 sm:gap-3">
+                  <button
+                    type="button"
+                    onClick={requestCloseBulkPreview}
+                    aria-label="Toplu önizlemeden geri dön"
+                    className="min-h-11 sm:min-h-9 px-2.5 sm:px-3 rounded-xl bg-white/15 hover:bg-white/25 border border-white/20 text-white text-xs font-extrabold inline-flex items-center gap-1 shrink-0 transition-all active:scale-95"
+                  >
+                    <ChevronLeft className="w-4 h-4 shrink-0" aria-hidden="true" />
+                    <span>Geri</span>
+                  </button>
                   <div className="min-w-0">
                     <div className="flex items-center gap-2 flex-wrap">
                       <h3 className="text-xs sm:text-base font-extrabold text-white truncate max-w-[200px] sm:max-w-none">
@@ -7152,10 +7314,11 @@ export default function PresentationsPage() {
                     type="button"
                     onClick={requestCloseBulkPreview}
                     aria-label="Toplu önizlemeyi kapat"
-                    className="p-2 rounded-xl bg-white/10 hover:bg-rose-500/80 text-white transition-colors"
+                    className="min-h-11 min-w-11 sm:min-h-9 sm:min-w-9 px-2.5 rounded-xl bg-rose-500/90 sm:bg-white/15 hover:bg-rose-500 text-white text-xs font-extrabold inline-flex items-center justify-center gap-1 shrink-0 transition-colors"
                     title="Kapat (Esc)"
                   >
-                    <X className="w-4.5 h-4.5" />
+                    <X className="w-4 h-4 shrink-0" aria-hidden="true" />
+                    <span className="sm:hidden">Kapat</span>
                   </button>
                 </div>
 
@@ -7741,7 +7904,7 @@ export default function PresentationsPage() {
           role="dialog"
           aria-modal="true"
           aria-labelledby="pres-loading-modal-title"
-          className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-150"
+          className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-950/75 backdrop-blur-sm animate-in fade-in duration-150"
         >
           <div className="w-full max-w-md rounded-3xl bg-white shadow-2xl border border-slate-200/90 overflow-hidden">
             {/* Üst Kurumsal Stüdyo Başlığı */}

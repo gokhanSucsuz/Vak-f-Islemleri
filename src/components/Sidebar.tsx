@@ -101,7 +101,7 @@ export default function Sidebar() {
         type="button"
         aria-label={isOpen ? "Menüyü kapat" : "Menüyü aç"}
         aria-expanded={isOpen}
-        className="md:hidden fixed top-3 left-3 z-50 p-2.5 bg-[#0b192c] text-white rounded-xl shadow-lg border border-slate-700/80 print:hidden"
+        className="md:hidden fixed top-3 left-3 z-40 p-2.5 bg-[#0b192c] text-white rounded-xl shadow-lg border border-slate-700/80 print:hidden"
         onClick={() => setIsOpen(!isOpen)}
       >
         {isOpen ? <X className="w-5 h-5" aria-hidden="true" /> : <Menu className="w-5 h-5" aria-hidden="true" />}
@@ -110,7 +110,7 @@ export default function Sidebar() {
       <aside
         aria-label="Yan menü"
         className={clsx(
-          "fixed md:static inset-y-0 left-0 z-40 w-68 bg-gradient-to-b from-[#0b192c] via-[#0f223d] to-[#0a1628] text-white transform transition-transform duration-300 ease-in-out flex flex-col shadow-2xl border-r border-slate-800/80 md:translate-x-0 print:hidden",
+          "fixed md:static inset-y-0 left-0 z-[45] w-68 bg-gradient-to-b from-[#0b192c] via-[#0f223d] to-[#0a1628] text-white transform transition-transform duration-300 ease-in-out flex flex-col shadow-2xl border-r border-slate-800/80 md:translate-x-0 print:hidden",
           isOpen ? "translate-x-0" : "-translate-x-full"
         )}
       >
